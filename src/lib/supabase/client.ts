@@ -13,14 +13,24 @@ export function createClient(): SupabaseClient {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-    // Если переменных нет, выводим ошибку в консоль, но не возвращаем null, 
-    // чтобы не вызывать client-side exception при обращении к методам
     if (!supabaseUrl || !supabaseKey) {
         if (typeof window !== 'undefined') {
             console.error('CRITICAL: Supabase variables are missing! Check Vercel Environment Variables.')
         }
-        // Возвращаем объект-пустышку, чтобы методы типа .auth не вызывали ошибку на черном экране
-        return {} as any
+        // Возвращаем мок-объект, который имитирует методы Supabase
+        // Это предотвратит падение всего приложения
+        return {
+            auth: {
+                getUser: async () => ({ data: { user: null }, error: null }),
+                onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => { } } } }),
+                getSession: async () => ({ data: { session: null }, error: null }),
+            },
+            from: () => ({
+                select: () => ({ order: () => ({ data: [], error: null }) }),
+                insert: () => ({ error: null }),
+                update: () => ({ error: null }),
+            }),
+        } as any
     }
 
     // Используем @supabase/supabase-js напрямую с отключенными locks
