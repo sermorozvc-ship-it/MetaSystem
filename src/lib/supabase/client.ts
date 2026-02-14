@@ -10,10 +10,20 @@ const USER_CACHE_TTL = 5000
 export function createClient(): SupabaseClient {
     if (client) return client
 
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+    if (!supabaseUrl || !supabaseKey) {
+        // Во время сборки на Vercel переменные могут быть временно недоступны
+        // Возвращаем пустой объект или null, чтобы не ломать билд
+        console.warn('Supabase credentials missing. Client initialization skipped.')
+        return null as any
+    }
+
     // Используем @supabase/supabase-js напрямую с отключенными locks
     client = createSupabaseClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        supabaseUrl,
+        supabaseKey,
         {
             auth: {
                 persistSession: true,
