@@ -13,11 +13,14 @@ export function createClient(): SupabaseClient {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
+    // Если переменных нет, выводим ошибку в консоль, но не возвращаем null, 
+    // чтобы не вызывать client-side exception при обращении к методам
     if (!supabaseUrl || !supabaseKey) {
-        // Во время сборки на Vercel переменные могут быть временно недоступны
-        // Возвращаем пустой объект или null, чтобы не ломать билд
-        console.warn('Supabase credentials missing. Client initialization skipped.')
-        return null as any
+        if (typeof window !== 'undefined') {
+            console.error('CRITICAL: Supabase variables are missing! Check Vercel Environment Variables.')
+        }
+        // Возвращаем объект-пустышку, чтобы методы типа .auth не вызывали ошибку на черном экране
+        return {} as any
     }
 
     // Используем @supabase/supabase-js напрямую с отключенными locks
