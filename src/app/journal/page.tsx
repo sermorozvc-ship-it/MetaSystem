@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
-    BookOpen, ArrowLeft, Plus, Trash2, Save,
+    ArrowLeft, Plus, Trash2, Save,
     Calendar, Heart, Frown, Meh, Smile, SmilePlus,
     Droplets, Moon, Dumbbell, Apple, X, Edit2, AlertCircle, RefreshCw,
     Camera, Upload, Eye
@@ -212,10 +212,7 @@ export default function JournalPage() {
                             <ArrowLeft className="w-6 h-6 group-hover:-translate-x-1 transition-transform" />
                         </button>
                         <div>
-                            <div className="flex items-center gap-2">
-                                <BookOpen className="w-6 h-6 text-meta-orange" />
-                                <h1 className="text-2xl md:text-4xl font-black text-white tracking-tight italic">ДНЕВНИК</h1>
-                            </div>
+                            <h1 className="text-2xl md:text-4xl font-black text-white tracking-tight italic">ДНЕВНИК</h1>
                             <p className="text-sm text-gray-500 font-medium mt-1 uppercase tracking-wider">Отслеживание формы и состояния</p>
                         </div>
                     </div>
@@ -488,7 +485,7 @@ export default function JournalPage() {
                 {entries.length === 0 && !isLoading ? (
                     <div className="glass-card p-12 md:p-24 text-center flex flex-col items-center">
                         <div className="w-32 h-32 rounded-[3rem] bg-white/5 flex items-center justify-center mb-10 group-hover:scale-110 transition-all">
-                            <BookOpen className="w-16 h-16 text-gray-800" />
+                            <Plus className="w-16 h-16 text-gray-800" />
                         </div>
                         <h3 className="text-3xl font-black text-white italic mb-4">ЖУРНАЛ ПУСТ</h3>
                         <button onClick={handleCreateNew} className="px-12 py-5 rounded-[2rem] bg-white/5 border border-white/10 text-white font-black uppercase tracking-[2px] flex items-center gap-4">

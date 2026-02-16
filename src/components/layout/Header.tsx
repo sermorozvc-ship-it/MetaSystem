@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Bell, LogOut, User, MessageSquare, Menu, X } from 'lucide-react'
+import { Search, Bell, LogOut, User, MessageSquare, Menu, X, Calendar, CheckCircle, TrendingUp } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/client'
+import { courseData } from '@/lib/data/courseData'
 
 interface HeaderProps {
     currentDay?: number
@@ -17,7 +18,37 @@ export default function Header({ currentDay = 1, userName: propUserName }: Heade
     const [showUserMenu, setShowUserMenu] = useState(false)
     const [unreadMessages, setUnreadMessages] = useState(0)
 
+    // Search states
+    const [searchQuery, setSearchQuery] = useState('')
+    const [isSearchFocused, setIsSearchFocused] = useState(false)
+
     const userName = propUserName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Атлет'
+
+    // Search logic
+    const allSearchItems = [
+        { title: 'Дневник', subtitle: 'ЛОГ СОСТОЯНИЯ', href: '/journal', type: 'nav' },
+        { title: 'Прогресс', subtitle: 'АНАЛИТИКА', href: '/progress', type: 'nav' },
+        { title: 'Сообщения', subtitle: 'ЧАТ С КУРАТОРОМ', href: '/messages', type: 'nav' },
+        ...courseData.map(d => ({
+            title: `День ${d.dayNumber}: ${d.title}`,
+            subtitle: 'КУРС / ПЕРЕЙТИ К ДНЮ',
+            href: `/dashboard?day=${d.dayNumber}`,
+            type: 'day'
+        })),
+        ...courseData.flatMap(d => d.tasks.map(t => ({
+            title: t.text,
+            subtitle: `ЗАДАНИЕ / ДЕНЬ ${d.dayNumber}`,
+            href: `/dashboard?day=${d.dayNumber}`,
+            type: 'task'
+        })))
+    ]
+
+    const searchResults = searchQuery.trim() === ''
+        ? []
+        : allSearchItems.filter(item =>
+            item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            item.subtitle.toLowerCase().includes(searchQuery.toLowerCase())
+        ).slice(0, 8)
 
     useEffect(() => {
         if (user) {
@@ -73,13 +104,54 @@ export default function Header({ currentDay = 1, userName: propUserName }: Heade
             {/* Right Section */}
             <div className="flex items-center gap-2 md:gap-4 shrink-0 ml-2">
                 {/* Search - desktop only */}
-                <div className="relative hidden lg:block">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <div className="relative hidden lg:block group">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-meta-orange transition-colors" />
                     <input
-                        type="text"
-                        placeholder="Поиск..."
-                        className="glass-input pl-11 pr-4 py-2.5 w-64 text-sm"
+                        type="search"
+                        placeholder="Найти задание или раздел..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onFocus={() => setIsSearchFocused(true)}
+                        onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
+                        className="glass-input pl-11 pr-4 py-2.5 w-80 text-sm focus:w-96 transition-all"
                     />
+
+                    {/* Search Results Dropdown */}
+                    {isSearchFocused && searchQuery.trim() !== '' && (
+                        <div className="absolute top-full mt-2 w-full glass-card p-2 z-[100] animate-fade-in shadow-2xl border-white/20">
+                            <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                                {searchResults.length > 0 ? (
+                                    <>
+                                        {searchResults.map((result, idx) => (
+                                            <button
+                                                key={idx}
+                                                onClick={() => {
+                                                    router.push(result.href)
+                                                    setSearchQuery('')
+                                                }}
+                                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl
+                                                           text-gray-300 hover:bg-white/5 hover:text-white transition-all text-left group/item"
+                                            >
+                                                <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center group-hover/item:bg-meta-orange/20">
+                                                    {result.type === 'day' ? <Calendar className="w-4 h-4 text-blue-400" /> :
+                                                        result.type === 'nav' ? <TrendingUp className="w-4 h-4 text-meta-orange" /> :
+                                                            <CheckCircle className="w-4 h-4 text-emerald-400" />}
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-bold tracking-tight">{result.title}</p>
+                                                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">{result.subtitle}</p>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </>
+                                ) : (
+                                    <div className="p-4 text-center">
+                                        <p className="text-xs text-gray-500 font-bold uppercase tracking-widest">Ничего не найдено</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Notifications / Messages */}
