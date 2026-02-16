@@ -81,6 +81,7 @@ export default function AdminPage() {
     const [showBlockModal, setShowBlockModal] = useState(false)
     const [showReportModal, setShowReportModal] = useState(false)
     const [selectedReport, setSelectedReport] = useState<DayReportWithUser | null>(null)
+    const [userModalTab, setUserModalTab] = useState<'progress' | 'reports' | 'messages'>('progress')
 
     // Form states
     const [messageText, setMessageText] = useState('')
@@ -179,8 +180,9 @@ export default function AdminPage() {
     }, [user, authLoading])
 
 
-    const handleUserClick = async (userItem: UserWithProgress) => {
+    const handleUserClick = async (userItem: UserWithProgress, initialTab: 'progress' | 'reports' | 'messages' = 'progress') => {
         setSelectedUser(userItem)
+        setUserModalTab(initialTab)
         setShowUserModal(true)
 
         try {
@@ -458,8 +460,8 @@ export default function AdminPage() {
                                 key={report.id}
                                 className="glass-card p-4 hover:bg-deep-dark-200/30 transition-colors cursor-pointer"
                                 onClick={() => {
-                                    setSelectedReport(report)
-                                    setShowReportModal(true)
+                                    const targetUser = users.find(u => u.id === report.user_id)
+                                    if (targetUser) handleUserClick(targetUser, 'reports')
                                 }}
                             >
                                 <div className="flex items-center gap-3 mb-3">
@@ -526,7 +528,7 @@ export default function AdminPage() {
                                 className="glass-card p-4 hover:bg-deep-dark-200/30 transition-colors cursor-pointer"
                                 onClick={() => {
                                     const targetUser = users.find(u => u.id === msg.to_user_id || u.id === msg.from_user_id)
-                                    if (targetUser) handleUserClick(targetUser)
+                                    if (targetUser) handleUserClick(targetUser, 'messages')
                                 }}
                             >
                                 <div className="flex items-start gap-3 mb-2">
@@ -604,65 +606,57 @@ export default function AdminPage() {
                             </button>
                         </div>
 
-                        {/* User Stats */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
-                            <div className="glass-card p-3 md:p-4 bg-deep-dark-200/40">
-                                <p className="text-xs md:text-sm text-gray-400 mb-1">Заданий</p>
-                                <p className="text-xl md:text-2xl font-bold text-white">
-                                    {selectedUser.completed_days}/{courseData.reduce((acc, d) => acc + d.tasks.length, 0)}
-                                </p>
-                            </div>
-                            <div className="glass-card p-3 md:p-4 bg-deep-dark-200/40">
-                                <p className="text-xs md:text-sm text-gray-400 mb-1">Отчётов</p>
-                                <p className="text-xl md:text-2xl font-bold text-white">{selectedUserReports.length}</p>
-                            </div>
-                            <div className="glass-card p-3 md:p-4 bg-deep-dark-200/40">
-                                <p className="text-xs md:text-sm text-gray-400 mb-1">Сообщений</p>
-                                <p className="text-xl md:text-2xl font-bold text-white">{selectedUserMessages.length}</p>
-                            </div>
-                            <div className="glass-card p-3 md:p-4 bg-deep-dark-200/40">
-                                <p className="text-xs md:text-sm text-gray-400 mb-1">Регистрация</p>
-                                <p className="text-base md:text-lg font-bold text-white">
-                                    {new Date(selectedUser.created_at).toLocaleDateString('ru-RU')}
-                                </p>
-                            </div>
+                        {/* User Tabs */}
+                        <div className="flex gap-4 border-b border-white/5 mb-6">
+                            {[
+                                { id: 'progress', label: 'Прогресс', icon: TrendingUp },
+                                { id: 'reports', label: 'Отчёты', icon: FileCheck },
+                                { id: 'messages', label: 'Сообщения', icon: MessageSquare }
+                            ].map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setUserModalTab(tab.id as any)}
+                                    className={`flex items-center gap-2 px-1 pb-4 text-sm font-bold transition-all relative ${userModalTab === tab.id ? 'text-meta-orange' : 'text-gray-500 hover:text-gray-300'
+                                        }`}
+                                >
+                                    <tab.icon className="w-4 h-4" />
+                                    {tab.label}
+                                    {userModalTab === tab.id && (
+                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-meta-orange rounded-full" />
+                                    )}
+                                </button>
+                            ))}
                         </div>
 
-                        {/* Action Buttons */}
-                        <div className="flex flex-wrap gap-2 md:gap-3 mb-4 md:mb-6">
-                            <button
-                                onClick={() => setShowMessageModal(true)}
-                                className="glass-button flex items-center gap-2 text-sm px-4 py-2.5"
-                            >
-                                <Send className="w-4 h-4" />
-                                Написать
-                            </button>
-                            {selectedUser.is_blocked ? (
-                                <button
-                                    onClick={handleUnblockUser}
-                                    className="glass-button-secondary flex items-center gap-2 text-green-400 text-sm px-4 py-2.5"
-                                >
-                                    <CheckCircle className="w-4 h-4" />
-                                    Разблокировать
-                                </button>
-                            ) : (
-                                <button
-                                    onClick={() => setShowBlockModal(true)}
-                                    className="glass-button-secondary flex items-center gap-2 text-red-400 text-sm px-4 py-2.5"
-                                >
-                                    <Ban className="w-4 h-4" />
-                                    Заблокировать
-                                </button>
-                            )}
-                        </div>
+                        {/* Overview Tab Content */}
+                        {userModalTab === 'progress' && (
+                            <div className="animate-fade-in">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-8">
+                                    <div className="glass-card p-3 md:p-4 bg-deep-dark-200/40">
+                                        <p className="text-xs md:text-sm text-gray-400 mb-1">Заданий</p>
+                                        <p className="text-xl md:text-2xl font-bold text-white">
+                                            {selectedUser.completed_days}/{courseData.reduce((acc, d) => acc + d.tasks.length, 0)}
+                                        </p>
+                                    </div>
+                                    <div className="glass-card p-3 md:p-4 bg-deep-dark-200/40">
+                                        <p className="text-xs md:text-sm text-gray-400 mb-1">Отчётов</p>
+                                        <p className="text-xl md:text-2xl font-bold text-white">{selectedUserReports.length}</p>
+                                    </div>
+                                    <div className="glass-card p-3 md:p-4 bg-deep-dark-200/40">
+                                        <p className="text-xs md:text-sm text-gray-400 mb-1">Сообщений</p>
+                                        <p className="text-xl md:text-2xl font-bold text-white">{selectedUserMessages.length}</p>
+                                    </div>
+                                    <div className="glass-card p-3 md:p-4 bg-deep-dark-200/40">
+                                        <p className="text-xs md:text-sm text-gray-400 mb-1">Регистрация</p>
+                                        <p className="text-base md:text-lg font-bold text-white">
+                                            {new Date(selectedUser.created_at).toLocaleDateString('ru-RU')}
+                                        </p>
+                                    </div>
+                                </div>
 
-                        {/* Tasks Progress Section */}
-                        <div className="mb-6">
-                            <h3 className="text-base md:text-lg font-semibold text-white mb-3 md:mb-4">Прогресс заданий ({courseData.length} дней)</h3>
-                            <div className="glass-card p-3 md:p-5 bg-deep-dark-200/40">
-                                <div className="grid grid-cols-1 gap-3 md:gap-4">
+                                <h3 className="text-base md:text-lg font-bold text-white mb-4 italic uppercase tracking-wider">Прогресс заданий (7 дней)</h3>
+                                <div className="glass-card p-4 md:p-6 bg-deep-dark-200/40 space-y-4">
                                     {courseData.map(day => {
-                                        // Filter completed tasks for this day from the flat list
                                         const completedTasks = userProgressDetails.filter(p => p.day_number === day.dayNumber && p.completed === true)
                                         const completedTaskIds = completedTasks.map(p => p.task_id)
                                         const totalTasks = day.tasks.length
@@ -670,184 +664,146 @@ export default function AdminPage() {
                                         const percent = totalTasks > 0 ? Math.round((completedCount / totalTasks) * 100) : 0
 
                                         return (
-                                            <div key={day.dayNumber} className="flex items-center gap-2 md:gap-4">
-                                                <div className="w-12 md:w-16 flex-shrink-0">
-                                                    <span className="text-xs md:text-sm text-gray-400">День {day.dayNumber}</span>
+                                            <div key={day.dayNumber} className="flex items-center gap-4">
+                                                <div className="w-16 flex-shrink-0">
+                                                    <span className="text-xs font-black text-gray-500 uppercase">День {day.dayNumber}</span>
                                                 </div>
-
-                                                <div className="flex-1 flex gap-1 md:gap-1.5 h-6 md:h-8 items-center bg-deep-dark/30 rounded-lg px-1.5 md:px-2">
+                                                <div className="flex-1 flex gap-1.5 h-6 items-center bg-black/30 rounded-lg px-2">
                                                     {day.tasks.map(task => {
                                                         const isCompleted = completedTaskIds.includes(task.id)
-                                                        // Find completion timestamp if available
-                                                        const detail = completedTasks.find(p => p.task_id === task.id)
-                                                        const dateStr = detail?.completed_at
-                                                            ? new Date(detail.completed_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-                                                            : ''
-
                                                         return (
                                                             <div
                                                                 key={task.id}
-                                                                title={`${task.text}${dateStr ? ` (Выполнено: ${dateStr})` : ''}`}
-                                                                className={`h-4 flex-1 rounded transition-colors relative group ${isCompleted
-                                                                    ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.3)]'
-                                                                    : 'bg-white/5 border border-white/5'
-                                                                    }`}
-                                                            >
-                                                                {/* Tooltip */}
-                                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-[200px] 
-                                                                            bg-gray-800 text-xs text-white p-2 rounded opacity-0 group-hover:opacity-100 
-                                                                            pointer-events-none transition-opacity z-10 border border-white/10 shadow-xl">
-                                                                    <div className="font-semibold mb-0.5">{task.text}</div>
-                                                                    {dateStr && <div className="text-gray-400 text-[10px]">{dateStr}</div>}
-                                                                </div>
-                                                            </div>
+                                                                className={`h-3 flex-1 rounded-full transition-all ${isCompleted ? 'bg-meta-orange shadow-[0_0_10px_rgba(255,107,0,0.3)]' : 'bg-white/5'}`}
+                                                            />
                                                         )
                                                     })}
                                                 </div>
-
-                                                <div className="w-12 text-right flex-shrink-0">
-                                                    <span className={`text-sm font-bold ${percent === 100 ? 'text-green-400' :
-                                                        percent > 50 ? 'text-blue-400' : 'text-gray-500'
-                                                        }`}>
-                                                        {percent}%
-                                                    </span>
+                                                <div className="w-10 text-right">
+                                                    <span className="text-xs font-bold text-white">{percent}%</span>
                                                 </div>
                                             </div>
                                         )
                                     })}
                                 </div>
                             </div>
-                        </div>
+                        )}
 
-                        {/* Reports Section */}
-                        <div className="mb-6">
-                            <h3 className="text-lg font-semibold text-white mb-4">Отчёты по дням</h3>
-                            <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
-                                {[1, 2, 3, 4, 5, 6, 7].map(day => {
-                                    const report = selectedUserReports.find(r => r.day_number === day)
-                                    return (
-                                        <div
-                                            key={day}
-                                            onClick={() => {
-                                                if (report) {
-                                                    setSelectedReport(report)
-                                                    setShowReportModal(true)
-                                                }
-                                            }}
-                                            className={`glass-card p-4 text-center cursor-pointer transition-all ${report
-                                                ? report.status === 'approved'
-                                                    ? 'border-green-500/30 bg-green-500/10'
-                                                    : report.status === 'rejected'
-                                                        ? 'border-red-500/30 bg-red-500/10'
-                                                        : 'border-yellow-500/30 bg-yellow-500/10'
-                                                : 'bg-deep-dark-200/40'
-                                                }`}
-                                        >
-                                            <p className="text-xs text-gray-400 mb-1">День</p>
-                                            <p className="text-lg font-bold text-white">{day}</p>
-                                            {report && (
-                                                <div className="mt-2">
-                                                    {report.status === 'approved' && <CheckCircle className="w-4 h-4 text-green-400 mx-auto" />}
-                                                    {report.status === 'rejected' && <XCircle className="w-4 h-4 text-red-400 mx-auto" />}
-                                                    {report.status === 'pending' && <Clock className="w-4 h-4 text-yellow-400 mx-auto" />}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )
-                                })}
+                        {/* Reports Tab Content */}
+                        {userModalTab === 'reports' && (
+                            <div className="animate-fade-in space-y-6">
+                                <div className="grid grid-cols-4 sm:grid-cols-7 gap-3">
+                                    {[1, 2, 3, 4, 5, 6, 7].map(day => {
+                                        const report = selectedUserReports.find(r => r.day_number === day)
+                                        return (
+                                            <div
+                                                key={day}
+                                                onClick={() => {
+                                                    if (report) {
+                                                        setSelectedReport(report)
+                                                        setShowReportModal(true)
+                                                    }
+                                                }}
+                                                className={`glass-card p-4 text-center cursor-pointer transition-all border-2 ${report
+                                                    ? report.status === 'approved'
+                                                        ? 'border-green-500/20 bg-green-500/5 hover:border-green-500/40'
+                                                        : report.status === 'rejected'
+                                                            ? 'border-red-500/20 bg-red-500/5 hover:border-red-500/40'
+                                                            : 'border-yellow-500/20 bg-yellow-500/5 hover:border-yellow-500/40'
+                                                    : 'bg-deep-dark-200/40 border-transparent opacity-40'
+                                                    }`}
+                                            >
+                                                <p className="text-[10px] text-gray-500 font-bold uppercase mb-1">День</p>
+                                                <p className="text-xl font-black text-white">{day}</p>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+
+                                {selectedUserReports.length === 0 && (
+                                    <p className="text-center py-10 text-gray-500 italic">Пользователь еще не отправлял отчеты</p>
+                                )}
                             </div>
-                        </div>
+                        )}
 
-                        {/* Messages History */}
-                        {selectedUserMessages.length > 0 && (
-                            <div>
-                                <h3 className="text-lg font-semibold text-white mb-4">История сообщений</h3>
-                                <div className="space-y-3 max-h-48 overflow-y-auto">
-                                    {selectedUserMessages.map(msg => (
-                                        <div key={msg.id} className="glass-card p-4 bg-deep-dark-200/40">
-                                            <div className="flex items-start justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    {msg.message_type === 'warning' && (
-                                                        <AlertTriangle className="w-4 h-4 text-yellow-400" />
-                                                    )}
-                                                    <span className="text-sm text-gray-400">
-                                                        {new Date(msg.created_at).toLocaleDateString('ru-RU')}
-                                                    </span>
+                        {/* Messages Tab Content */}
+                        {userModalTab === 'messages' && (
+                            <div className="animate-fade-in flex flex-col h-[500px]">
+                                <div className="flex-1 overflow-y-auto space-y-4 mb-6 pr-2 custom-scrollbar">
+                                    {selectedUserMessages.length === 0 ? (
+                                        <div className="h-full flex flex-col items-center justify-center text-center">
+                                            <div className="w-16 h-16 rounded-3xl bg-white/5 flex items-center justify-center mb-4">
+                                                <MessageSquare className="w-8 h-8 text-gray-600" />
+                                            </div>
+                                            <p className="text-gray-500">История переписки пуста</p>
+                                        </div>
+                                    ) : (
+                                        selectedUserMessages.map(msg => (
+                                            <div key={msg.id} className={`flex ${msg.from_user_id === user?.id ? 'justify-end' : 'justify-start'}`}>
+                                                <div className={`max-w-[80%] p-4 rounded-3xl ${msg.from_user_id === user?.id
+                                                    ? 'bg-meta-orange text-white rounded-tr-none shadow-lg shadow-meta-orange/10'
+                                                    : 'bg-deep-dark-200/80 text-gray-200 rounded-tl-none border border-white/5'
+                                                    }`}>
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        {msg.message_type === 'warning' && <AlertTriangle className="w-3 h-3 text-yellow-400" />}
+                                                        <span className="text-[10px] opacity-60 font-bold uppercase tracking-wider">
+                                                            {new Date(msg.created_at).toLocaleDateString('ru-RU')} {new Date(msg.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-sm font-medium whitespace-pre-wrap leading-relaxed">{msg.message}</p>
                                                 </div>
                                             </div>
-                                            <p className="text-white mt-2">{msg.message}</p>
-                                        </div>
-                                    ))}
+                                        ))
+                                    )}
+                                </div>
+
+                                {/* Quick Reply Area */}
+                                <div className="pt-4 border-t border-white/5 space-y-4">
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setMessageType('message')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${messageType === 'message' ? 'bg-meta-orange text-white' : 'bg-white/5 text-gray-500'}`}>Обычное</button>
+                                        <button onClick={() => setMessageType('warning')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${messageType === 'warning' ? 'bg-yellow-500 text-black' : 'bg-white/5 text-gray-500'}`}>Предупреждение</button>
+                                    </div>
+                                    <div className="relative">
+                                        <textarea
+                                            value={messageText}
+                                            onChange={(e) => setMessageText(e.target.value)}
+                                            placeholder="Напишите сообщение..."
+                                            className="glass-input w-full h-24 resize-none pr-16 text-sm"
+                                        />
+                                        <button
+                                            onClick={handleSendMessage}
+                                            disabled={!messageText.trim() || isSendingMessage}
+                                            className="absolute bottom-4 right-4 w-10 h-10 rounded-xl bg-meta-orange text-white flex items-center justify-center disabled:opacity-50 hover:scale-105 active:scale-95 transition-all shadow-lg shadow-meta-orange/30"
+                                        >
+                                            {isSendingMessage ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         )}
-                    </div>
-                </div>
-            )}
 
-            {/* Send Message Modal */}
-            {showMessageModal && selectedUser && (
-                <div className="modal-overlay" onClick={() => setShowMessageModal(false)}>
-                    <div
-                        className="glass-card p-5 md:p-6 w-full max-w-lg animate-fade-in mx-3 md:mx-4"
-                        onClick={e => e.stopPropagation()}
-                    >
-                        <h2 className="text-xl font-bold text-white mb-4">
-                            Сообщение для {selectedUser.full_name || selectedUser.email}
-                        </h2>
-
-                        <div className="flex gap-2 mb-4">
-                            <button
-                                onClick={() => setMessageType('message')}
-                                className={`flex-1 py-2 rounded-xl transition-all ${messageType === 'message'
-                                    ? 'bg-meta-orange text-white'
-                                    : 'bg-deep-dark-200/60 text-gray-400'
-                                    }`}
-                            >
-                                Обычное
-                            </button>
-                            <button
-                                onClick={() => setMessageType('warning')}
-                                className={`flex-1 py-2 rounded-xl transition-all ${messageType === 'warning'
-                                    ? 'bg-yellow-500 text-black'
-                                    : 'bg-deep-dark-200/60 text-gray-400'
-                                    }`}
-                            >
-                                Предупреждение
-                            </button>
-                        </div>
-
-                        <textarea
-                            value={messageText}
-                            onChange={(e) => setMessageText(e.target.value)}
-                            placeholder="Введите сообщение..."
-                            className="glass-input w-full h-32 resize-none mb-4"
-                        />
-
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => setShowMessageModal(false)}
-                                className="glass-button-secondary flex-1"
-                            >
-                                Отмена
-                            </button>
-                            <button
-                                onClick={handleSendMessage}
-                                disabled={!messageText.trim() || isSendingMessage}
-                                className="glass-button flex-1 flex items-center justify-center gap-2 disabled:opacity-50"
-                            >
-                                {isSendingMessage ? (
-                                    <RefreshCw className="w-4 h-4 animate-spin" />
-                                ) : (
-                                    <Send className="w-4 h-4" />
-                                )}
-                                {isSendingMessage ? 'Отправка...' : 'Отправить'}
-                            </button>
+                        {/* Danger Zone */}
+                        <div className="mt-12 pt-8 border-t border-white/5 flex justify-end gap-3">
+                            {!selectedUser.is_blocked && (
+                                <button
+                                    onClick={() => setShowBlockModal(true)}
+                                    className="flex items-center gap-2 px-6 py-3 rounded-xl bg-red-500/10 text-red-500 text-xs font-bold hover:bg-red-500/20 transition-all uppercase tracking-widest"
+                                >
+                                    <Ban className="w-4 h-4" /> Заблокировать
+                                </button>
+                            )}
+                            {selectedUser.is_blocked && (
+                                <button
+                                    onClick={handleUnblockUser}
+                                    className="flex items-center gap-2 px-6 py-3 rounded-xl bg-green-500/10 text-green-500 text-xs font-bold hover:bg-green-500/20 transition-all uppercase tracking-widest"
+                                >
+                                    <CheckCircle className="w-4 h-4" /> Разблокировать
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
             )}
-
             {/* Block User Modal */}
             {showBlockModal && selectedUser && (
                 <div className="modal-overlay" onClick={() => setShowBlockModal(false)}>
