@@ -13,6 +13,13 @@ export const metadata: Metadata = {
     title: 'Метаболический Запуск | 7-дневный курс',
     description: 'Премиум 7-дневный фитнес курс для перезагрузки метаболизма. Научный подход к похудению без голодовок.',
     keywords: ['фитнес', 'метаболизм', 'похудение', 'здоровье', 'тренировки'],
+    manifest: '/manifest.json',
+    themeColor: '#FF6B00',
+    appleWebApp: {
+        capable: true,
+        statusBarStyle: 'black-translucent',
+        title: 'MetaSystem',
+    },
 }
 
 export default function RootLayout({

@@ -12,6 +12,9 @@ export interface JournalEntry {
     workout_done: boolean
     nutrition_notes: string
     reflection: string
+    photo_front?: string
+    photo_side?: string
+    photo_back?: string
     created_at?: string
 }
 
@@ -82,5 +85,39 @@ export async function deleteJournalEntry(date: string): Promise<{ success: boole
     } catch (e: any) {
         console.error('Error deleting journal entry:', e)
         return { success: false, error: e.message }
+    }
+}
+
+/**
+ * Uploads a photo to Supabase storage
+ */
+export async function uploadJournalPhoto(file: File, type: 'front' | 'side' | 'back'): Promise<{ url?: string; error?: string }> {
+    const supabase = createClient()
+    const user = await safeGetUser()
+
+    if (!user) return { error: 'Требуется авторизация' }
+
+    try {
+        const fileExt = file.name.split('.').pop()
+        const fileName = `${user.id}/${Date.now()}_${type}.${fileExt}`
+        const filePath = `journal/${fileName}`
+
+        const { error: uploadError } = await supabase.storage
+            .from('journal-photos')
+            .upload(filePath, file, {
+                cacheControl: '3600',
+                upsert: true
+            })
+
+        if (uploadError) throw uploadError
+
+        const { data: { publicUrl } } = supabase.storage
+            .from('journal-photos')
+            .getPublicUrl(filePath)
+
+        return { url: publicUrl }
+    } catch (e: any) {
+        console.error('Error uploading photo:', e)
+        return { error: e.message }
     }
 }

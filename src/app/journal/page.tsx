@@ -2,14 +2,16 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import {
     BookOpen, ArrowLeft, Plus, Trash2, Save,
     Calendar, Heart, Frown, Meh, Smile, SmilePlus,
-    Droplets, Moon, Dumbbell, Apple, X, Edit2, AlertCircle, RefreshCw
+    Droplets, Moon, Dumbbell, Apple, X, Edit2, AlertCircle, RefreshCw,
+    Camera, Upload, Eye
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import Sidebar from '@/components/layout/Sidebar'
-import { getJournalEntries, saveJournalEntry, deleteJournalEntry, JournalEntry } from '@/lib/services/journal'
+import { getJournalEntries, saveJournalEntry, deleteJournalEntry, uploadJournalPhoto, JournalEntry } from '@/lib/services/journal'
 
 const moodIcons = [
     { value: 1, icon: Frown, label: 'Ужасно', color: 'text-red-400', bg: 'bg-red-500/10' },
@@ -31,6 +33,7 @@ export default function JournalPage() {
     const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [retryCount, setRetryCount] = useState(0)
+    const [uploading, setUploading] = useState<Record<string, boolean>>({})
 
     const today = new Date().toISOString().split('T')[0]
 
@@ -38,11 +41,14 @@ export default function JournalPage() {
         date: today,
         mood: 3,
         energy: 3,
-        sleep_hours: 0, // По умолчанию 0, но в инпуте будет пусто
+        sleep_hours: 0,
         water_liters: 0,
         workout_done: false,
         nutrition_notes: '',
-        reflection: ''
+        reflection: '',
+        photo_front: '',
+        photo_side: '',
+        photo_back: ''
     }
 
     const [form, setForm] = useState<JournalEntry>(initialFormState)
@@ -51,18 +57,12 @@ export default function JournalPage() {
         setIsLoading(true)
         setError(null)
         try {
-            if (authLoading) return; // Wait for auth
+            if (authLoading) return;
 
             if (!user) {
-                // Demo mode fallback
-                try {
-                    const stored = localStorage.getItem('demo_journal')
-                    const demoEntries = stored ? JSON.parse(stored) : []
-                    setEntries(Array.isArray(demoEntries) ? demoEntries : [])
-                } catch (e) {
-                    console.error('Demo journal parse error:', e)
-                    setEntries([])
-                }
+                const stored = localStorage.getItem('demo_journal')
+                const demoEntries = stored ? JSON.parse(stored) : []
+                setEntries(Array.isArray(demoEntries) ? demoEntries : [])
                 setIsLoading(false)
                 return
             }
@@ -98,7 +98,6 @@ export default function JournalPage() {
         setError(null)
         try {
             if (!user) {
-                // Demo mode save
                 const stored = localStorage.getItem('demo_journal')
                 const demoEntries = stored ? JSON.parse(stored) : []
                 const newEntry = { ...form, id: Date.now(), created_at: new Date().toISOString() }
@@ -140,25 +139,41 @@ export default function JournalPage() {
             const result = await deleteJournalEntry(date)
             if (result.success) {
                 await loadEntries()
-                if (selectedEntry?.date === date) setSelectedEntry(null)
             }
         } catch (e) {
             console.error('Delete failed:', e)
         }
     }
 
-    // Helper for number inputs to remove leading zeros/placeholder issue
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, type: 'front' | 'side' | 'back') => {
+        const file = e.target.files?.[0]
+        if (!file) return
+
+        if (!user) {
+            alert('Загрузка фото доступна только авторизованным пользователям.')
+            return
+        }
+
+        setUploading(prev => ({ ...prev, [type]: true }))
+        try {
+            const result = await uploadJournalPhoto(file, type)
+            if (result.url) {
+                setForm(prev => ({ ...prev, [`photo_${type}`]: result.url }))
+            } else {
+                alert(result.error || 'Ошибка загрузки фото')
+            }
+        } finally {
+            setUploading(prev => ({ ...prev, [type]: false }))
+        }
+    }
+
     const handleNumberFieldChange = (field: 'sleep_hours' | 'water_liters', val: string) => {
-        // Allow empty string for clearing
         if (val === '') {
             setForm(prev => ({ ...prev, [field]: 0 }))
             return
         }
-
-        // Convert comma to dot for localized inputs
         const normalized = val.replace(',', '.')
         const parsed = parseFloat(normalized)
-
         if (!isNaN(parsed)) {
             setForm(prev => ({ ...prev, [field]: parsed }))
         }
@@ -199,9 +214,9 @@ export default function JournalPage() {
                         <div>
                             <div className="flex items-center gap-2">
                                 <BookOpen className="w-6 h-6 text-meta-orange" />
-                                <h1 className="text-2xl md:text-4xl font-black text-white tracking-tight">Дневник</h1>
+                                <h1 className="text-2xl md:text-4xl font-black text-white tracking-tight italic">ДНЕВНИК</h1>
                             </div>
-                            <p className="text-sm text-gray-500 font-medium mt-1">Твое состояние — ключ к успеху</p>
+                            <p className="text-sm text-gray-500 font-medium mt-1 uppercase tracking-wider">Отслеживание формы и состояния</p>
                         </div>
                     </div>
 
@@ -209,7 +224,6 @@ export default function JournalPage() {
                         <button
                             onClick={() => setRetryCount(c => c + 1)}
                             className="p-3 rounded-2xl bg-white/5 border border-white/5 text-gray-500 hover:text-white transition-all"
-                            title="Обновить данные"
                         >
                             <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin text-meta-orange' : ''}`} />
                         </button>
@@ -231,12 +245,6 @@ export default function JournalPage() {
                         <div className="flex-1">
                             <p className="font-bold text-sm mb-1 uppercase tracking-wider">Ошибка доступа</p>
                             <p className="text-sm opacity-80 leading-relaxed font-medium">{error}</p>
-                            <button
-                                onClick={() => setRetryCount(c => c + 1)}
-                                className="mt-3 text-xs font-bold underline hover:no-underline"
-                            >
-                                Попробовать снова
-                            </button>
                         </div>
                     </div>
                 )}
@@ -261,6 +269,60 @@ export default function JournalPage() {
                             </div>
 
                             <div className="space-y-8">
+                                {/* Photos Section - NEW */}
+                                <div>
+                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-[2px] mb-4 block">Фотоотчет (обязательно для прогресса)</label>
+                                    <div className="grid grid-cols-3 gap-3 md:gap-4">
+                                        {(['front', 'side', 'back'] as const).map(type => {
+                                            const photoUrl = form[`photo_${type}` as keyof JournalEntry] as string
+                                            const isUploading = uploading[type]
+                                            return (
+                                                <div key={type} className="relative group">
+                                                    <label className={`aspect-[3/4] rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden
+                                                        ${photoUrl ? 'border-emerald-500/30' : 'border-white/10 hover:border-meta-orange/30 bg-white/5'}`}>
+                                                        {photoUrl ? (
+                                                            <div className="relative w-full h-full">
+                                                                <img src={photoUrl} alt={type} className="w-full h-full object-cover transition-transform group-hover:scale-110" />
+                                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                                    <Camera className="w-6 h-6 text-white" />
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                {isUploading ? (
+                                                                    <RefreshCw className="w-6 h-6 text-meta-orange animate-spin" />
+                                                                ) : (
+                                                                    <>
+                                                                        <Camera className="w-6 h-6 text-gray-600 mb-2 group-hover:text-meta-orange transition-colors" />
+                                                                        <span className="text-[8px] md:text-[10px] font-black text-gray-600 uppercase text-center px-1">
+                                                                            {type === 'front' ? 'Анфас' : type === 'side' ? 'Профиль' : 'Спина'}
+                                                                        </span>
+                                                                    </>
+                                                                )}
+                                                            </>
+                                                        )}
+                                                        <input
+                                                            type="file"
+                                                            className="hidden"
+                                                            accept="image/*"
+                                                            onChange={(e) => handleFileChange(e, type)}
+                                                            disabled={isUploading}
+                                                        />
+                                                    </label>
+                                                    {photoUrl && (
+                                                        <button
+                                                            onClick={() => setForm(prev => ({ ...prev, [`photo_${type}`]: '' }))}
+                                                            className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white shadow-lg"
+                                                        >
+                                                            <X className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+
                                 {/* Date Selection */}
                                 <div className="p-4 rounded-3xl bg-white/5 border border-white/5 focus-within:border-meta-orange/50 transition-colors">
                                     <label className="text-[10px] font-black text-gray-500 uppercase tracking-[2px] mb-3 block">Дата записи</label>
@@ -275,7 +337,7 @@ export default function JournalPage() {
                                     </div>
                                 </div>
 
-                                {/* Mood Icons with scroll on mobile */}
+                                {/* Mood Icons */}
                                 <div>
                                     <label className="text-[10px] font-black text-gray-500 uppercase tracking-[2px] mb-4 block text-center">Ваше настроение</label>
                                     <div className="flex justify-between md:grid md:grid-cols-5 gap-0 md:gap-3 overflow-x-auto pb-4 md:pb-0 px-2 no-scrollbar">
@@ -363,7 +425,7 @@ export default function JournalPage() {
                                     </div>
                                 </div>
 
-                                {/* Workout Toggle - Full Width Card */}
+                                {/* Workout Toggle */}
                                 <button
                                     onClick={() => setForm({ ...form, workout_done: !form.workout_done })}
                                     className={`w-full group relative overflow-hidden flex items-center gap-5 p-6 rounded-[2rem] border-2 transition-all duration-500
@@ -384,48 +446,33 @@ export default function JournalPage() {
                                     </div>
                                 </button>
 
-                                {/* Nutrition Notes Expandable Area */}
-                                <div className="space-y-4">
-                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-[2px] flex items-center gap-2 ml-2">
-                                        <Apple className="w-3.5 h-3.5 text-meta-orange" /> Питание
-                                    </label>
+                                {/* Nutrition & Reflection */}
+                                <div className="space-y-6">
                                     <textarea
                                         value={form.nutrition_notes}
                                         onChange={e => setForm({ ...form, nutrition_notes: e.target.value })}
-                                        placeholder="Что ели сегодня? Были ли отклонения от плана?"
+                                        placeholder="ПИТАНИЕ ЗА СЕГОДНЯ..."
                                         rows={2}
-                                        className="w-full bg-white/5 border-2 border-transparent focus:border-meta-orange/20 rounded-[2rem] p-6
-                                                 text-white placeholder:text-gray-700 focus:outline-none transition-all resize-none font-medium leading-relaxed"
+                                        className="w-full bg-white/5 border-2 border-transparent focus:border-meta-orange/20 rounded-[2rem] p-6 text-white placeholder:text-gray-700 focus:outline-none transition-all resize-none font-bold italic"
                                     />
-                                </div>
-
-                                {/* Reflection Card */}
-                                <div className="space-y-4">
-                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-[2px] flex items-center gap-2 ml-2">
-                                        <Heart className="w-3.5 h-3.5 text-red-400" /> Рефлексия
-                                    </label>
                                     <textarea
                                         value={form.reflection}
                                         onChange={e => setForm({ ...form, reflection: e.target.value })}
-                                        placeholder="Какие чувства сегодня? Что было самым удачным?"
+                                        placeholder="КАКИЕ МЫСЛИ И ЧУВСТВА СЕГОДНЯ?"
                                         rows={4}
-                                        className="w-full bg-white/5 border-2 border-transparent focus:border-red-400/20 rounded-[2.5rem] p-6 md:p-8
-                                                 text-white placeholder:text-gray-700 focus:outline-none transition-all resize-none font-medium leading-relaxed italic"
+                                        className="w-full bg-white/5 border-2 border-transparent focus:border-red-400/20 rounded-[2.5rem] p-6 md:p-8 text-white placeholder:text-gray-700 focus:outline-none transition-all resize-none font-bold italic leading-relaxed"
                                     />
                                 </div>
 
-                                {/* Submit Button */}
                                 <button
                                     onClick={handleSave}
-                                    disabled={saving}
+                                    disabled={saving || Object.values(uploading).some(v => v)}
                                     className="w-full py-6 rounded-3xl bg-meta-orange text-white font-black uppercase tracking-[4px]
                                              flex items-center justify-center gap-4 hover:bg-meta-orange-hover 
                                              disabled:opacity-50 disabled:grayscale transition-all duration-500 
                                              shadow-2xl shadow-meta-orange/30 active:scale-95 text-lg"
                                 >
-                                    {saving ? (
-                                        <RefreshCw className="w-6 h-6 animate-spin" />
-                                    ) : (
+                                    {saving ? <RefreshCw className="w-6 h-6 animate-spin" /> : (
                                         <>
                                             <Save className="w-6 h-6" />
                                             {form.id ? 'ОБНОВИТЬ' : 'СОХРАНИТЬ'}
@@ -437,23 +484,15 @@ export default function JournalPage() {
                     </div>
                 )}
 
-                {/* Items List - Grid Layout */}
+                {/* Items List */}
                 {entries.length === 0 && !isLoading ? (
-                    <div className="glass-card p-12 md:p-24 text-center flex flex-col items-center bg-white/[0.02] border-white/5 rounded-[4rem] group hover:bg-white/[0.04] transition-all">
-                        <div className="w-32 h-32 rounded-[3rem] bg-white/5 flex items-center justify-center mb-10 transition-transform group-hover:scale-110 shadow-inner">
+                    <div className="glass-card p-12 md:p-24 text-center flex flex-col items-center">
+                        <div className="w-32 h-32 rounded-[3rem] bg-white/5 flex items-center justify-center mb-10 group-hover:scale-110 transition-all">
                             <BookOpen className="w-16 h-16 text-gray-800" />
                         </div>
                         <h3 className="text-3xl font-black text-white italic mb-4">ЖУРНАЛ ПУСТ</h3>
-                        <p className="text-gray-500 mb-12 max-w-sm mx-auto text-lg leading-relaxed font-medium">
-                            Твой запуск начинается с ежедневного осознания своего состояния. Сделай первый отчет прямо сейчас.
-                        </p>
-                        <button
-                            onClick={handleCreateNew}
-                            className="px-12 py-5 rounded-[2rem] bg-white/5 border border-white/10 text-white font-black uppercase tracking-[2px]
-                                     flex items-center gap-4 hover:bg-white/10 transition-all active:scale-95 shadow-lg"
-                        >
-                            <Plus className="w-6 h-6 text-meta-orange" />
-                            НАЧАТЬ ЖУРНАЛ
+                        <button onClick={handleCreateNew} className="px-12 py-5 rounded-[2rem] bg-white/5 border border-white/10 text-white font-black uppercase tracking-[2px] flex items-center gap-4">
+                            <Plus className="w-6 h-6 text-meta-orange" /> НАЧАТЬ ЖУРНАЛ
                         </button>
                     </div>
                 ) : (
@@ -461,96 +500,69 @@ export default function JournalPage() {
                         {entries.map((entry) => {
                             const moodInfo = getMoodInfo(entry.mood)
                             const MoodIcon = moodInfo.icon
+                            const hasPhotos = entry.photo_front || entry.photo_side || entry.photo_back
 
                             return (
                                 <div
                                     key={entry.date}
-                                    className={`relative group bg-deep-dark-100/40 hover:bg-deep-dark-200/60 border border-white/5 
-                                              hover:border-meta-orange/20 rounded-[2.5rem] p-7 transition-all duration-500
-                                              ${selectedEntry?.date === entry.date ? 'ring-2 ring-meta-orange/50 shadow-2xl shadow-meta-orange/10' : ''}`}
+                                    className="relative group bg-deep-dark-100/40 hover:bg-deep-dark-200/60 border border-white/5 hover:border-meta-orange/20 rounded-[2.5rem] p-7 transition-all duration-500 overflow-hidden"
                                 >
-                                    {/* Edit/Delete Tools */}
-                                    <div className="absolute top-6 right-6 flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0">
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleEdit(entry); }}
-                                            className="w-10 h-10 rounded-2xl bg-white/5 backdrop-blur-md flex items-center justify-center text-gray-500 hover:text-white hover:bg-meta-orange/20 transition-all border border-white/5"
-                                        >
-                                            <Edit2 className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleDelete(entry.date); }}
-                                            className="w-10 h-10 rounded-2xl bg-white/5 backdrop-blur-md flex items-center justify-center text-gray-500 hover:text-red-400 hover:bg-red-500/20 transition-all border border-white/5"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
+                                    {/* Actions */}
+                                    <div className="absolute top-6 right-6 flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-all z-20">
+                                        <button onClick={() => handleEdit(entry)} className="w-10 h-10 rounded-2xl bg-white/5 backdrop-blur-md flex items-center justify-center text-gray-500 hover:text-white border border-white/5"><Edit2 className="w-4 h-4" /></button>
+                                        <button onClick={() => handleDelete(entry.date)} className="w-10 h-10 rounded-2xl bg-white/5 backdrop-blur-md flex items-center justify-center text-gray-500 hover:text-red-400 border border-white/5"><Trash2 className="w-4 h-4" /></button>
                                     </div>
 
                                     {/* Card Header */}
-                                    <div className="flex items-start gap-5 mb-8">
-                                        <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center ${moodInfo.bg} ${moodInfo.color} shadow-xl shadow-current/5 transition-all group-hover:scale-110 group-hover:-rotate-3`}>
+                                    <div className="flex items-start gap-5 mb-6 relative z-10">
+                                        <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center ${moodInfo.bg} ${moodInfo.color} shadow-xl`}>
                                             <MoodIcon className="w-9 h-9" />
                                         </div>
                                         <div className="flex-1">
-                                            <p className="text-[10px] font-black text-gray-600 uppercase tracking-[2px] mb-1">
-                                                {new Date(entry.date).toLocaleDateString('ru-RU', { weekday: 'long' })}
-                                            </p>
-                                            <h4 className="text-xl font-black text-white italic tracking-tight">
-                                                {new Date(entry.date).toLocaleDateString('ru-RU', {
-                                                    day: 'numeric',
-                                                    month: 'long'
-                                                })}
-                                            </h4>
+                                            <p className="text-[10px] font-black text-gray-600 uppercase tracking-[2px] mb-1">{new Date(entry.date).toLocaleDateString('ru-RU', { weekday: 'long' })}</p>
+                                            <h4 className="text-xl font-black text-white italic tracking-tight">{new Date(entry.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</h4>
                                         </div>
                                     </div>
 
-                                    {/* Card Content Grid */}
-                                    <div className="grid grid-cols-2 gap-4 mb-8">
-                                        <div className="bg-white/[0.02] border border-white/5 p-4 rounded-3xl flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
-                                                <Moon className="w-4 h-4 text-blue-400" />
-                                            </div>
-                                            <div>
-                                                <p className="text-[9px] font-black text-gray-500 uppercase">Сон</p>
-                                                <p className="text-lg font-black text-white leading-none mt-0.5">{entry.sleep_hours}<span className="text-[10px] ml-0.5 text-gray-600">Ч</span></p>
-                                            </div>
-                                        </div>
-                                        <div className="bg-white/[0.02] border border-white/5 p-4 rounded-3xl flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded-xl bg-cyan-500/10 flex items-center justify-center shrink-0">
-                                                <Droplets className="w-4 h-4 text-cyan-400" />
-                                            </div>
-                                            <div>
-                                                <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Вода</p>
-                                                <p className="text-lg font-black text-white leading-none mt-0.5">{entry.water_liters}<span className="text-[10px] ml-0.5 text-gray-600">Л</span></p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Action Status Check */}
-                                    {entry.workout_done ? (
-                                        <div className="mb-6 py-3 px-5 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <Dumbbell className="w-4 h-4 text-emerald-400" />
-                                                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Тренировка выполнена</span>
-                                            </div>
-                                            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                                        </div>
-                                    ) : (
-                                        <div className="mb-6 py-3 px-5 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center gap-3">
-                                            <Dumbbell className="w-4 h-4 text-gray-700" />
-                                            <span className="text-[10px] font-black text-gray-700 uppercase tracking-widest">Без тренировки</span>
+                                    {/* Photo Preview Strip - NEW */}
+                                    {hasPhotos && (
+                                        <div className="flex gap-2 mb-6 h-28 relative z-10">
+                                            {[entry.photo_front, entry.photo_side, entry.photo_back].filter(Boolean).map((url, i) => (
+                                                <div key={i} className="flex-1 rounded-2xl overflow-hidden border border-white/5 shadow-lg group/photo relative">
+                                                    <img src={url} className="w-full h-full object-cover" alt="Progress" />
+                                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/photo:opacity-100 transition-opacity flex items-center justify-center">
+                                                        <Eye className="w-4 h-4 text-white" />
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
                                     )}
 
-                                    {/* Reflection Preview */}
-                                    {entry.reflection ? (
-                                        <div className="relative pt-2">
-                                            <span className="absolute -top-1 left-2 text-4xl text-meta-orange opacity-20 font-serif leading-none">“</span>
-                                            <p className="text-sm text-gray-400 italic font-medium leading-relaxed line-clamp-2 pl-4">
-                                                {entry.reflection}
-                                            </p>
+                                    {/* Stats Grid */}
+                                    <div className="grid grid-cols-2 gap-3 mb-6 relative z-10">
+                                        <div className="bg-white/[0.02] border border-white/5 p-4 rounded-3xl flex items-center gap-3">
+                                            <Moon className="w-4 h-4 text-blue-400" />
+                                            <div>
+                                                <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Сон</p>
+                                                <p className="text-lg font-black text-white italic leading-none mt-0.5">{entry.sleep_hours}Ч</p>
+                                            </div>
                                         </div>
+                                        <div className="bg-white/[0.02] border border-white/5 p-4 rounded-3xl flex items-center gap-3">
+                                            <Droplets className="w-4 h-4 text-cyan-400" />
+                                            <div>
+                                                <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Вода</p>
+                                                <p className="text-lg font-black text-white italic leading-none mt-0.5">{entry.water_liters}Л</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Reflection */}
+                                    {entry.reflection ? (
+                                        <p className="text-sm text-gray-400 italic font-medium leading-relaxed line-clamp-2 pl-4 border-l-2 border-meta-orange/30 relative z-10">
+                                            {entry.reflection}
+                                        </p>
                                     ) : (
-                                        <div className="py-4 border border-dashed border-white/5 rounded-3xl text-center">
+                                        <div className="py-4 border border-dashed border-white/5 rounded-3xl text-center relative z-10">
                                             <p className="text-[9px] font-black text-gray-700 uppercase tracking-[3px]">ЛОГ ЗАВЕРШЕН</p>
                                         </div>
                                     )}
@@ -560,44 +572,6 @@ export default function JournalPage() {
                     </div>
                 )}
             </main>
-
-            <style jsx global>{`
-                .no-scrollbar::-webkit-scrollbar {
-                    display: none;
-                }
-                .no-scrollbar {
-                    -ms-overflow-style: none;
-                    scrollbar-width: none;
-                }
-                .custom-scrollbar::-webkit-scrollbar {
-                    width: 5px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-track {
-                    background: transparent;
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb {
-                    background: rgba(255, 255, 255, 0.05);
-                    border-radius: 10px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-                    background: rgba(255, 255, 255, 0.1);
-                }
-                input[type="range"]::-webkit-slider-thumb {
-                    -webkit-appearance: none;
-                    width: 24px;
-                    height: 24px;
-                    background: #FF4500;
-                    border: 4px solid #1E1E1E;
-                    border-radius: 50%;
-                    cursor: pointer;
-                    box-shadow: 0 4px 10px rgba(255, 69, 0, 0.4);
-                    transition: all 0.2s;
-                }
-                input[type="range"]::-webkit-slider-thumb:hover {
-                    transform: scale(1.1);
-                    box-shadow: 0 0 15px rgba(255, 69, 0, 0.6);
-                }
-            `}</style>
         </div>
     )
 }
