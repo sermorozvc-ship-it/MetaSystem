@@ -63,7 +63,7 @@ export default function DashboardLayout({
                     {/* Затемнение фона */}
                     <div
                         className={`
-                            lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40
+                            lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]
                             transition-opacity duration-300
                             ${showMobileSheet ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}
                         `}
@@ -73,13 +73,13 @@ export default function DashboardLayout({
                     {/* Шторка */}
                     <div
                         className={`
-                            lg:hidden fixed bottom-0 left-0 right-0 z-50
+                            lg:hidden fixed bottom-0 left-0 right-0 z-[70]
                             bg-deep-dark-100 border-t border-white/10
                             rounded-t-3xl shadow-2xl
                             transition-transform duration-300 ease-out
                             ${showMobileSheet ? 'translate-y-0' : 'translate-y-full'}
                         `}
-                        style={{ maxHeight: '85vh' }}
+                        style={{ maxHeight: '75vh' }}
                     >
                         {/* Ручка + кнопка закрытия */}
                         <div className="sticky top-0 bg-deep-dark-100 rounded-t-3xl z-10 px-4 pt-3 pb-2 flex items-center justify-between">
@@ -94,7 +94,7 @@ export default function DashboardLayout({
                         </div>
 
                         {/* Контент панели */}
-                        <div className="overflow-y-auto px-4 pb-6" style={{ maxHeight: 'calc(85vh - 48px)' }}>
+                        <div className="overflow-y-auto px-4 pb-6" style={{ maxHeight: 'calc(75vh - 48px)' }}>
                             {rightPanel}
                         </div>
                     </div>

@@ -197,9 +197,9 @@ export default function MessagesPage() {
 
                 {/* Mobile: Message Detail Overlay */}
                 {selectedMessage && (
-                    <div className="lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedMessage(null)}>
+                    <div className="lg:hidden fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm" onClick={() => setSelectedMessage(null)}>
                         <div
-                            className="absolute bottom-0 left-0 right-0 bg-deep-dark-100 border-t border-white/10 rounded-t-3xl max-h-[80vh] overflow-y-auto animate-slide-up"
+                            className="absolute bottom-0 left-0 right-0 bg-deep-dark-100 border-t border-white/10 rounded-t-3xl max-h-[75vh] overflow-y-auto animate-slide-up"
                             onClick={e => e.stopPropagation()}
                         >
                             <div className="sticky top-0 bg-deep-dark-100 rounded-t-3xl z-10 px-4 pt-3 pb-2 flex items-center justify-between">
@@ -212,7 +212,7 @@ export default function MessagesPage() {
                                     <X className="w-4 h-4" />
                                 </button>
                             </div>
-                            <div className="px-4 pb-6">
+                            <div className="px-4 pb-20">
                                 <MessageDetail message={selectedMessage} getMessageIcon={getMessageIcon} getMessageTypeLabel={getMessageTypeLabel} />
                             </div>
                         </div>
