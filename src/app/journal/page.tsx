@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
     BookOpen, ArrowLeft, Plus, Trash2, Save,
     Calendar, Heart, Frown, Meh, Smile, SmilePlus,
-    Droplets, Moon, Dumbbell, Apple, X, Edit2, AlertCircle
+    Droplets, Moon, Dumbbell, Apple, X, Edit2, AlertCircle, RefreshCw
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import Sidebar from '@/components/layout/Sidebar'
@@ -30,6 +30,7 @@ export default function JournalPage() {
     const [saving, setSaving] = useState(false)
     const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null)
     const [error, setError] = useState<string | null>(null)
+    const [retryCount, setRetryCount] = useState(0)
 
     const today = new Date().toISOString().split('T')[0]
 
@@ -37,8 +38,8 @@ export default function JournalPage() {
         date: today,
         mood: 3,
         energy: 3,
-        sleep_hours: 7,
-        water_liters: 1.5,
+        sleep_hours: 0, // По умолчанию 0, но в инпуте будет пусто
+        water_liters: 0,
         workout_done: false,
         nutrition_notes: '',
         reflection: ''
@@ -50,6 +51,8 @@ export default function JournalPage() {
         setIsLoading(true)
         setError(null)
         try {
+            if (authLoading) return; // Wait for auth
+
             if (!user) {
                 // Demo mode fallback
                 try {
@@ -60,6 +63,7 @@ export default function JournalPage() {
                     console.error('Demo journal parse error:', e)
                     setEntries([])
                 }
+                setIsLoading(false)
                 return
             }
 
@@ -67,17 +71,15 @@ export default function JournalPage() {
             setEntries(data)
         } catch (e: any) {
             console.error('Journal fetch error:', e)
-            setError('Не удалось загрузить записи дневника')
+            setError('Сессия истекла или возникла ошибка сети. Попробуйте обновить страницу.')
         } finally {
             setIsLoading(false)
         }
-    }, [user])
+    }, [user, authLoading])
 
     useEffect(() => {
-        if (!authLoading) {
-            loadEntries()
-        }
-    }, [user, authLoading, loadEntries])
+        loadEntries()
+    }, [loadEntries, retryCount])
 
     const handleEdit = (entry: JournalEntry) => {
         setForm({ ...entry })
@@ -112,7 +114,7 @@ export default function JournalPage() {
                 await loadEntries()
                 setShowForm(false)
             } else {
-                setError(result.error || 'Ошибка при сохранении')
+                setError(result.error || 'Ошибка при сохранении. Проверьте интернет-соединение.')
             }
         } catch (e: any) {
             console.error('Save failed:', e)
@@ -145,14 +147,34 @@ export default function JournalPage() {
         }
     }
 
+    // Helper for number inputs to remove leading zeros/placeholder issue
+    const handleNumberFieldChange = (field: 'sleep_hours' | 'water_liters', val: string) => {
+        // Allow empty string for clearing
+        if (val === '') {
+            setForm(prev => ({ ...prev, [field]: 0 }))
+            return
+        }
+
+        // Convert comma to dot for localized inputs
+        const normalized = val.replace(',', '.')
+        const parsed = parseFloat(normalized)
+
+        if (!isNaN(parsed)) {
+            setForm(prev => ({ ...prev, [field]: parsed }))
+        }
+    }
+
     const getMoodInfo = (mood: number) => moodIcons.find(m => m.value === mood) || moodIcons[2]
 
-    if (authLoading || isLoading) {
+    if (authLoading || (isLoading && entries.length === 0)) {
         return (
             <div className="min-h-screen bg-deep-dark flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
-                    <div className="animate-spin w-10 h-10 border-3 border-meta-orange border-t-transparent rounded-full" />
-                    <p className="text-gray-500 font-medium animate-pulse">Загрузка дневника...</p>
+                    <div className="relative">
+                        <div className="w-12 h-12 border-4 border-meta-orange/20 rounded-full" />
+                        <div className="absolute inset-0 w-12 h-12 border-4 border-meta-orange border-t-transparent rounded-full animate-spin" />
+                    </div>
+                    <p className="text-gray-500 font-bold text-sm uppercase tracking-widest animate-pulse">Загрузка...</p>
                 </div>
             </div>
         )
@@ -162,81 +184,101 @@ export default function JournalPage() {
         <div className="flex min-h-screen bg-deep-dark">
             <Sidebar activeItem="journal" />
 
-            <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8">
+            <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 max-w-7xl mx-auto w-full transition-all duration-500">
                 {/* Header */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-                    <div className="flex items-center gap-3 md:gap-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 lg:mb-12">
+                    <div className="flex items-center gap-4">
                         <button
                             onClick={() => router.push('/dashboard')}
-                            className="w-10 h-10 rounded-xl bg-deep-dark-200/60 border border-white/10
+                            className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10
                                        flex items-center justify-center text-gray-400 hover:text-white 
-                                       hover:bg-deep-dark-300 transition-all duration-200 group"
+                                       hover:bg-deep-dark-300 transition-all duration-300 group shadow-lg"
                         >
-                            <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                            <ArrowLeft className="w-6 h-6 group-hover:-translate-x-1 transition-transform" />
                         </button>
                         <div>
-                            <h1 className="text-xl md:text-3xl font-bold text-white flex items-center gap-2 md:gap-3">
-                                <BookOpen className="w-6 h-6 md:w-8 md:h-8 text-meta-orange" />
-                                Дневник
-                            </h1>
-                            <p className="text-sm text-gray-400 mt-1">Отслеживайте свое состояние и прогресс</p>
+                            <div className="flex items-center gap-2">
+                                <BookOpen className="w-6 h-6 text-meta-orange" />
+                                <h1 className="text-2xl md:text-4xl font-black text-white tracking-tight">Дневник</h1>
+                            </div>
+                            <p className="text-sm text-gray-500 font-medium mt-1">Твое состояние — ключ к успеху</p>
                         </div>
                     </div>
 
-                    <button
-                        onClick={handleCreateNew}
-                        className="w-full md:w-auto px-6 py-3 rounded-2xl bg-meta-orange text-white font-bold 
-                                 flex items-center justify-center gap-2 hover:bg-meta-orange-hover 
-                                 transition-all duration-300 shadow-lg shadow-meta-orange/20 active:scale-95"
-                    >
-                        <Plus className="w-5 h-5" />
-                        Добавить запись
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => setRetryCount(c => c + 1)}
+                            className="p-3 rounded-2xl bg-white/5 border border-white/5 text-gray-500 hover:text-white transition-all"
+                            title="Обновить данные"
+                        >
+                            <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin text-meta-orange' : ''}`} />
+                        </button>
+                        <button
+                            onClick={handleCreateNew}
+                            className="flex-1 md:flex-none px-8 py-4 rounded-2xl bg-meta-orange text-white font-black uppercase tracking-wider
+                                     flex items-center justify-center gap-2 hover:bg-meta-orange-hover 
+                                     transition-all duration-300 shadow-xl shadow-meta-orange/25 active:scale-95"
+                        >
+                            <Plus className="w-5 h-5" />
+                            Запись
+                        </button>
+                    </div>
                 </div>
 
                 {error && (
-                    <div className="mb-6 p-4 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center gap-3 text-red-400 text-sm">
-                        <AlertCircle className="w-5 h-5 shrink-0" />
-                        {error}
+                    <div className="mb-8 p-5 rounded-3xl bg-red-500/10 border border-red-500/20 flex items-start gap-4 text-red-400">
+                        <AlertCircle className="w-6 h-6 shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                            <p className="font-bold text-sm mb-1 uppercase tracking-wider">Ошибка доступа</p>
+                            <p className="text-sm opacity-80 leading-relaxed font-medium">{error}</p>
+                            <button
+                                onClick={() => setRetryCount(c => c + 1)}
+                                className="mt-3 text-xs font-bold underline hover:no-underline"
+                            >
+                                Попробовать снова
+                            </button>
+                        </div>
                     </div>
                 )}
 
                 {/* Form Modal */}
                 {showForm && (
-                    <div className="modal-overlay" onClick={() => setShowForm(false)}>
+                    <div className="modal-overlay z-[100] backdrop-blur-xl" onClick={() => setShowForm(false)}>
                         <div
-                            className="glass-card p-6 md:p-8 w-full max-w-xl max-h-[90vh] overflow-y-auto animate-fade-in mx-4"
+                            className="bg-deep-dark-100/95 border border-white/10 p-6 md:p-10 w-full max-w-2xl max-h-[92vh] overflow-y-auto animate-fade-in mx-4 rounded-[2.5rem] shadow-2xl relative custom-scrollbar"
                             onClick={e => e.stopPropagation()}
                         >
-                            <div className="flex items-center justify-between mb-8">
-                                <h2 className="text-2xl font-bold text-white">
-                                    {form.id ? 'Редактировать запись' : 'Новая запись'}
-                                </h2>
-                                <button onClick={() => setShowForm(false)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-gray-400 hover:text-white transition-colors">
-                                    <X className="w-5 h-5" />
+                            <div className="flex items-center justify-between mb-10 sticky top-0 bg-deep-dark-100/10 backdrop-blur-md py-2 z-10">
+                                <div>
+                                    <h2 className="text-2xl md:text-3xl font-black text-white italic">
+                                        {form.id ? 'ИЗМЕНИТЬ' : 'НОВАЯ ЗАПИСЬ'}
+                                    </h2>
+                                    <p className="text-xs text-meta-orange font-bold uppercase tracking-[3px] mt-1">метаболический лог</p>
+                                </div>
+                                <button onClick={() => setShowForm(false)} className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center text-gray-500 hover:text-white transition-all hover:rotate-90">
+                                    <X className="w-6 h-6" />
                                 </button>
                             </div>
 
-                            <div className="space-y-6">
-                                {/* Date */}
-                                <div>
-                                    <label className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-3 block">Дата записи</label>
+                            <div className="space-y-8">
+                                {/* Date Selection */}
+                                <div className="p-4 rounded-3xl bg-white/5 border border-white/5 focus-within:border-meta-orange/50 transition-colors">
+                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-[2px] mb-3 block">Дата записи</label>
                                     <div className="relative">
-                                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-meta-orange/50" />
+                                        <Calendar className="absolute left-0 top-1/2 -translate-y-1/2 w-5 h-5 text-meta-orange" />
                                         <input
                                             type="date"
                                             value={form.date}
                                             onChange={e => setForm({ ...form, date: e.target.value })}
-                                            className="w-full bg-deep-dark-200/60 border border-white/10 rounded-2xl pl-12 pr-4 py-4
-                                                     text-white focus:outline-none focus:border-meta-orange/50 transition-all"
+                                            className="w-full bg-transparent pl-8 pr-4 py-2 text-xl font-bold text-white focus:outline-none appearance-none"
                                         />
                                     </div>
                                 </div>
 
-                                {/* Mood */}
+                                {/* Mood Icons with scroll on mobile */}
                                 <div>
-                                    <label className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 block">Настроение</label>
-                                    <div className="grid grid-cols-5 gap-2">
+                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-[2px] mb-4 block text-center">Ваше настроение</label>
+                                    <div className="flex justify-between md:grid md:grid-cols-5 gap-0 md:gap-3 overflow-x-auto pb-4 md:pb-0 px-2 no-scrollbar">
                                         {moodIcons.map(m => {
                                             const Icon = m.icon
                                             const isActive = form.mood === m.value
@@ -244,137 +286,149 @@ export default function JournalPage() {
                                                 <button
                                                     key={m.value}
                                                     onClick={() => setForm({ ...form, mood: m.value })}
-                                                    className={`flex flex-col items-center gap-2 p-3 rounded-2xl transition-all
+                                                    className={`flex flex-col items-center gap-2 py-4 px-3 rounded-[2rem] transition-all min-w-[75px] md:min-w-0
                                                         ${isActive
-                                                            ? `${m.bg} ${m.color} border-2 border-current scale-105 shadow-lg`
-                                                            : 'bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300'
+                                                            ? `${m.bg} ${m.color} scale-105 shadow-xl shadow-current/5 ring-1 ring-current/20`
+                                                            : 'text-gray-600 hover:text-gray-400'
                                                         }`}
                                                 >
-                                                    <Icon className="w-6 h-6 md:w-8 md:h-8" />
-                                                    <span className="text-[10px] font-bold uppercase tracking-tight">{m.label}</span>
+                                                    <Icon className={`w-8 h-8 md:w-10 md:h-10 transition-transform ${isActive ? 'scale-110' : ''}`} />
+                                                    <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-widest whitespace-nowrap ${isActive ? 'opacity-100' : 'opacity-40'}`}>
+                                                        {m.label}
+                                                    </span>
                                                 </button>
                                             )
                                         })}
                                     </div>
                                 </div>
 
-                                {/* Energy */}
-                                <div>
-                                    <div className="flex justify-between items-end mb-4">
-                                        <label className="text-sm font-bold text-gray-400 uppercase tracking-widest">Уровень энергии</label>
-                                        <span className="text-2xl font-black text-meta-orange">{form.energy}<span className="text-xs text-gray-600">/5</span></span>
+                                {/* Energy Range Slider */}
+                                <div className="p-6 rounded-3xl bg-white/5 border border-white/5">
+                                    <div className="flex justify-between items-end mb-6">
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-[2px]">Уровень энергии</label>
+                                        <div className="flex items-baseline gap-1">
+                                            <span className="text-4xl font-black text-meta-orange leading-none">{form.energy}</span>
+                                            <span className="text-sm font-bold text-gray-700">/5</span>
+                                        </div>
                                     </div>
-                                    <input
-                                        type="range"
-                                        min="1"
-                                        max="5"
-                                        value={form.energy}
-                                        onChange={e => setForm({ ...form, energy: parseInt(e.target.value) })}
-                                        className="w-full accent-meta-orange h-2 bg-white/5 rounded-full appearance-none cursor-pointer"
-                                    />
-                                    <div className="flex justify-between text-[10px] font-bold text-gray-600 mt-2 uppercase tracking-widest">
-                                        <span>Сил нет</span>
-                                        <span>Максимум</span>
+                                    <div className="relative group px-1">
+                                        <input
+                                            type="range"
+                                            min="1"
+                                            max="5"
+                                            value={form.energy}
+                                            onChange={e => setForm({ ...form, energy: parseInt(e.target.value) })}
+                                            className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer accent-meta-orange"
+                                        />
+                                        <div className="flex justify-between text-[9px] font-black text-gray-600 mt-4 uppercase tracking-[1px]">
+                                            <span className={form.energy === 1 ? 'text-red-400' : ''}>сил нет</span>
+                                            <span className={form.energy === 5 ? 'text-emerald-400' : ''}>максимум</span>
+                                        </div>
                                     </div>
                                 </div>
 
-                                {/* Sleep & Water */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
-                                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                                            <Moon className="w-4 h-4 text-blue-400" /> Сон (часов)
+                                {/* Numeric Inputs for Sleep and Water */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                                    <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 focus-within:border-blue-500/30 transition-all">
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-[2px] mb-4 flex items-center gap-2">
+                                            <div className="w-6 h-6 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                                                <Moon className="w-3.5 h-3.5 text-blue-400" />
+                                            </div>
+                                            Сон (часов)
                                         </label>
                                         <input
-                                            type="number"
-                                            min="0"
-                                            max="24"
-                                            step="0.5"
-                                            value={form.sleep_hours}
-                                            onChange={e => setForm({ ...form, sleep_hours: parseFloat(e.target.value) || 0 })}
-                                            className="w-full bg-transparent text-2xl font-bold text-white focus:outline-none"
+                                            type="text"
+                                            inputMode="decimal"
+                                            placeholder="8"
+                                            value={form.sleep_hours || ''}
+                                            onChange={e => handleNumberFieldChange('sleep_hours', e.target.value)}
+                                            className="w-full bg-transparent text-5xl font-black text-white focus:outline-none placeholder:text-gray-800"
                                         />
                                     </div>
-                                    <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
-                                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                                            <Droplets className="w-4 h-4 text-cyan-400" /> Вода (литров)
+                                    <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 focus-within:border-cyan-500/30 transition-all">
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-[2px] mb-4 flex items-center gap-2">
+                                            <div className="w-6 h-6 rounded-lg bg-cyan-500/10 flex items-center justify-center">
+                                                <Droplets className="w-3.5 h-3.5 text-cyan-400" />
+                                            </div>
+                                            Вода (л)
                                         </label>
                                         <input
-                                            type="number"
-                                            min="0"
-                                            max="10"
-                                            step="0.25"
-                                            value={form.water_liters}
-                                            onChange={e => setForm({ ...form, water_liters: parseFloat(e.target.value) || 0 })}
-                                            className="w-full bg-transparent text-2xl font-bold text-white focus:outline-none"
+                                            type="text"
+                                            inputMode="decimal"
+                                            placeholder="1.5"
+                                            value={form.water_liters || ''}
+                                            onChange={e => handleNumberFieldChange('water_liters', e.target.value)}
+                                            className="w-full bg-transparent text-5xl font-black text-white focus:outline-none placeholder:text-gray-800"
                                         />
                                     </div>
                                 </div>
 
-                                {/* Workout toggle */}
+                                {/* Workout Toggle - Full Width Card */}
                                 <button
                                     onClick={() => setForm({ ...form, workout_done: !form.workout_done })}
-                                    className={`w-full flex items-center gap-4 p-5 rounded-2xl border transition-all duration-300
+                                    className={`w-full group relative overflow-hidden flex items-center gap-5 p-6 rounded-[2rem] border-2 transition-all duration-500
                                         ${form.workout_done
-                                            ? 'bg-green-500/10 border-green-500/30 text-green-400 shadow-lg shadow-green-500/5'
-                                            : 'bg-white/5 border-white/5 text-gray-500 grayscale'
+                                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-2xl shadow-emerald-500/10'
+                                            : 'bg-white/5 border-transparent text-gray-600 opacity-60 grayscale hover:grayscale-0 hover:border-white/10'
                                         }`}
                                 >
-                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${form.workout_done ? 'bg-green-500/20' : 'bg-white/5'}`}>
-                                        <Dumbbell className="w-6 h-6" />
+                                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-500 shadow-inner ${form.workout_done ? 'bg-emerald-500/20 rotate-12' : 'bg-white/5'}`}>
+                                        <Dumbbell className={`w-7 h-7 ${form.workout_done ? 'animate-bounce' : ''}`} />
                                     </div>
                                     <div className="text-left">
-                                        <p className="text-sm font-bold uppercase tracking-widest">Тренировка</p>
-                                        <p className="text-xs opacity-70">{form.workout_done ? 'Выполнена сегодня' : 'Не отмечена'}</p>
+                                        <p className="text-sm font-black uppercase tracking-[2px]">ТРЕНИРОВКА</p>
+                                        <p className="text-xs font-bold opacity-70 mt-1 uppercase tracking-wider">{form.workout_done ? 'ВЫПОЛНЕНА СЕГОДНЯ ✓' : 'ЕЩЕ НЕ ВЫПОЛНЕНА'}</p>
                                     </div>
-                                    <div className={`ml-auto w-6 h-6 rounded-full border-2 flex items-center justify-center ${form.workout_done ? 'bg-green-500 border-green-500' : 'border-white/10'}`}>
-                                        {form.workout_done && <Plus className="w-4 h-4 text-white rotate-45" />}
+                                    <div className={`ml-auto w-10 h-10 rounded-2xl border-2 flex items-center justify-center transition-all ${form.workout_done ? 'bg-emerald-500 border-emerald-500 scale-110 shadow-lg shadow-emerald-500/40 text-white' : 'border-white/10'}`}>
+                                        {form.workout_done ? <Plus className="w-6 h-6 rotate-45" /> : <Plus className="w-5 h-5 opacity-20" />}
                                     </div>
                                 </button>
 
-                                {/* Nutrition Notes */}
-                                <div>
-                                    <label className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                                        <Apple className="w-4 h-4 text-meta-orange" /> Заметки о питании
+                                {/* Nutrition Notes Expandable Area */}
+                                <div className="space-y-4">
+                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-[2px] flex items-center gap-2 ml-2">
+                                        <Apple className="w-3.5 h-3.5 text-meta-orange" /> Питание
                                     </label>
                                     <textarea
                                         value={form.nutrition_notes}
                                         onChange={e => setForm({ ...form, nutrition_notes: e.target.value })}
-                                        placeholder="Что ели сегодня? Были ли срывы?"
+                                        placeholder="Что ели сегодня? Были ли отклонения от плана?"
                                         rows={2}
-                                        className="w-full bg-deep-dark-200/60 border border-white/10 rounded-2xl p-4 md:p-5
-                                                 text-white placeholder:text-gray-600 focus:outline-none focus:border-meta-orange/50 transition-all resize-none"
+                                        className="w-full bg-white/5 border-2 border-transparent focus:border-meta-orange/20 rounded-[2rem] p-6
+                                                 text-white placeholder:text-gray-700 focus:outline-none transition-all resize-none font-medium leading-relaxed"
                                     />
                                 </div>
 
-                                {/* Reflection */}
-                                <div>
-                                    <label className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                                        <Heart className="w-4 h-4 text-red-400" /> Итоги дня (рефлексия)
+                                {/* Reflection Card */}
+                                <div className="space-y-4">
+                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-[2px] flex items-center gap-2 ml-2">
+                                        <Heart className="w-3.5 h-3.5 text-red-400" /> Рефлексия
                                     </label>
                                     <textarea
                                         value={form.reflection}
                                         onChange={e => setForm({ ...form, reflection: e.target.value })}
-                                        placeholder="Как вы себя чувствуете? Что было самым важным сегодня?"
+                                        placeholder="Какие чувства сегодня? Что было самым удачным?"
                                         rows={4}
-                                        className="w-full bg-deep-dark-200/60 border border-white/10 rounded-2xl p-4 md:p-5
-                                                 text-white placeholder:text-gray-600 focus:outline-none focus:border-meta-orange/50 transition-all resize-none"
+                                        className="w-full bg-white/5 border-2 border-transparent focus:border-red-400/20 rounded-[2.5rem] p-6 md:p-8
+                                                 text-white placeholder:text-gray-700 focus:outline-none transition-all resize-none font-medium leading-relaxed italic"
                                     />
                                 </div>
 
+                                {/* Submit Button */}
                                 <button
                                     onClick={handleSave}
                                     disabled={saving}
-                                    className="w-full py-5 rounded-2xl bg-meta-orange text-white font-black uppercase tracking-[0.2em]
-                                             flex items-center justify-center gap-3 hover:bg-meta-orange-hover 
-                                             disabled:opacity-50 disabled:grayscale transition-all duration-300 
-                                             shadow-xl shadow-meta-orange/20 active:scale-95"
+                                    className="w-full py-6 rounded-3xl bg-meta-orange text-white font-black uppercase tracking-[4px]
+                                             flex items-center justify-center gap-4 hover:bg-meta-orange-hover 
+                                             disabled:opacity-50 disabled:grayscale transition-all duration-500 
+                                             shadow-2xl shadow-meta-orange/30 active:scale-95 text-lg"
                                 >
                                     {saving ? (
-                                        <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+                                        <RefreshCw className="w-6 h-6 animate-spin" />
                                     ) : (
                                         <>
-                                            <Save className="w-5 h-5" />
-                                            {form.id ? 'Обновить запись' : 'Сохранить запись'}
+                                            <Save className="w-6 h-6" />
+                                            {form.id ? 'ОБНОВИТЬ' : 'СОХРАНИТЬ'}
                                         </>
                                     )}
                                 </button>
@@ -383,64 +437,64 @@ export default function JournalPage() {
                     </div>
                 )}
 
-                {/* Entries List */}
-                {entries.length === 0 ? (
-                    <div className="glass-card p-12 md:p-20 text-center flex flex-col items-center">
-                        <div className="w-24 h-24 rounded-[2.5rem] bg-white/5 flex items-center justify-center mb-8">
-                            <BookOpen className="w-12 h-12 text-gray-700" />
+                {/* Items List - Grid Layout */}
+                {entries.length === 0 && !isLoading ? (
+                    <div className="glass-card p-12 md:p-24 text-center flex flex-col items-center bg-white/[0.02] border-white/5 rounded-[4rem] group hover:bg-white/[0.04] transition-all">
+                        <div className="w-32 h-32 rounded-[3rem] bg-white/5 flex items-center justify-center mb-10 transition-transform group-hover:scale-110 shadow-inner">
+                            <BookOpen className="w-16 h-16 text-gray-800" />
                         </div>
-                        <h3 className="text-2xl font-bold text-white mb-3">Ваш дневник пуст</h3>
-                        <p className="text-gray-400 mb-10 max-w-xs mx-auto text-lg leading-relaxed">
-                            Начните записывать свои результаты и самочувствие каждый день для лучшего анализа прогресса.
+                        <h3 className="text-3xl font-black text-white italic mb-4">ЖУРНАЛ ПУСТ</h3>
+                        <p className="text-gray-500 mb-12 max-w-sm mx-auto text-lg leading-relaxed font-medium">
+                            Твой запуск начинается с ежедневного осознания своего состояния. Сделай первый отчет прямо сейчас.
                         </p>
                         <button
                             onClick={handleCreateNew}
-                            className="px-10 py-4 rounded-2xl bg-white/5 border border-white/10 text-white font-bold 
-                                     flex items-center gap-3 hover:bg-white/10 transition-all active:scale-95"
+                            className="px-12 py-5 rounded-[2rem] bg-white/5 border border-white/10 text-white font-black uppercase tracking-[2px]
+                                     flex items-center gap-4 hover:bg-white/10 transition-all active:scale-95 shadow-lg"
                         >
-                            <Plus className="w-5 h-5 text-meta-orange" />
-                            Создать первую запись
+                            <Plus className="w-6 h-6 text-meta-orange" />
+                            НАЧАТЬ ЖУРНАЛ
                         </button>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                        {entries.map((entry, idx) => {
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8 animate-fade-in no-scrollbar">
+                        {entries.map((entry) => {
                             const moodInfo = getMoodInfo(entry.mood)
                             const MoodIcon = moodInfo.icon
 
                             return (
                                 <div
                                     key={entry.date}
-                                    className={`relative group bg-deep-dark-100 hover:bg-deep-dark-200 border border-white/5 
-                                              hover:border-white/10 rounded-[2rem] p-6 transition-all duration-300
-                                              ${selectedEntry?.date === entry.date ? 'ring-2 ring-meta-orange/30' : ''}`}
+                                    className={`relative group bg-deep-dark-100/40 hover:bg-deep-dark-200/60 border border-white/5 
+                                              hover:border-meta-orange/20 rounded-[2.5rem] p-7 transition-all duration-500
+                                              ${selectedEntry?.date === entry.date ? 'ring-2 ring-meta-orange/50 shadow-2xl shadow-meta-orange/10' : ''}`}
                                 >
-                                    {/* Action Buttons */}
-                                    <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {/* Edit/Delete Tools */}
+                                    <div className="absolute top-6 right-6 flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0">
                                         <button
                                             onClick={(e) => { e.stopPropagation(); handleEdit(entry); }}
-                                            className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-gray-400 hover:text-white hover:bg-meta-orange/20 transition-all"
+                                            className="w-10 h-10 rounded-2xl bg-white/5 backdrop-blur-md flex items-center justify-center text-gray-500 hover:text-white hover:bg-meta-orange/20 transition-all border border-white/5"
                                         >
                                             <Edit2 className="w-4 h-4" />
                                         </button>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); handleDelete(entry.date); }}
-                                            className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-gray-400 hover:text-red-400 hover:bg-red-500/20 transition-all"
+                                            className="w-10 h-10 rounded-2xl bg-white/5 backdrop-blur-md flex items-center justify-center text-gray-500 hover:text-red-400 hover:bg-red-500/20 transition-all border border-white/5"
                                         >
                                             <Trash2 className="w-4 h-4" />
                                         </button>
                                     </div>
 
-                                    {/* Date & Mood */}
-                                    <div className="flex items-center gap-4 mb-6">
-                                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${moodInfo.bg} ${moodInfo.color} shadow-lg shadow-current/5 transition-transform group-hover:scale-110`}>
-                                            <MoodIcon className="w-8 h-8" />
+                                    {/* Card Header */}
+                                    <div className="flex items-start gap-5 mb-8">
+                                        <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center ${moodInfo.bg} ${moodInfo.color} shadow-xl shadow-current/5 transition-all group-hover:scale-110 group-hover:-rotate-3`}>
+                                            <MoodIcon className="w-9 h-9" />
                                         </div>
-                                        <div>
-                                            <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">
+                                        <div className="flex-1">
+                                            <p className="text-[10px] font-black text-gray-600 uppercase tracking-[2px] mb-1">
                                                 {new Date(entry.date).toLocaleDateString('ru-RU', { weekday: 'long' })}
                                             </p>
-                                            <h4 className="text-lg font-bold text-white">
+                                            <h4 className="text-xl font-black text-white italic tracking-tight">
                                                 {new Date(entry.date).toLocaleDateString('ru-RU', {
                                                     day: 'numeric',
                                                     month: 'long'
@@ -449,39 +503,55 @@ export default function JournalPage() {
                                         </div>
                                     </div>
 
-                                    {/* Stats Grid */}
-                                    <div className="grid grid-cols-3 gap-3 mb-6">
-                                        <div className="bg-white/5 p-3 rounded-2xl text-center">
-                                            <Moon className="w-4 h-4 text-blue-400 mx-auto mb-1.5" />
-                                            <p className="text-sm font-bold text-white">{entry.sleep_hours}<span className="text-[10px] text-gray-500 ml-0.5">ч</span></p>
+                                    {/* Card Content Grid */}
+                                    <div className="grid grid-cols-2 gap-4 mb-8">
+                                        <div className="bg-white/[0.02] border border-white/5 p-4 rounded-3xl flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
+                                                <Moon className="w-4 h-4 text-blue-400" />
+                                            </div>
+                                            <div>
+                                                <p className="text-[9px] font-black text-gray-500 uppercase">Сон</p>
+                                                <p className="text-lg font-black text-white leading-none mt-0.5">{entry.sleep_hours}<span className="text-[10px] ml-0.5 text-gray-600">Ч</span></p>
+                                            </div>
                                         </div>
-                                        <div className="bg-white/5 p-3 rounded-2xl text-center">
-                                            <Droplets className="w-4 h-4 text-cyan-400 mx-auto mb-1.5" />
-                                            <p className="text-sm font-bold text-white">{entry.water_liters}<span className="text-[10px] text-gray-500 ml-0.5">л</span></p>
-                                        </div>
-                                        <div className={`p-3 rounded-2xl text-center border ${entry.workout_done ? 'bg-green-500/10 border-green-500/20 text-green-400' : 'bg-white/5 border-transparent text-gray-600'}`}>
-                                            <Dumbbell className="w-4 h-4 mx-auto mb-1.5" />
-                                            <p className="text-[10px] font-bold uppercase">{entry.workout_done ? 'Да' : 'Нет'}</p>
+                                        <div className="bg-white/[0.02] border border-white/5 p-4 rounded-3xl flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-xl bg-cyan-500/10 flex items-center justify-center shrink-0">
+                                                <Droplets className="w-4 h-4 text-cyan-400" />
+                                            </div>
+                                            <div>
+                                                <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Вода</p>
+                                                <p className="text-lg font-black text-white leading-none mt-0.5">{entry.water_liters}<span className="text-[10px] ml-0.5 text-gray-600">Л</span></p>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    {/* Reflection */}
-                                    {entry.reflection ? (
-                                        <div className="bg-white/5 rounded-2xl p-4">
-                                            <p className="text-sm text-gray-300 leading-relaxed line-clamp-3 italic">
-                                                «{entry.reflection}»
-                                            </p>
+                                    {/* Action Status Check */}
+                                    {entry.workout_done ? (
+                                        <div className="mb-6 py-3 px-5 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <Dumbbell className="w-4 h-4 text-emerald-400" />
+                                                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Тренировка выполнена</span>
+                                            </div>
+                                            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
                                         </div>
                                     ) : (
-                                        <div className="border border-dashed border-white/5 rounded-2xl p-4 text-center">
-                                            <p className="text-[10px] text-gray-600 font-bold uppercase tracking-widest">Нет рефлексии</p>
+                                        <div className="mb-6 py-3 px-5 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center gap-3">
+                                            <Dumbbell className="w-4 h-4 text-gray-700" />
+                                            <span className="text-[10px] font-black text-gray-700 uppercase tracking-widest">Без тренировки</span>
                                         </div>
                                     )}
 
-                                    {entry.nutrition_notes && (
-                                        <div className="mt-4 flex items-center gap-2 text-[11px] text-gray-500 font-medium">
-                                            <Apple className="w-3.5 h-3.5 text-meta-orange" />
-                                            <span className="truncate">{entry.nutrition_notes}</span>
+                                    {/* Reflection Preview */}
+                                    {entry.reflection ? (
+                                        <div className="relative pt-2">
+                                            <span className="absolute -top-1 left-2 text-4xl text-meta-orange opacity-20 font-serif leading-none">“</span>
+                                            <p className="text-sm text-gray-400 italic font-medium leading-relaxed line-clamp-2 pl-4">
+                                                {entry.reflection}
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="py-4 border border-dashed border-white/5 rounded-3xl text-center">
+                                            <p className="text-[9px] font-black text-gray-700 uppercase tracking-[3px]">ЛОГ ЗАВЕРШЕН</p>
                                         </div>
                                     )}
                                 </div>
@@ -490,6 +560,44 @@ export default function JournalPage() {
                     </div>
                 )}
             </main>
+
+            <style jsx global>{`
+                .no-scrollbar::-webkit-scrollbar {
+                    display: none;
+                }
+                .no-scrollbar {
+                    -ms-overflow-style: none;
+                    scrollbar-width: none;
+                }
+                .custom-scrollbar::-webkit-scrollbar {
+                    width: 5px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                    background: rgba(255, 255, 255, 0.05);
+                    border-radius: 10px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                    background: rgba(255, 255, 255, 0.1);
+                }
+                input[type="range"]::-webkit-slider-thumb {
+                    -webkit-appearance: none;
+                    width: 24px;
+                    height: 24px;
+                    background: #FF4500;
+                    border: 4px solid #1E1E1E;
+                    border-radius: 50%;
+                    cursor: pointer;
+                    box-shadow: 0 4px 10px rgba(255, 69, 0, 0.4);
+                    transition: all 0.2s;
+                }
+                input[type="range"]::-webkit-slider-thumb:hover {
+                    transform: scale(1.1);
+                    box-shadow: 0 0 15px rgba(255, 69, 0, 0.6);
+                }
+            `}</style>
         </div>
     )
 }
