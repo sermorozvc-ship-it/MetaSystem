@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { DashboardLayout } from '@/components/layout'
 import { WeekGrid, ActionPanel, DayData } from '@/components/dashboard'
-import { VisceralCalculator, BodyMeasurements } from '@/components/modals'
+import { VisceralCalculator, BodyMeasurements, CourseConclusionModal } from '@/components/modals'
 import { courseData } from '@/lib/data/courseData'
 import { getCurrentCourseDay, getNextMondayStart, isCohortActive } from '@/lib/utils/cohort'
 import { useRouter } from 'next/navigation'
@@ -33,6 +33,8 @@ export default function DashboardPage() {
     // Модальные окна
     const [isVisceralOpen, setIsVisceralOpen] = useState(false)
     const [isMeasurementsOpen, setIsMeasurementsOpen] = useState(false)
+    const [isCompletionOpen, setIsCompletionOpen] = useState(false)
+    const [hasShownCompletion, setHasShownCompletion] = useState(false)
 
     // Проверка когорты при загрузке (закомментировано для демо)
     useEffect(() => {
@@ -120,11 +122,19 @@ export default function DashboardPage() {
 
             if (dayData && completedIds.length === dayData.tasks.length) {
                 if (!completedDays.includes(dayNumber)) {
-                    setCompletedDays(prev => [...prev, dayNumber])
+                    setCompletedDays(prev => {
+                        const newDays = [...prev, dayNumber]
+                        // Если завершили Day 7 и еще не показывали модалку
+                        if (dayNumber === 7 && !hasShownCompletion) {
+                            setIsCompletionOpen(true)
+                            setHasShownCompletion(true)
+                        }
+                        return newDays
+                    })
                 }
             }
         })
-    }, [taskProgress, completedDays])
+    }, [taskProgress, completedDays, hasShownCompletion])
 
     // Открытие инструмента
     const handleOpenTool = (toolName: string) => {
@@ -201,6 +211,11 @@ export default function DashboardPage() {
                         handleTaskToggle(7, 1) // Task ID 1 = финальные измерения
                     }
                 }}
+            />
+            <CourseConclusionModal
+                isOpen={isCompletionOpen}
+                onClose={() => setIsCompletionOpen(false)}
+                userName={userName}
             />
         </>
     )

@@ -1,5 +1,50 @@
 import { createClient, safeGetUser } from '@/lib/supabase/client'
 
+/**
+ * Сжатие изображения перед загрузкой
+ */
+async function compressImage(file: File, maxWidth = 1200, quality = 0.7): Promise<File | Blob> {
+    if (!file.type.startsWith('image/')) return file
+
+    return new Promise((resolve) => {
+        const reader = new FileReader()
+        reader.readAsDataURL(file)
+        reader.onload = (event) => {
+            const img = new Image()
+            img.src = event.target?.result as string
+            img.onload = () => {
+                const canvas = document.createElement('canvas')
+                let width = img.width
+                let height = img.height
+
+                // Ресайз
+                if (width > maxWidth) {
+                    height = (maxWidth / width) * height
+                    width = maxWidth
+                }
+
+                canvas.width = width
+                canvas.height = height
+
+                const ctx = canvas.getContext('2d')
+                ctx?.drawImage(img, 0, 0, width, height)
+
+                canvas.toBlob(
+                    (blob) => {
+                        if (blob) {
+                            resolve(new File([blob], file.name, { type: 'image/jpeg' }))
+                        } else {
+                            resolve(file)
+                        }
+                    },
+                    'image/jpeg',
+                    quality
+                )
+            }
+        }
+    })
+}
+
 export interface ReportFile {
     name: string
     url: string
@@ -32,9 +77,12 @@ export async function uploadReportFiles(
             const fileExt = file.name.split('.').pop()
             const fileName = `${userId}/day-${dayNumber}/${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`
 
+            const compressedFile = await compressImage(file)
+            console.log(`Compression: ${Math.round(file.size / 1024)}KB -> ${Math.round(compressedFile.size / 1024)}KB`)
+
             const { data, error } = await supabase.storage
                 .from('day-reports')
-                .upload(fileName, file, {
+                .upload(fileName, compressedFile, {
                     cacheControl: '3600',
                     upsert: false
                 })
@@ -44,7 +92,6 @@ export async function uploadReportFiles(
                 continue
             }
 
-            // Get public URL
             const { data: urlData } = supabase.storage
                 .from('day-reports')
                 .getPublicUrl(data.path)
@@ -52,7 +99,7 @@ export async function uploadReportFiles(
             uploadedFiles.push({
                 name: file.name,
                 url: urlData.publicUrl,
-                type: file.type
+                type: compressedFile.type
             })
         } catch (e) {
             console.error('Exception during file upload:', e)
