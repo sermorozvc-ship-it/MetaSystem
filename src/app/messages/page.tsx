@@ -123,15 +123,18 @@ export default function MessagesPage() {
         setIsSending(true)
         try {
             // Who are we replying to?
-            // If the message was FROM us, we still reply to the curator who was the RECIPENT then
-            // Actually, we should reply to the person who sent the original message
+            // If the message was FROM us, we still reply to the curator
             const recipientId = selectedMessage.from_user_id || selectedMessage.to_user_id
 
             // Avoid replying to ourselves
-            // Use a fallback admin ID if no valid recipient found
-            const finalRecipientId = recipientId === user.id ?
-                (messages.find(m => m.from_user_id && m.from_user_id !== user.id)?.from_user_id || '3c07b01d-29e6-47c7-b533-f722f752e4b3')
-                : recipientId
+            // Find the curator ID from existing messages or fallback to default
+            let finalRecipientId = recipientId
+
+            if (recipientId === user.id) {
+                // If the selected message is from us/to us, find the first message from a curator
+                const curatorMsg = messages.find(m => m.from_user_id && m.from_user_id !== user.id)
+                finalRecipientId = curatorMsg?.from_user_id || '3c07b01d-29e6-47c7-b533-f722f752e4b3'
+            }
 
             const result = await sendReply(finalRecipientId as string, replyText.trim())
 
@@ -497,57 +500,49 @@ function MessageDetail({
 
             {/* Footer / Reply Action */}
             <div className="pt-6 border-t border-white/5">
-                {!isFromMe ? (
-                    <div className="space-y-4">
-                        <div className="relative group">
-                            <textarea
-                                value={replyText}
-                                onChange={(e) => setReplyText(e.target.value)}
-                                placeholder="Напишите ваш ответ куратору..."
-                                className="w-full bg-deep-dark-200/60 border border-white/10 rounded-2xl p-4 md:p-5
-                                         text-white placeholder:text-gray-500 focus:outline-none focus:border-meta-orange/50
-                                         transition-all duration-300 min-h-[120px] resize-none pr-12 text-sm md:text-base font-medium"
-                            />
-                            <div className="absolute right-4 bottom-4 text-[10px] text-gray-600 font-bold uppercase tracking-widest">
-                                {replyText.length} символов
-                            </div>
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                            <button
-                                onClick={onSend}
-                                disabled={isSending || !replyText.trim()}
-                                className="w-full sm:w-auto px-10 py-4 rounded-2xl bg-meta-orange text-white font-bold 
-                                         flex items-center justify-center gap-3 hover:bg-meta-orange-hover 
-                                         disabled:opacity-50 disabled:grayscale transition-all duration-300 
-                                         shadow-lg shadow-meta-orange/20 active:scale-95"
-                            >
-                                {isSending ? (
-                                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                ) : (
-                                    <Send className="w-5 h-5" />
-                                )}
-                                Отправить куратору
-                            </button>
-
-                            <a
-                                href="https://t.me/BodyBal"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-2 text-xs text-gray-400 hover:text-white transition-colors group"
-                            >
-                                <ExternalLink className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100" />
-                                Перейти в Telegram
-                            </a>
+                <div className="space-y-4">
+                    <div className="relative group">
+                        <textarea
+                            value={replyText}
+                            onChange={(e) => setReplyText(e.target.value)}
+                            placeholder={isFromMe ? "Продолжить переписку..." : "Напишите ваш ответ куратору..."}
+                            className="w-full bg-deep-dark-200/60 border border-white/10 rounded-2xl p-4 md:p-5
+                                     text-white placeholder:text-gray-500 focus:outline-none focus:border-meta-orange/50
+                                     transition-all duration-300 min-h-[120px] resize-none pr-12 text-sm md:text-base font-medium"
+                        />
+                        <div className="absolute right-4 bottom-4 text-[10px] text-gray-600 font-bold uppercase tracking-widest">
+                            {replyText.length} символов
                         </div>
                     </div>
-                ) : (
-                    <div className="text-center py-4 bg-white/5 rounded-2xl border border-dashed border-white/10">
-                        <p className="text-sm text-gray-500 font-medium">
-                            Вы уже ответили на это сообщение. Вы можете отправить новое сообщение, ответив на входящее письмо от куратора.
-                        </p>
+
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <button
+                            onClick={onSend}
+                            disabled={isSending || !replyText.trim()}
+                            className="w-full sm:w-auto px-10 py-4 rounded-2xl bg-meta-orange text-white font-bold 
+                                     flex items-center justify-center gap-3 hover:bg-meta-orange-hover 
+                                     disabled:opacity-50 disabled:grayscale transition-all duration-300 
+                                     shadow-lg shadow-meta-orange/20 active:scale-95"
+                        >
+                            {isSending ? (
+                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : (
+                                <Send className="w-5 h-5" />
+                            )}
+                            {isFromMe ? "Отправить ещё" : "Отправить куратору"}
+                        </button>
+
+                        <a
+                            href="https://t.me/BodyBal"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 text-xs text-gray-400 hover:text-white transition-colors group"
+                        >
+                            <ExternalLink className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100" />
+                            Перейти в Telegram
+                        </a>
                     </div>
-                )}
+                </div>
             </div>
 
             {message.message_type === 'warning' && !isFromMe && (
