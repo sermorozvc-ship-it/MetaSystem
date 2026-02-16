@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { MessageSquare, AlertTriangle, Bell, ArrowLeft, CheckCircle, Mail, X, CheckCheck, ExternalLink, Send } from 'lucide-react'
+import { AlertTriangle, Bell, ArrowLeft, CheckCircle, Mail, X, CheckCheck, ExternalLink, Send } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/client'
 import Sidebar from '@/components/layout/Sidebar'
@@ -220,8 +220,7 @@ export default function MessagesPage() {
                             <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
                         </button>
                         <div>
-                            <h1 className="text-xl md:text-3xl font-bold text-white flex items-center gap-2 md:gap-3">
-                                <MessageSquare className="w-6 h-6 md:w-8 md:h-8 text-meta-orange shrink-0" />
+                            <h1 className="text-xl md:text-3xl font-bold text-white">
                                 <span className="truncate">Сообщения</span>
                             </h1>
                             <p className="text-sm text-gray-400 mt-1 flex items-center gap-2">

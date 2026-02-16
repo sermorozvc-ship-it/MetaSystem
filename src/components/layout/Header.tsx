@@ -90,19 +90,40 @@ export default function Header({ currentDay = 1, userName: propUserName }: Heade
     }
 
     return (
-        <header className="flex items-center justify-between px-4 md:px-8 py-4 md:py-6">
-            {/* Greeting */}
-            <div className="min-w-0 flex-1">
-                <h1 className="text-lg md:text-2xl font-bold text-white truncate">
-                    {getGreeting()}, <span className="text-meta-orange">{userName}!</span>
-                </h1>
-                <p className="text-gray-400 mt-0.5 md:mt-1 text-xs md:text-base">
-                    День {currentDay} из 7 • Метаболический Запуск
-                </p>
+        <header className="relative flex flex-col md:flex-row md:items-center justify-between px-6 md:px-12 py-8 md:py-10 gap-6">
+            {/* Background Glow Effect */}
+            <div className="absolute top-0 left-1/4 w-1/2 h-px bg-gradient-to-r from-transparent via-meta-orange/20 to-transparent" />
+
+            {/* Greeting & Status Group */}
+            <div className="min-w-0 flex-1 space-y-2">
+                <div className="flex flex-col gap-1">
+                    <span className="text-[10px] md:text-xs font-black text-gray-500 uppercase tracking-[0.3em] mb-1 animate-fade-in opacity-80">
+                        Личный кабинет
+                    </span>
+                    <h1 className="text-3xl md:text-5xl font-black text-white leading-tight tracking-tighter italic">
+                        {getGreeting()}, <br className="sm:hidden" />
+                        <span className="bg-gradient-to-r from-meta-orange to-red-500 bg-clip-text text-transparent">
+                            {userName}!
+                        </span>
+                    </h1>
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                    <div className="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-sm flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-meta-orange animate-pulse" />
+                        <span className="text-[11px] md:text-xs font-bold text-gray-300 uppercase tracking-wider">
+                            День {currentDay} из 7
+                        </span>
+                    </div>
+                    <div className="h-4 w-px bg-white/10" />
+                    <span className="text-[11px] md:text-xs font-bold text-gray-500 uppercase tracking-widest italic opacity-60">
+                        Метаболический Запуск
+                    </span>
+                </div>
             </div>
 
-            {/* Right Section */}
-            <div className="flex items-center gap-2 md:gap-4 shrink-0 ml-2">
+            {/* Right Section: Actions */}
+            <div className="flex items-center gap-4 shrink-0">
                 {/* Search - desktop only */}
                 <div className="relative hidden lg:block group">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-meta-orange transition-colors" />
@@ -113,7 +134,7 @@ export default function Header({ currentDay = 1, userName: propUserName }: Heade
                         onChange={(e) => setSearchQuery(e.target.value)}
                         onFocus={() => setIsSearchFocused(true)}
                         onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
-                        className="glass-input pl-11 pr-4 py-2.5 w-80 text-sm focus:w-96 transition-all"
+                        className="glass-input pl-11 pr-4 py-3 w-80 text-sm focus:w-96 transition-all border-white/5 bg-white/[0.03]"
                     />
 
                     {/* Search Results Dropdown */}
@@ -157,13 +178,13 @@ export default function Header({ currentDay = 1, userName: propUserName }: Heade
                 {/* Notifications / Messages */}
                 <button
                     onClick={() => router.push('/messages')}
-                    className="relative w-10 h-10 rounded-xl bg-deep-dark-200/60 border border-white/10
+                    className="relative w-12 h-12 rounded-2xl bg-white/5 border border-white/10
                           flex items-center justify-center text-gray-400 hover:text-white
-                          transition-colors duration-200 hover:border-white/20">
-                    <MessageSquare className="w-5 h-5" />
+                          transition-all duration-300 hover:border-meta-orange/30 hover:bg-meta-orange/5 group">
+                    <MessageSquare className="w-5 h-5 group-hover:scale-110 transition-transform" />
                     {unreadMessages > 0 && (
                         <span className="absolute -top-1 -right-1 w-5 h-5 bg-meta-orange rounded-full 
-                              text-[10px] font-bold flex items-center justify-center text-white animate-pulse">
+                              text-[10px] font-black flex items-center justify-center text-white animate-pulse shadow-lg shadow-meta-orange/40">
                             {unreadMessages > 9 ? '9+' : unreadMessages}
                         </span>
                     )}
@@ -173,9 +194,9 @@ export default function Header({ currentDay = 1, userName: propUserName }: Heade
                 <div className="relative">
                     <button
                         onClick={() => setShowUserMenu(!showUserMenu)}
-                        className="w-10 h-10 rounded-xl bg-gradient-to-br from-meta-orange to-meta-orange-600
-                                   flex items-center justify-center text-white font-bold text-sm
-                                   border-2 border-meta-orange/30 hover:border-meta-orange/60 transition-colors"
+                        className="w-12 h-12 rounded-2xl bg-gradient-to-br from-meta-orange to-red-600
+                                   flex items-center justify-center text-white font-black text-lg shadow-xl shadow-meta-orange/20
+                                   border border-white/20 hover:scale-105 transition-all active:scale-95"
                     >
                         {userName.charAt(0).toUpperCase()}
                     </button>
