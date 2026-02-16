@@ -56,15 +56,16 @@ export default function JournalPage() {
     })
 
     useEffect(() => {
-        loadEntries()
-    }, [user])
+        if (!authLoading) {
+            loadEntries()
+        }
+    }, [user, authLoading])
 
     const loadEntries = async () => {
         try {
             const supabase = createClient()
-            const { data: { user: currentUser } } = await supabase.auth.getUser()
 
-            if (!currentUser) {
+            if (!user) {
                 // Demo mode
                 const demoEntries = JSON.parse(localStorage.getItem('demo_journal') || '[]')
                 setEntries(demoEntries)
@@ -75,7 +76,7 @@ export default function JournalPage() {
             const { data, error } = await supabase
                 .from('journal_entries')
                 .select('*')
-                .eq('user_id', currentUser.id)
+                .eq('user_id', user.id)
                 .order('date', { ascending: false })
 
             if (error) {
@@ -99,9 +100,8 @@ export default function JournalPage() {
         setSaving(true)
         try {
             const supabase = createClient()
-            const { data: { user: currentUser } } = await supabase.auth.getUser()
 
-            if (!currentUser) {
+            if (!user) {
                 // Demo mode
                 const demoEntries = JSON.parse(localStorage.getItem('demo_journal') || '[]')
                 const newEntry = { ...form, id: Date.now(), created_at: new Date().toISOString() }
@@ -112,7 +112,7 @@ export default function JournalPage() {
                 const { error } = await supabase
                     .from('journal_entries')
                     .upsert({
-                        user_id: currentUser.id,
+                        user_id: user.id,
                         ...form
                     }, { onConflict: 'user_id,date' })
 

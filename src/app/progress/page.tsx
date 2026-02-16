@@ -18,10 +18,16 @@ export default function ProgressPage() {
     const [isLoading, setIsLoading] = useState(true)
 
     useEffect(() => {
+        if (authLoading) return
+
         const loadProgress = async () => {
             try {
                 const { getUserProgress } = await import('@/lib/services/progress')
-                const progress = await getUserProgress()
+                // Таймаут чтобы страница не зависала бесконечно
+                const timeoutPromise = new Promise<Record<number, number[]>>((resolve) =>
+                    setTimeout(() => resolve({}), 5000)
+                )
+                const progress = await Promise.race([getUserProgress(), timeoutPromise])
                 setTaskProgress(progress)
             } catch (e) {
                 console.error('Failed to load progress', e)
@@ -30,7 +36,7 @@ export default function ProgressPage() {
             }
         }
         loadProgress()
-    }, [])
+    }, [authLoading])
 
     // Подсчёт статистики
     const totalTasks = courseData.reduce((acc, day) => acc + day.tasks.length, 0)

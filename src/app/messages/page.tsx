@@ -39,11 +39,18 @@ export default function MessagesPage() {
         try {
             const supabase = createClient()
 
-            const { data, error } = await supabase
+            // Добавляем таймаут чтобы страница не зависала
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Timeout')), 5000)
+            )
+
+            const fetchPromise = supabase
                 .from('admin_messages')
                 .select('*')
                 .eq('to_user_id', user?.id)
                 .order('created_at', { ascending: false })
+
+            const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any
 
             if (error) {
                 console.error('Error loading messages:', error)
