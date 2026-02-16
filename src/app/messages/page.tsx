@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { MessageSquare, AlertTriangle, Bell, ArrowLeft, CheckCircle, Mail, X } from 'lucide-react'
+import { MessageSquare, AlertTriangle, Bell, ArrowLeft, CheckCircle, Mail, X, CheckCheck, ExternalLink, Send } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/client'
 import Sidebar from '@/components/layout/Sidebar'
@@ -133,6 +133,30 @@ export default function MessagesPage() {
         }
     }
 
+    const markAllAsRead = async () => {
+        if (messages.every(m => m.is_read)) return
+
+        setIsLoading(true)
+        try {
+            if (!user) {
+                const updated = messages.map(m => ({ ...m, is_read: true }))
+                setMessages(updated)
+                localStorage.setItem('demo_messages', JSON.stringify(updated))
+            } else {
+                const supabase = createClient()
+                await supabase
+                    .from('admin_messages')
+                    .update({ is_read: true })
+                    .eq('to_user_id', user.id)
+                    .eq('is_read', false)
+
+                setMessages(prev => prev.map(m => ({ ...m, is_read: true })))
+            }
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
     const unreadCount = messages.filter(m => !m.is_read).length
 
     const getMessageIcon = (type: string) => {
@@ -171,90 +195,109 @@ export default function MessagesPage() {
 
             <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-6 md:mb-8">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 md:mb-10">
                     <div className="flex items-center gap-3 md:gap-4">
                         <button
                             onClick={() => router.push('/dashboard')}
                             className="w-10 h-10 rounded-xl bg-deep-dark-200/60 border border-white/10
-                                       flex items-center justify-center text-gray-400 hover:text-white transition-colors"
+                                       flex items-center justify-center text-gray-400 hover:text-white 
+                                       hover:bg-deep-dark-300 transition-all duration-200 group"
                         >
-                            <ArrowLeft className="w-5 h-5" />
+                            <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
                         </button>
                         <div>
-                            <h1 className="text-lg md:text-2xl font-bold text-white flex items-center gap-2 md:gap-3">
-                                <MessageSquare className="w-5 h-5 md:w-7 md:h-7 text-meta-orange shrink-0" />
-                                <span className="truncate">Сообщения от куратора</span>
+                            <h1 className="text-xl md:text-3xl font-bold text-white flex items-center gap-2 md:gap-3">
+                                <MessageSquare className="w-6 h-6 md:w-8 md:h-8 text-meta-orange shrink-0" />
+                                <span className="truncate">Сообщения</span>
                             </h1>
-                            <p className="text-xs md:text-sm text-gray-400 mt-1">
+                            <p className="text-sm text-gray-400 mt-1 flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-meta-orange inline-block" />
                                 {unreadCount > 0
-                                    ? `${unreadCount} непрочитанных`
+                                    ? unreadCount === 1 ? '1 новое сообщение' : `${unreadCount} новых сообщения`
                                     : 'Все сообщения прочитаны'
                                 }
                             </p>
                         </div>
                     </div>
+
+                    {unreadCount > 0 && (
+                        <button
+                            onClick={markAllAsRead}
+                            className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl
+                                     bg-white/5 border border-white/10 text-sm text-gray-300
+                                     hover:bg-white/10 hover:text-white transition-all duration-200"
+                        >
+                            <CheckCheck className="w-4 h-4" />
+                            Прочитать все
+                        </button>
+                    )}
                 </div>
 
                 {/* Mobile: Message Detail Overlay */}
                 {selectedMessage && (
-                    <div className="lg:hidden fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm" onClick={() => setSelectedMessage(null)}>
+                    <div className="lg:hidden fixed inset-0 z-[60] bg-black/80 backdrop-blur-md" onClick={() => setSelectedMessage(null)}>
                         <div
-                            className="absolute bottom-0 left-0 right-0 bg-deep-dark-100 border-t border-white/10 rounded-t-3xl max-h-[75vh] overflow-y-auto animate-slide-up"
+                            className="absolute bottom-0 left-0 right-0 bg-deep-dark-100 border-t border-white/10 rounded-t-[2.5rem] max-h-[85vh] overflow-y-auto"
                             onClick={e => e.stopPropagation()}
                         >
-                            <div className="sticky top-0 bg-deep-dark-100 rounded-t-3xl z-10 px-4 pt-3 pb-2 flex items-center justify-between">
-                                <div className="w-10 h-1 rounded-full bg-white/20 mx-auto absolute left-1/2 -translate-x-1/2 top-3" />
-                                <div />
+                            <div className="sticky top-0 bg-deep-dark-100/90 backdrop-blur-sm rounded-t-[2.5rem] z-10 px-6 pt-8 pb-4 flex items-center justify-between">
+                                <h3 className="text-lg font-bold text-white">Просмотр</h3>
                                 <button
                                     onClick={() => setSelectedMessage(null)}
-                                    className="w-8 h-8 rounded-full bg-deep-dark-300 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
+                                    className="w-10 h-10 rounded-full bg-deep-dark-300 flex items-center justify-center text-gray-400"
                                 >
-                                    <X className="w-4 h-4" />
+                                    <X className="w-5 h-5" />
                                 </button>
                             </div>
-                            <div className="px-4 pb-20">
+                            <div className="px-6 pb-24">
                                 <MessageDetail message={selectedMessage} getMessageIcon={getMessageIcon} getMessageTypeLabel={getMessageTypeLabel} />
                             </div>
                         </div>
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                     {/* Messages List */}
-                    <div className="glass-card p-4 md:p-6">
-                        <h2 className="text-base md:text-lg font-semibold text-white mb-4">Входящие</h2>
+                    <div className="lg:col-span-5 xl:col-span-4 glass-card overflow-hidden h-fit">
+                        <div className="p-4 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                            <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Входящие</h2>
+                            <span className="text-xs bg-meta-orange/20 text-meta-orange px-2 py-1 rounded-full">{messages.length}</span>
+                        </div>
 
-                        {messages.length === 0 ? (
-                            <div className="text-center py-12">
-                                <Mail className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-                                <p className="text-gray-400">У вас пока нет сообщений</p>
-                                <p className="text-sm text-gray-500 mt-2">
-                                    Здесь будут появляться сообщения от куратора курса
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-                                {messages.map(msg => (
-                                    <div
+                        <div className="p-2 space-y-1 max-h-[65vh] overflow-y-auto custom-scrollbar">
+                            {messages.length === 0 ? (
+                                <div className="text-center py-20 px-4">
+                                    <div className="w-16 h-16 rounded-3xl bg-white/5 flex items-center justify-center mx-auto mb-4">
+                                        <Mail className="w-8 h-8 text-gray-600" />
+                                    </div>
+                                    <p className="text-white font-semibold">Пусто</p>
+                                    <p className="text-sm text-gray-400 mt-1 max-w-[200px] mx-auto">
+                                        Сообщения от куратора появятся здесь
+                                    </p>
+                                </div>
+                            ) : (
+                                messages.map(msg => (
+                                    <button
                                         key={msg.id}
                                         onClick={() => handleMessageClick(msg)}
-                                        className={`p-3 md:p-4 rounded-xl cursor-pointer transition-all ${selectedMessage?.id === msg.id
-                                            ? 'bg-meta-orange/10 border border-meta-orange/30'
-                                            : 'bg-deep-dark-200/40 border border-white/5 hover:border-white/10'
-                                            } ${!msg.is_read ? 'border-l-4 border-l-meta-orange' : ''}`}
+                                        className={`w-full text-left p-4 rounded-2xl transition-all duration-200 relative group
+                                            ${selectedMessage?.id === msg.id
+                                                ? 'bg-meta-orange/15 shadow-lg shadow-meta-orange/5'
+                                                : 'hover:bg-white/5'
+                                            }`}
                                     >
-                                        <div className="flex items-start gap-3">
-                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${msg.message_type === 'warning'
-                                                ? 'bg-yellow-500/10'
+                                        <div className="flex gap-4">
+                                            <div className={`w-12 h-12 rounded-2xl flex-shrink-0 flex items-center justify-center transition-transform duration-300 group-hover:scale-110 ${msg.message_type === 'warning'
+                                                ? 'bg-yellow-500/15'
                                                 : msg.message_type === 'announcement'
-                                                    ? 'bg-blue-500/10'
-                                                    : 'bg-meta-orange/10'
+                                                    ? 'bg-blue-500/15'
+                                                    : 'bg-meta-orange/15'
                                                 }`}>
                                                 {getMessageIcon(msg.message_type)}
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center justify-between mb-1">
-                                                    <span className={`text-sm font-medium ${msg.message_type === 'warning'
+                                                    <span className={`text-[11px] font-bold uppercase tracking-wider ${msg.message_type === 'warning'
                                                         ? 'text-yellow-400'
                                                         : msg.message_type === 'announcement'
                                                             ? 'text-blue-400'
@@ -262,40 +305,80 @@ export default function MessagesPage() {
                                                         }`}>
                                                         {getMessageTypeLabel(msg.message_type)}
                                                     </span>
-                                                    <span className="text-xs text-gray-500">
-                                                        {new Date(msg.created_at).toLocaleDateString('ru-RU')}
+                                                    <span className="text-[10px] text-gray-500 font-medium">
+                                                        {new Date(msg.created_at).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
                                                     </span>
                                                 </div>
-                                                <p className={`text-sm truncate ${!msg.is_read ? 'text-white font-medium' : 'text-gray-400'
+                                                <p className={`text-sm leading-snug truncate ${!msg.is_read ? 'text-white font-bold' : 'text-gray-400 font-medium'
                                                     }`}>
                                                     {msg.message}
                                                 </p>
                                             </div>
                                             {!msg.is_read && (
-                                                <div className="w-2 h-2 rounded-full bg-meta-orange flex-shrink-0 mt-2" />
+                                                <div className="absolute top-4 right-4 w-2 h-2 rounded-full bg-meta-orange shadow-[0_0_10px_rgba(255,107,0,0.5)]" />
                                             )}
                                         </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                                        {selectedMessage?.id === msg.id && (
+                                            <div className="absolute left-0 top-4 bottom-4 w-1 bg-meta-orange rounded-r-full" />
+                                        )}
+                                    </button>
+                                ))
+                            )}
+                        </div>
                     </div>
 
                     {/* Desktop: Message Detail */}
-                    <div className="hidden lg:block glass-card p-6">
+                    <div className="hidden lg:block lg:col-span-7 xl:col-span-8 glass-card border border-white/5 min-h-[60vh] h-full">
                         {selectedMessage ? (
-                            <MessageDetail message={selectedMessage} getMessageIcon={getMessageIcon} getMessageTypeLabel={getMessageTypeLabel} />
+                            <div className="p-8 xl:p-10 h-full flex flex-col">
+                                <MessageDetail message={selectedMessage} getMessageIcon={getMessageIcon} getMessageTypeLabel={getMessageTypeLabel} />
+                            </div>
                         ) : (
-                            <div className="h-full flex items-center justify-center text-center py-20">
-                                <div>
-                                    <Mail className="w-16 h-16 text-gray-700 mx-auto mb-4" />
-                                    <p className="text-gray-400">Выберите сообщение для просмотра</p>
+                            <div className="h-full min-h-[500px] flex items-center justify-center text-center p-10">
+                                <div className="max-w-xs">
+                                    <div className="w-20 h-20 rounded-[2.5rem] bg-white/5 flex items-center justify-center mx-auto mb-6">
+                                        <Mail className="w-10 h-10 text-gray-700" />
+                                    </div>
+                                    <h3 className="text-lg font-bold text-white mb-2">Выберите сообщение</h3>
+                                    <p className="text-sm text-gray-400 leading-relaxed">
+                                        Нажмите на любое сообщение слева, чтобы открыть детали и прочитать полный текст.
+                                    </p>
                                 </div>
                             </div>
                         )}
                     </div>
                 </div>
             </main>
+
+            <style jsx global>{`
+                .custom-scrollbar::-webkit-scrollbar {
+                    width: 4px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                    background: rgba(255, 255, 255, 0.05);
+                    border-radius: 10px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                    background: rgba(255, 255, 255, 0.1);
+                }
+                @keyframes fade-in {
+                    from { opacity: 0; transform: translateY(5px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                .animate-fade-in {
+                    animation: fade-in 0.3s ease-out forwards;
+                }
+                @keyframes slide-up {
+                    from { transform: translateY(100%); opacity: 0; }
+                    to { transform: translateY(0); opacity: 1; }
+                }
+                .animate-slide-up {
+                    animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+                }
+            `}</style>
         </div>
     )
 }
@@ -311,67 +394,92 @@ function MessageDetail({
     getMessageTypeLabel: (type: string) => string
 }) {
     return (
-        <>
-            <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${message.message_type === 'warning'
-                        ? 'bg-yellow-500/10'
+        <div className="flex flex-col h-full animate-fade-in">
+            {/* Header Detail */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+                <div className="flex items-center gap-4">
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg ${message.message_type === 'warning'
+                        ? 'bg-yellow-500/20 text-yellow-400'
                         : message.message_type === 'announcement'
-                            ? 'bg-blue-500/10'
-                            : 'bg-meta-orange/10'
+                            ? 'bg-blue-500/20 text-blue-400'
+                            : 'bg-meta-orange/20 text-meta-orange'
                         }`}>
                         {getMessageIcon(message.message_type)}
                     </div>
                     <div>
-                        <h3 className={`font-semibold ${message.message_type === 'warning'
-                            ? 'text-yellow-400'
-                            : message.message_type === 'announcement'
-                                ? 'text-blue-400'
-                                : 'text-meta-orange'
-                            }`}>
-                            {getMessageTypeLabel(message.message_type)}
-                        </h3>
-                        <p className="text-sm text-gray-400">
-                            От куратора курса
+                        <div className="flex items-center gap-2 mb-0.5">
+                            <h3 className={`text-lg font-bold uppercase tracking-wider ${message.message_type === 'warning'
+                                ? 'text-yellow-400'
+                                : message.message_type === 'announcement'
+                                    ? 'text-blue-400'
+                                    : 'text-meta-orange'
+                                }`}>
+                                {getMessageTypeLabel(message.message_type)}
+                            </h3>
+                            {message.is_read && (
+                                <span className="flex items-center gap-1 text-[10px] bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full border border-green-500/20">
+                                    <CheckCircle className="w-3 h-3" />
+                                    Прочитано
+                                </span>
+                            )}
+                        </div>
+                        <p className="text-sm text-gray-400 font-medium">
+                            Куратор курса MetaSystem
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    {message.is_read && (
-                        <span className="flex items-center gap-1 text-xs text-green-400">
-                            <CheckCircle className="w-3 h-3" />
-                            Прочитано
-                        </span>
-                    )}
+                <div className="text-right">
+                    <p className="text-xs text-gray-500 font-medium mb-1 uppercase tracking-tight">Отправлено</p>
+                    <p className="text-sm text-gray-300 font-bold">
+                        {new Date(message.created_at).toLocaleString('ru-RU', {
+                            day: 'numeric', month: 'short', year: 'numeric'
+                        })} в {new Date(message.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
                 </div>
             </div>
 
-            <div className="bg-deep-dark-200/40 rounded-xl p-4 mb-4">
-                <p className="text-sm text-gray-400 mb-2">
-                    {new Date(message.created_at).toLocaleString('ru-RU', {
-                        day: 'numeric',
-                        month: 'long',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    })}
-                </p>
-                <p className="text-white whitespace-pre-wrap leading-relaxed">
-                    {message.message}
-                </p>
+            {/* Content Body */}
+            <div className="flex-1 bg-white/5 border border-white/5 rounded-3xl p-6 md:p-8 mb-8 overflow-y-auto">
+                <div className="prose prose-invert max-w-none">
+                    <p className="text-white text-base md:text-lg leading-relaxed whitespace-pre-wrap font-medium">
+                        {message.message}
+                    </p>
+                </div>
+            </div>
+
+            {/* Footer / Actions */}
+            <div className="flex flex-col sm:flex-row items-center gap-4 pt-4 border-t border-white/5">
+                <a
+                    href="https://t.me/BodyBal"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-meta-orange text-white font-bold 
+                             flex items-center justify-center gap-3 hover:bg-meta-orange-hover 
+                             transition-all duration-300 shadow-lg shadow-meta-orange/20 active:scale-95"
+                >
+                    <Send className="w-5 h-5" />
+                    Задать вопрос в Telegram
+                    <ExternalLink className="w-4 h-4 opacity-50" />
+                </a>
+
+                <div className="text-center sm:text-left">
+                    <p className="text-xs text-gray-500 font-medium italic">
+                        * Прямые ответы в приложении временно не поддерживаются.
+                    </p>
+                </div>
             </div>
 
             {message.message_type === 'warning' && (
-                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
+                <div className="mt-8 bg-yellow-500/5 border border-yellow-500/20 rounded-2xl p-4">
                     <div className="flex items-start gap-3">
                         <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-                        <p className="text-sm text-yellow-200">
-                            Это предупреждение от администрации. Пожалуйста, внимательно ознакомьтесь
-                            с содержанием и примите необходимые меры.
+                        <p className="text-xs text-yellow-200/80 leading-relaxed font-medium">
+                            Это системное предупреждение. Пожалуйста, убедитесь, что вы соблюдаете правила программы
+                            и рекомендации куратора для достижения максимального результата.
                         </p>
                     </div>
                 </div>
             )}
-        </>
+        </div>
     )
 }
