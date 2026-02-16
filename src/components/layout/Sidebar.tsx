@@ -35,6 +35,7 @@ export default function Sidebar({ activeItem = 'dashboard', onItemClick }: Sideb
     const router = useRouter()
 
     useEffect(() => {
+        let isMounted = true;
         const checkAdmin = async () => {
             if (!user) {
                 // Demo mode - show admin link
@@ -42,17 +43,32 @@ export default function Sidebar({ activeItem = 'dashboard', onItemClick }: Sideb
                 return
             }
 
-            const supabase = createClient()
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('role')
-                .eq('id', user.id)
-                .single()
+            // Сначала проверяем роль в метаданных (это мгновенно)
+            const roleInMetadata = user.user_metadata?.role
+            if (roleInMetadata === 'admin' || roleInMetadata === 'curator') {
+                if (isMounted) setIsAdmin(true)
+                return
+            }
 
-            setIsAdmin(profile?.role === 'admin' || profile?.role === 'curator')
+            // Если в метаданных нет, проверяем БД один раз
+            try {
+                const supabase = createClient()
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('role')
+                    .eq('id', user.id)
+                    .single()
+
+                if (isMounted) {
+                    setIsAdmin(profile?.role === 'admin' || profile?.role === 'curator')
+                }
+            } catch (e) {
+                console.error('Sidebar admin check failed', e)
+            }
         }
 
         checkAdmin()
+        return () => { isMounted = false }
     }, [user])
 
     const handleItemClick = (item: typeof menuItems[0]) => {

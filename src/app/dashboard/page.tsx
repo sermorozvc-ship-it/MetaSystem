@@ -25,6 +25,9 @@ export default function DashboardPage() {
     const [completedDays, setCompletedDays] = useState<number[]>([])
     const [taskProgress, setTaskProgress] = useState<Record<number, number[]>>({})
 
+    // Mobile bottom sheet
+    const [showMobileSheet, setShowMobileSheet] = useState(false)
+
     // Модальные окна
     const [isVisceralOpen, setIsVisceralOpen] = useState(false)
     const [isMeasurementsOpen, setIsMeasurementsOpen] = useState(false)
@@ -139,11 +142,22 @@ export default function DashboardPage() {
         }))
     }))
 
+    // Выбор дня — открывает шторку на мобильных
+    const handleDaySelect = (dayNumber: number) => {
+        setSelectedDayNumber(dayNumber)
+        // Открываем шторку только на мобильных (< lg = 1024px)
+        if (window.innerWidth < 1024) {
+            setShowMobileSheet(true)
+        }
+    }
+
     return (
         <>
             <DashboardLayout
                 userName="Атлет"
                 currentDay={currentDay}
+                showMobileSheet={showMobileSheet}
+                onCloseMobileSheet={() => setShowMobileSheet(false)}
                 rightPanel={
                     <ActionPanel
                         selectedDay={getSelectedDayWithProgress()}
@@ -156,7 +170,7 @@ export default function DashboardPage() {
                     days={daysWithProgress}
                     currentDay={currentDay}
                     selectedDayNumber={selectedDayNumber}
-                    onDaySelect={setSelectedDayNumber}
+                    onDaySelect={handleDaySelect}
                     completedDays={completedDays}
                 />
             </DashboardLayout>
