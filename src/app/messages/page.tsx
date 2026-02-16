@@ -118,30 +118,50 @@ export default function MessagesPage() {
     }
 
     const handleSendReply = async () => {
-        if (!replyText.trim() || !selectedMessage || !user) return
+        if (!replyText.trim() || !user) return
 
         setIsSending(true)
         try {
-            // Who are we replying to?
-            // If the message was FROM us, we still reply to the curator
-            const recipientId = selectedMessage.from_user_id || selectedMessage.to_user_id
+            // Priority for recipient:
+            // 1. If we have a selected message, try to reply to its sender (if not us)
+            // 2. Otherwise find any message from a curator in our history
+            // 3. Fallback to a default admin/curator ID
 
-            // Avoid replying to ourselves
-            // Find the curator ID from existing messages or fallback to default
-            let finalRecipientId = recipientId
+            let finalRecipientId = '3c07b01d-29e6-47c7-b533-f722f752e4b3' // Default fallback
 
-            if (recipientId === user.id) {
-                // If the selected message is from us/to us, find the first message from a curator
+            if (selectedMessage) {
+                const recipientId = selectedMessage.from_user_id || selectedMessage.to_user_id
+                if (recipientId && recipientId !== user.id) {
+                    finalRecipientId = recipientId
+                } else {
+                    const curatorMsg = messages.find(m => m.from_user_id && m.from_user_id !== user.id)
+                    if (curatorMsg?.from_user_id) {
+                        finalRecipientId = curatorMsg.from_user_id
+                    }
+                }
+            } else {
+                // If nothing selected, try to find a curator from any message
                 const curatorMsg = messages.find(m => m.from_user_id && m.from_user_id !== user.id)
-                finalRecipientId = curatorMsg?.from_user_id || '3c07b01d-29e6-47c7-b533-f722f752e4b3'
+                if (curatorMsg?.from_user_id) {
+                    finalRecipientId = curatorMsg.from_user_id
+                }
             }
 
-            const result = await sendReply(finalRecipientId as string, replyText.trim())
+            const result = await sendReply(finalRecipientId, replyText.trim())
 
             if (result.success) {
                 setReplyText('')
                 await loadMessages() // Refresh conversation
+                // Clear selection if it was a demo message or something weird
+                if (!selectedMessage || selectedMessage.to_user_id === 'demo') {
+                    setSelectedMessage(null)
+                }
+            } else {
+                alert('Ошибка при отправке: ' + (result.error || 'Неизвестная ошибка'))
             }
+        } catch (error) {
+            console.error('Send reply failed:', error)
+            alert('Не удалось отправить сообщение. Попробуйте позже.')
         } finally {
             setIsSending(false)
         }
@@ -452,7 +472,7 @@ function MessageDetail({
                                 ? 'bg-blue-500/20 text-blue-400'
                                 : 'bg-meta-orange/20 text-meta-orange'
                         }`}>
-                        {isFromMe ? <Mail className="w-6 h-6" /> : getMessageIcon(message.message_type)}
+                        {isFromMe ? <Send className="w-6 h-6" /> : getMessageIcon(message.message_type)}
                     </div>
                     <div>
                         <div className="flex items-center gap-2 mb-0.5">
@@ -474,7 +494,7 @@ function MessageDetail({
                             )}
                         </div>
                         <p className="text-sm text-gray-400 font-medium">
-                            {isFromMe ? 'Вы' : 'Куратор курса MetaSystem'}
+                            {isFromMe ? (user?.full_name || 'Вы') : 'Куратор курса MetaSystem'}
                         </p>
                     </div>
                 </div>

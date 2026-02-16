@@ -180,6 +180,20 @@ export default function AdminPage() {
     }, [user, authLoading])
 
 
+    const messagesEndRef = useState<HTMLDivElement | null>(null)[0];
+    const scrollMessagesToBottom = () => {
+        const container = document.getElementById('admin-chat-container');
+        if (container) {
+            container.scrollTop = container.scrollHeight;
+        }
+    };
+
+    useEffect(() => {
+        if (userModalTab === 'messages' && selectedUserMessages.length > 0) {
+            scrollMessagesToBottom();
+        }
+    }, [userModalTab, selectedUserMessages]);
+
     const handleUserClick = async (userItem: UserWithProgress, initialTab: 'progress' | 'reports' | 'messages' = 'progress') => {
         setSelectedUser(userItem)
         setUserModalTab(initialTab)
@@ -674,7 +688,8 @@ export default function AdminPage() {
                                                         return (
                                                             <div
                                                                 key={task.id}
-                                                                className={`h-3 flex-1 rounded-full transition-all ${isCompleted ? 'bg-meta-orange shadow-[0_0_10px_rgba(255,107,0,0.3)]' : 'bg-white/5'}`}
+                                                                title={task.text}
+                                                                className={`h-3 flex-1 rounded-full transition-all ${isCompleted ? 'bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.3)]' : 'bg-white/5'}`}
                                                             />
                                                         )
                                                     })}
@@ -729,7 +744,7 @@ export default function AdminPage() {
                         {/* Messages Tab Content */}
                         {userModalTab === 'messages' && (
                             <div className="animate-fade-in flex flex-col h-[500px]">
-                                <div className="flex-1 overflow-y-auto space-y-4 mb-6 pr-2 custom-scrollbar">
+                                <div id="admin-chat-container" className="flex-1 overflow-y-auto space-y-6 mb-6 pr-2 custom-scrollbar scroll-smooth">
                                     {selectedUserMessages.length === 0 ? (
                                         <div className="h-full flex flex-col items-center justify-center text-center">
                                             <div className="w-16 h-16 rounded-3xl bg-white/5 flex items-center justify-center mb-4">
@@ -738,22 +753,30 @@ export default function AdminPage() {
                                             <p className="text-gray-500">История переписки пуста</p>
                                         </div>
                                     ) : (
-                                        selectedUserMessages.map(msg => (
-                                            <div key={msg.id} className={`flex ${msg.from_user_id === user?.id ? 'justify-end' : 'justify-start'}`}>
-                                                <div className={`max-w-[80%] p-4 rounded-3xl ${msg.from_user_id === user?.id
-                                                    ? 'bg-meta-orange text-white rounded-tr-none shadow-lg shadow-meta-orange/10'
-                                                    : 'bg-deep-dark-200/80 text-gray-200 rounded-tl-none border border-white/5'
-                                                    }`}>
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        {msg.message_type === 'warning' && <AlertTriangle className="w-3 h-3 text-yellow-400" />}
-                                                        <span className="text-[10px] opacity-60 font-bold uppercase tracking-wider">
-                                                            {new Date(msg.created_at).toLocaleDateString('ru-RU')} {new Date(msg.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                                                        </span>
+                                        [...selectedUserMessages].reverse().map(msg => {
+                                            const isFromStudent = msg.from_user_id === selectedUser.id;
+                                            return (
+                                                <div key={msg.id} className={`flex flex-col ${isFromStudent ? 'items-start' : 'items-end'}`}>
+                                                    <span className="text-[10px] text-gray-500 font-bold uppercase mb-1 px-1">
+                                                        {isFromStudent ? (selectedUser.full_name || 'Подопечный') : 'Вы'}
+                                                    </span>
+                                                    <div className={`max-w-[85%] p-4 rounded-2xl ${isFromStudent
+                                                        ? 'bg-deep-dark-200/80 text-gray-200 rounded-tl-none border border-white/10'
+                                                        : msg.message_type === 'warning'
+                                                            ? 'bg-yellow-500 text-black rounded-tr-none shadow-lg shadow-yellow-500/10'
+                                                            : 'bg-meta-orange text-white rounded-tr-none shadow-lg shadow-meta-orange/10'
+                                                        }`}>
+                                                        <div className="flex items-center gap-2 mb-1.5 opacity-70">
+                                                            {msg.message_type === 'warning' && <AlertTriangle className={`w-3 h-3 ${isFromStudent ? 'text-yellow-400' : 'text-black'}`} />}
+                                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${!isFromStudent && msg.message_type === 'warning' ? 'text-black' : ''}`}>
+                                                                {new Date(msg.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-sm font-medium whitespace-pre-wrap leading-relaxed">{msg.message}</p>
                                                     </div>
-                                                    <p className="text-sm font-medium whitespace-pre-wrap leading-relaxed">{msg.message}</p>
                                                 </div>
-                                            </div>
-                                        ))
+                                            );
+                                        })
                                     )}
                                 </div>
 
