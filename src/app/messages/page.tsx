@@ -6,6 +6,7 @@ import { MessageSquare, AlertTriangle, Bell, ArrowLeft, CheckCircle, Mail, X, Ch
 import { useAuth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/client'
 import Sidebar from '@/components/layout/Sidebar'
+import { getConversation, sendReply } from '@/lib/services/messages'
 
 interface AdminMessage {
     id: number
@@ -54,6 +55,8 @@ export default function MessagesPage() {
     const [messages, setMessages] = useState<AdminMessage[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [selectedMessage, setSelectedMessage] = useState<AdminMessage | null>(null)
+    const [replyText, setReplyText] = useState('')
+    const [isSending, setIsSending] = useState(false)
 
     useEffect(() => {
         if (authLoading) return
@@ -75,27 +78,8 @@ export default function MessagesPage() {
                 return
             }
 
-            const supabase = createClient()
-
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Timeout')), 5000)
-            )
-
-            const fetchPromise = supabase
-                .from('admin_messages')
-                .select('*')
-                .eq('to_user_id', user.id)
-                .order('created_at', { ascending: false })
-
-            const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any
-
-            if (error) {
-                console.error('Error loading messages:', error)
-                // Fallback к демо
-                setMessages(demoMessages)
-            } else {
-                setMessages(data && data.length > 0 ? data : demoMessages)
-            }
+            const data = await getConversation(user.id)
+            setMessages(data && data.length > 0 ? data : demoMessages)
         } catch (e) {
             console.error('Messages fetch failed:', e)
             setMessages(demoMessages)
@@ -128,8 +112,35 @@ export default function MessagesPage() {
 
     const handleMessageClick = async (msg: AdminMessage) => {
         setSelectedMessage(msg)
-        if (!msg.is_read) {
+        if (!msg.is_read && msg.to_user_id === user?.id) {
             await markAsRead(msg.id)
+        }
+    }
+
+    const handleSendReply = async () => {
+        if (!replyText.trim() || !selectedMessage || !user) return
+
+        setIsSending(true)
+        try {
+            // Who are we replying to?
+            // If the message was FROM us, we still reply to the curator who was the RECIPENT then
+            // Actually, we should reply to the person who sent the original message
+            const recipientId = selectedMessage.from_user_id || selectedMessage.to_user_id
+
+            // Avoid replying to ourselves
+            // Use a fallback admin ID if no valid recipient found
+            const finalRecipientId = recipientId === user.id ?
+                (messages.find(m => m.from_user_id && m.from_user_id !== user.id)?.from_user_id || '3c07b01d-29e6-47c7-b533-f722f752e4b3')
+                : recipientId
+
+            const result = await sendReply(finalRecipientId as string, replyText.trim())
+
+            if (result.success) {
+                setReplyText('')
+                await loadMessages() // Refresh conversation
+            }
+        } finally {
+            setIsSending(false)
         }
     }
 
@@ -157,7 +168,7 @@ export default function MessagesPage() {
         }
     }
 
-    const unreadCount = messages.filter(m => !m.is_read).length
+    const unreadCount = messages.filter(m => !m.is_read && m.to_user_id === user?.id).length
 
     const getMessageIcon = (type: string) => {
         switch (type) {
@@ -250,7 +261,16 @@ export default function MessagesPage() {
                                 </button>
                             </div>
                             <div className="px-6 pb-24">
-                                <MessageDetail message={selectedMessage} getMessageIcon={getMessageIcon} getMessageTypeLabel={getMessageTypeLabel} />
+                                <MessageDetail
+                                    message={selectedMessage}
+                                    getMessageIcon={getMessageIcon}
+                                    getMessageTypeLabel={getMessageTypeLabel}
+                                    user={user}
+                                    replyText={replyText}
+                                    setReplyText={setReplyText}
+                                    onSend={handleSendReply}
+                                    isSending={isSending}
+                                />
                             </div>
                         </div>
                     </div>
@@ -297,24 +317,27 @@ export default function MessagesPage() {
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center justify-between mb-1">
-                                                    <span className={`text-[11px] font-bold uppercase tracking-wider ${msg.message_type === 'warning'
-                                                        ? 'text-yellow-400'
-                                                        : msg.message_type === 'announcement'
-                                                            ? 'text-blue-400'
-                                                            : 'text-meta-orange'
+                                                    <span className={`text-[11px] font-bold uppercase tracking-wider ${msg.from_user_id === user?.id
+                                                        ? 'text-gray-400'
+                                                        : msg.message_type === 'warning'
+                                                            ? 'text-yellow-400'
+                                                            : msg.message_type === 'announcement'
+                                                                ? 'text-blue-400'
+                                                                : 'text-meta-orange'
                                                         }`}>
-                                                        {getMessageTypeLabel(msg.message_type)}
+                                                        {msg.from_user_id === user?.id ? 'Ваш ответ' : getMessageTypeLabel(msg.message_type)}
                                                     </span>
                                                     <span className="text-[10px] text-gray-500 font-medium">
                                                         {new Date(msg.created_at).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
                                                     </span>
                                                 </div>
-                                                <p className={`text-sm leading-snug truncate ${!msg.is_read ? 'text-white font-bold' : 'text-gray-400 font-medium'
+                                                <p className={`text-sm leading-snug truncate ${!msg.is_read && msg.to_user_id === user?.id ? 'text-white font-bold' : 'text-gray-400 font-medium'
                                                     }`}>
+                                                    {msg.from_user_id === user?.id && <span className="text-meta-orange mr-1">Вы:</span>}
                                                     {msg.message}
                                                 </p>
                                             </div>
-                                            {!msg.is_read && (
+                                            {!msg.is_read && msg.to_user_id === user?.id && (
                                                 <div className="absolute top-4 right-4 w-2 h-2 rounded-full bg-meta-orange shadow-[0_0_10px_rgba(255,107,0,0.5)]" />
                                             )}
                                         </div>
@@ -331,7 +354,16 @@ export default function MessagesPage() {
                     <div className="hidden lg:block lg:col-span-7 xl:col-span-8 glass-card border border-white/5 min-h-[60vh] h-full">
                         {selectedMessage ? (
                             <div className="p-8 xl:p-10 h-full flex flex-col">
-                                <MessageDetail message={selectedMessage} getMessageIcon={getMessageIcon} getMessageTypeLabel={getMessageTypeLabel} />
+                                <MessageDetail
+                                    message={selectedMessage}
+                                    getMessageIcon={getMessageIcon}
+                                    getMessageTypeLabel={getMessageTypeLabel}
+                                    user={user}
+                                    replyText={replyText}
+                                    setReplyText={setReplyText}
+                                    onSend={handleSendReply}
+                                    isSending={isSending}
+                                />
                             </div>
                         ) : (
                             <div className="h-full min-h-[500px] flex items-center justify-center text-center p-10">
@@ -387,36 +419,52 @@ export default function MessagesPage() {
 function MessageDetail({
     message,
     getMessageIcon,
-    getMessageTypeLabel
+    getMessageTypeLabel,
+    user,
+    replyText,
+    setReplyText,
+    onSend,
+    isSending
 }: {
     message: AdminMessage
     getMessageIcon: (type: string) => React.ReactNode
     getMessageTypeLabel: (type: string) => string
+    user: any
+    replyText: string
+    setReplyText: (val: string) => void
+    onSend: () => void
+    isSending: boolean
 }) {
+    const isFromMe = message.from_user_id === user?.id
+
     return (
         <div className="flex flex-col h-full animate-fade-in">
             {/* Header Detail */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                 <div className="flex items-center gap-4">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg ${message.message_type === 'warning'
-                        ? 'bg-yellow-500/20 text-yellow-400'
-                        : message.message_type === 'announcement'
-                            ? 'bg-blue-500/20 text-blue-400'
-                            : 'bg-meta-orange/20 text-meta-orange'
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg ${isFromMe
+                        ? 'bg-white/10 text-gray-400'
+                        : message.message_type === 'warning'
+                            ? 'bg-yellow-500/20 text-yellow-400'
+                            : message.message_type === 'announcement'
+                                ? 'bg-blue-500/20 text-blue-400'
+                                : 'bg-meta-orange/20 text-meta-orange'
                         }`}>
-                        {getMessageIcon(message.message_type)}
+                        {isFromMe ? <Mail className="w-6 h-6" /> : getMessageIcon(message.message_type)}
                     </div>
                     <div>
                         <div className="flex items-center gap-2 mb-0.5">
-                            <h3 className={`text-lg font-bold uppercase tracking-wider ${message.message_type === 'warning'
-                                ? 'text-yellow-400'
-                                : message.message_type === 'announcement'
-                                    ? 'text-blue-400'
-                                    : 'text-meta-orange'
+                            <h3 className={`text-lg font-bold uppercase tracking-wider ${isFromMe
+                                ? 'text-gray-300'
+                                : message.message_type === 'warning'
+                                    ? 'text-yellow-400'
+                                    : message.message_type === 'announcement'
+                                        ? 'text-blue-400'
+                                        : 'text-meta-orange'
                                 }`}>
-                                {getMessageTypeLabel(message.message_type)}
+                                {isFromMe ? 'Ваш ответ' : getMessageTypeLabel(message.message_type)}
                             </h3>
-                            {message.is_read && (
+                            {message.is_read && !isFromMe && (
                                 <span className="flex items-center gap-1 text-[10px] bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full border border-green-500/20">
                                     <CheckCircle className="w-3 h-3" />
                                     Прочитано
@@ -424,7 +472,7 @@ function MessageDetail({
                             )}
                         </div>
                         <p className="text-sm text-gray-400 font-medium">
-                            Куратор курса MetaSystem
+                            {isFromMe ? 'Вы' : 'Куратор курса MetaSystem'}
                         </p>
                     </div>
                 </div>
@@ -439,7 +487,7 @@ function MessageDetail({
             </div>
 
             {/* Content Body */}
-            <div className="flex-1 bg-white/5 border border-white/5 rounded-3xl p-6 md:p-8 mb-8 overflow-y-auto">
+            <div className={`flex-1 ${isFromMe ? 'bg-meta-orange/5 border-meta-orange/10' : 'bg-white/5 border-white/5'} border rounded-3xl p-6 md:p-8 mb-8 overflow-y-auto`}>
                 <div className="prose prose-invert max-w-none">
                     <p className="text-white text-base md:text-lg leading-relaxed whitespace-pre-wrap font-medium">
                         {message.message}
@@ -447,29 +495,62 @@ function MessageDetail({
                 </div>
             </div>
 
-            {/* Footer / Actions */}
-            <div className="flex flex-col sm:flex-row items-center gap-4 pt-4 border-t border-white/5">
-                <a
-                    href="https://t.me/BodyBal"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-meta-orange text-white font-bold 
-                             flex items-center justify-center gap-3 hover:bg-meta-orange-hover 
-                             transition-all duration-300 shadow-lg shadow-meta-orange/20 active:scale-95"
-                >
-                    <Send className="w-5 h-5" />
-                    Задать вопрос в Telegram
-                    <ExternalLink className="w-4 h-4 opacity-50" />
-                </a>
+            {/* Footer / Reply Action */}
+            <div className="pt-6 border-t border-white/5">
+                {!isFromMe ? (
+                    <div className="space-y-4">
+                        <div className="relative group">
+                            <textarea
+                                value={replyText}
+                                onChange={(e) => setReplyText(e.target.value)}
+                                placeholder="Напишите ваш ответ куратору..."
+                                className="w-full bg-deep-dark-200/60 border border-white/10 rounded-2xl p-4 md:p-5
+                                         text-white placeholder:text-gray-500 focus:outline-none focus:border-meta-orange/50
+                                         transition-all duration-300 min-h-[120px] resize-none pr-12 text-sm md:text-base font-medium"
+                            />
+                            <div className="absolute right-4 bottom-4 text-[10px] text-gray-600 font-bold uppercase tracking-widest">
+                                {replyText.length} символов
+                            </div>
+                        </div>
 
-                <div className="text-center sm:text-left">
-                    <p className="text-xs text-gray-500 font-medium italic">
-                        * Прямые ответы в приложении временно не поддерживаются.
-                    </p>
-                </div>
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                            <button
+                                onClick={onSend}
+                                disabled={isSending || !replyText.trim()}
+                                className="w-full sm:w-auto px-10 py-4 rounded-2xl bg-meta-orange text-white font-bold 
+                                         flex items-center justify-center gap-3 hover:bg-meta-orange-hover 
+                                         disabled:opacity-50 disabled:grayscale transition-all duration-300 
+                                         shadow-lg shadow-meta-orange/20 active:scale-95"
+                            >
+                                {isSending ? (
+                                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                ) : (
+                                    <Send className="w-5 h-5" />
+                                )}
+                                Отправить куратору
+                            </button>
+
+                            <a
+                                href="https://t.me/BodyBal"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-2 text-xs text-gray-400 hover:text-white transition-colors group"
+                            >
+                                <ExternalLink className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100" />
+                                Перейти в Telegram
+                            </a>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="text-center py-4 bg-white/5 rounded-2xl border border-dashed border-white/10">
+                        <p className="text-sm text-gray-500 font-medium">
+                            Вы уже ответили на это сообщение. Вы можете отправить новое сообщение, ответив на входящее письмо от куратора.
+                        </p>
+                    </div>
+                )}
             </div>
 
-            {message.message_type === 'warning' && (
+            {message.message_type === 'warning' && !isFromMe && (
                 <div className="mt-8 bg-yellow-500/5 border border-yellow-500/20 rounded-2xl p-4">
                     <div className="flex items-start gap-3">
                         <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />

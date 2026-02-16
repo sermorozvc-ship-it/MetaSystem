@@ -390,7 +390,7 @@ export async function getUserMessages(userId: string): Promise<AdminMessage[]> {
         const fallback = await supabase
             .from('admin_messages')
             .select('*, from_user:profiles!from_user_id(full_name, email)')
-            .eq('to_user_id', userId)
+            .or(`to_user_id.eq.${userId},from_user_id.eq.${userId}`)
             .order('created_at', { ascending: false })
 
         return fallback.data || []

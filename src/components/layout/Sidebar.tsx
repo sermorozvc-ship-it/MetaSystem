@@ -135,7 +135,7 @@ export default function Sidebar({ activeItem = 'dashboard', onItemClick }: Sideb
                     {/* Admin Link */}
                     {isAdmin && (
                         <button
-                            onClick={() => router.push('/admin')}
+                            onClick={() => window.open('/admin', '_blank')}
                             onMouseEnter={() => setHoveredItem('admin')}
                             onMouseLeave={() => setHoveredItem(null)}
                             className={`
@@ -189,7 +189,7 @@ export default function Sidebar({ activeItem = 'dashboard', onItemClick }: Sideb
                                 key={item.id}
                                 onClick={() => {
                                     if (isAdminItem) {
-                                        router.push('/admin')
+                                        window.open('/admin', '_blank')
                                     } else {
                                         handleItemClick(item)
                                     }
