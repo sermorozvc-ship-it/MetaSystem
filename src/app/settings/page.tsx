@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-    Settings, ArrowLeft, User, Bell, Moon, Globe,
+    Settings, ArrowLeft, User, Bell, Globe,
     LogOut, ChevronRight, Shield, Trash2, Eye, EyeOff, Save, X,
-    Palette, Volume2, Smartphone, Info, Mail
+    Volume2, Smartphone, Info, Mail
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/client'
@@ -16,8 +16,7 @@ export default function SettingsPage() {
     const router = useRouter()
 
     // Settings state
-    const [showNotifications, setShowNotifications] = useState(true)
-    const [darkMode, setDarkMode] = useState(true) // Always dark in this app
+
     const [showPasswordForm, setShowPasswordForm] = useState(false)
     const [currentPassword, setCurrentPassword] = useState('')
     const [newPassword, setNewPassword] = useState('')
@@ -234,53 +233,6 @@ export default function SettingsPage() {
                     </div>
                 )}
 
-                {/* Preferences Section */}
-                <div className="glass-card p-4 md:p-6 mb-4 md:mb-6">
-                    <h2 className="text-base md:text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                        <Palette className="w-5 h-5 text-meta-orange" />
-                        Предпочтения
-                    </h2>
-
-                    {/* Notifications Toggle */}
-                    <div className="flex items-center justify-between p-4 rounded-2xl bg-deep-dark-200/40
-                                    border border-white/5 mb-3">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-yellow-500/20 flex items-center justify-center">
-                                <Bell className="w-5 h-5 text-yellow-400" />
-                            </div>
-                            <div>
-                                <span className="text-sm text-white block">Уведомления</span>
-                                <span className="text-xs text-gray-500">Сообщения от куратора</span>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => setShowNotifications(!showNotifications)}
-                            className={`w-12 h-7 rounded-full transition-all ${showNotifications ? 'bg-meta-orange' : 'bg-deep-dark-300'}`}
-                        >
-                            <div className={`w-5 h-5 rounded-full bg-white transition-transform ${showNotifications ? 'translate-x-6' : 'translate-x-1'}`} />
-                        </button>
-                    </div>
-
-                    {/* Dark Mode Toggle (always on) */}
-                    <div className="flex items-center justify-between p-4 rounded-2xl bg-deep-dark-200/40
-                                    border border-white/5 mb-3">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center">
-                                <Moon className="w-5 h-5 text-indigo-400" />
-                            </div>
-                            <div>
-                                <span className="text-sm text-white block">Тёмная тема</span>
-                                <span className="text-xs text-gray-500">Всегда тёмная</span>
-                            </div>
-                        </div>
-                        <button
-                            disabled
-                            className="w-12 h-7 rounded-full bg-meta-orange cursor-not-allowed opacity-70"
-                        >
-                            <div className="w-5 h-5 rounded-full bg-white translate-x-6" />
-                        </button>
-                    </div>
-                </div>
 
                 {/* About Section */}
                 <div className="glass-card p-4 md:p-6 mb-4 md:mb-6">
@@ -290,10 +242,7 @@ export default function SettingsPage() {
                     </h2>
 
                     <div className="space-y-3 text-sm text-gray-400">
-                        <div className="flex items-center justify-between p-3 rounded-xl bg-deep-dark-200/40">
-                            <span>Версия</span>
-                            <span className="text-white font-mono">1.0.0</span>
-                        </div>
+
                         <div className="flex items-center justify-between p-3 rounded-xl bg-deep-dark-200/40">
                             <span>Курс</span>
                             <span className="text-white">Метаболический Запуск</span>

@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/client'
+import { createClient, safeGetUser } from '@/lib/supabase/client'
 
 export interface ReportFile {
     name: string
@@ -25,32 +25,38 @@ export async function uploadReportFiles(
     const supabase = createClient()
     const uploadedFiles: ReportFile[] = []
 
+    console.log(`Uploading ${files.length} files for day ${dayNumber}...`)
+
     for (const file of files) {
-        const fileExt = file.name.split('.').pop()
-        const fileName = `${userId}/day-${dayNumber}/${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`
+        try {
+            const fileExt = file.name.split('.').pop()
+            const fileName = `${userId}/day-${dayNumber}/${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`
 
-        const { data, error } = await supabase.storage
-            .from('day-reports')
-            .upload(fileName, file, {
-                cacheControl: '3600',
-                upsert: false
+            const { data, error } = await supabase.storage
+                .from('day-reports')
+                .upload(fileName, file, {
+                    cacheControl: '3600',
+                    upsert: false
+                })
+
+            if (error) {
+                console.error('Upload error for file:', file.name, error)
+                continue
+            }
+
+            // Get public URL
+            const { data: urlData } = supabase.storage
+                .from('day-reports')
+                .getPublicUrl(data.path)
+
+            uploadedFiles.push({
+                name: file.name,
+                url: urlData.publicUrl,
+                type: file.type
             })
-
-        if (error) {
-            console.error('Upload error:', error)
-            continue
+        } catch (e) {
+            console.error('Exception during file upload:', e)
         }
-
-        // Get public URL
-        const { data: urlData } = supabase.storage
-            .from('day-reports')
-            .getPublicUrl(data.path)
-
-        uploadedFiles.push({
-            name: file.name,
-            url: urlData.publicUrl,
-            type: file.type
-        })
     }
 
     return uploadedFiles
@@ -63,10 +69,11 @@ export async function submitDayReport(
 ): Promise<{ success: boolean; error?: string }> {
     const supabase = createClient()
 
-    // Get current user
-    const { data: { user } } = await supabase.auth.getUser()
+    // Get current user safely
+    const user = await safeGetUser()
 
     if (!user) {
+        console.log('No user found, saving to demo mode')
         // For demo mode without auth, save to localStorage
         const demoReports = JSON.parse(localStorage.getItem('demo_reports') || '[]')
         demoReports.push({
@@ -80,32 +87,37 @@ export async function submitDayReport(
         return { success: true }
     }
 
-    console.log('Submitting report:', { dayNumber, files: files.length, comment: !!comment })
+    console.log('Submitting report to Supabase:', { dayNumber, filesCount: files.length, userId: user.id })
 
-    const { data, error } = await supabase
-        .from('day_reports')
-        .insert({
-            user_id: user.id,
-            day_number: dayNumber,
-            files,
-            comment,
-            status: 'pending'
-        })
-        .select()
+    try {
+        const { data, error } = await supabase
+            .from('day_reports')
+            .insert({
+                user_id: user.id,
+                day_number: dayNumber,
+                files,
+                comment,
+                status: 'pending'
+            })
+            .select()
 
-    if (error) {
-        console.error('Submit error:', error)
-        return { success: false, error: error.message }
+        if (error) {
+            console.error('Submit error from Supabase:', error)
+            return { success: false, error: error.message }
+        }
+
+        console.log('Report submitted successfully:', data)
+        return { success: true }
+    } catch (e: any) {
+        console.error('Exception in submitDayReport:', e)
+        return { success: false, error: e.message || 'Unknown error' }
     }
-
-    console.log('Report submitted successfully:', data)
-    return { success: true }
 }
 
 export async function getDayReports(dayNumber?: number): Promise<DayReport[]> {
     const supabase = createClient()
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await safeGetUser()
 
     if (!user) {
         // Demo mode - get from localStorage

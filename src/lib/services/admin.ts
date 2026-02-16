@@ -51,8 +51,8 @@ export async function isAdmin(): Promise<boolean> {
 
     if (!user) return true // Allow access in demo mode
 
-    // 🚨 EMERGENCY ACCESS override for the owner
-    if (user.email === 'hunternik005@gmail.com') {
+    // 🚨 EMERGENCY ACCESS override for owners
+    if (user.email === 'hunternik005@gmail.com' || user.email === 'dgmukhin@gmail.com') {
         console.log('Emergency admin access granted for owner')
         return true
     }
@@ -93,13 +93,10 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
     let allProgress: any[] | null = null
     let allReports: any[] | null = null
 
-    // 1. Fetch all profiles with retry
+    // 1. Fetch all profiles using secure RPC to bypass RLS
     for (let attempt = 0; attempt < 3; attempt++) {
         try {
-            const result = await supabase
-                .from('profiles')
-                .select('*')
-                .order('created_at', { ascending: false })
+            const result = await supabase.rpc('get_all_users_secure')
 
             if (result.error) {
                 if (isAbortError(result.error)) {
@@ -107,7 +104,18 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
                     await new Promise(r => setTimeout(r, 150 * (attempt + 1)))
                     continue
                 }
-                console.error('Error fetching profiles:', result.error)
+                console.error('Error fetching profiles via RPC:', result.error)
+
+                // Fallback to table query if RPC fails (e.g. if it doesn't exist yet)
+                const fallback = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+
+                if (fallback.error && !isAbortError(fallback.error)) {
+                    throw fallback.error
+                }
+                profiles = fallback.data
                 break
             }
             profiles = result.data
@@ -123,8 +131,13 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
         }
     }
 
-    if (!profiles || profiles.length === 0) {
-        console.log('No profiles found or fetch failed')
+    if (!profiles) {
+        console.error('All profile fetch attempts failed')
+        throw new Error('Не удалось загрузить список пользователей. Проверьте соединение или права доступа.')
+    }
+
+    if (profiles.length === 0) {
+        console.log('No profiles found')
         return []
     }
 
@@ -159,13 +172,14 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
     // Aggregate data
     const progressMap = new Map<string, number>()
     allProgress?.forEach((p: any) => {
+        // Here row count = tasks count. If we want days, we would need to check unique day_numbers.
+        // For now, let's keep it as total tasks completed.
         progressMap.set(p.user_id, (progressMap.get(p.user_id) || 0) + 1)
     })
 
     const reportsMap = new Map<string, { count: number, last: string | null }>()
     allReports?.forEach((r: any) => {
         const stats = reportsMap.get(r.user_id) || { count: 0, last: null }
-        // Reports are ordered by date desc, so first one is latest
         if (!stats.last) stats.last = r.created_at
         stats.count++
         reportsMap.set(r.user_id, stats)
@@ -176,7 +190,7 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
         const reportStats = reportsMap.get(profile.id)
         return {
             ...profile,
-            completed_days: progressMap.get(profile.id) || 0,
+            completed_days: progressMap.get(profile.id) || 0, // This is actually tasks count
             total_reports: reportStats?.count || 0,
             last_activity: reportStats?.last || profile.created_at
         }
@@ -222,18 +236,25 @@ export async function getUserDetails(userId: string): Promise<UserWithProgress |
 export async function getUserReports(userId: string): Promise<DayReportWithUser[]> {
     const supabase = createClient()
 
-    const { data, error } = await supabase
-        .from('day_reports')
-        .select('*')
-        .eq('user_id', userId)
-        .order('day_number', { ascending: true })
+    try {
+        const { data, error } = await supabase.rpc('get_user_reports_secure', {
+            p_user_id: userId
+        })
 
-    if (error) {
-        console.error('Error fetching reports:', error)
+        if (!error && data) return data
+
+        // Fallback
+        const fallback = await supabase
+            .from('day_reports')
+            .select('*')
+            .eq('user_id', userId)
+            .order('day_number', { ascending: true })
+
+        return fallback.data || []
+    } catch (e) {
+        console.error('Error in getUserReports:', e)
         return []
     }
-
-    return data || []
 }
 
 // Get all pending reports
@@ -358,18 +379,25 @@ export async function sendMessageToUser(
 export async function getUserMessages(userId: string): Promise<AdminMessage[]> {
     const supabase = createClient()
 
-    const { data, error } = await supabase
-        .from('admin_messages')
-        .select('*, from_user:profiles!from_user_id(full_name, email)')
-        .eq('to_user_id', userId)
-        .order('created_at', { ascending: false })
+    try {
+        const { data, error } = await supabase.rpc('get_user_messages_secure', {
+            p_user_id: userId
+        })
 
-    if (error) {
-        console.error('Error fetching messages:', error)
+        if (!error && data) return data
+
+        // Fallback
+        const fallback = await supabase
+            .from('admin_messages')
+            .select('*, from_user:profiles!from_user_id(full_name, email)')
+            .eq('to_user_id', userId)
+            .order('created_at', { ascending: false })
+
+        return fallback.data || []
+    } catch (e) {
+        console.error('Error in getUserMessages:', e)
         return []
     }
-
-    return data || []
 }
 
 // Block user

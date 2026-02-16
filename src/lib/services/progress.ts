@@ -136,20 +136,38 @@ export async function getDetailedUserProgress(userId: string): Promise<TaskProgr
     console.log('getDetailedUserProgress called for userId:', userId)
     const supabase = createClient()
 
-    const { data, error } = await supabase
-        .from('user_progress')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('completed', true)
-        .order('day_number', { ascending: true })
-        .order('task_id', { ascending: true })
+    try {
+        // Try secure RPC first
+        const { data, error } = await supabase.rpc('get_user_progress_secure', {
+            p_user_id: userId
+        })
 
-    console.log('getDetailedUserProgress result:', { data, error })
+        if (!error && data) {
+            console.log('Successfully fetched progress via RPC')
+            return data
+        }
 
-    if (error) {
-        console.error('Error fetching detailed progress:', error)
+        if (error) {
+            console.warn('RPC progress fetch failed, trying fallback:', error)
+        }
+
+        // Fallback to direct query
+        const { data: fallbackData, error: fallbackError } = await supabase
+            .from('user_progress')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('completed', true)
+            .order('day_number', { ascending: true })
+            .order('task_id', { ascending: true })
+
+        if (fallbackError) {
+            console.error('Error fetching detailed progress (fallback):', fallbackError)
+            return []
+        }
+
+        return fallbackData || []
+    } catch (e) {
+        console.error('Exception in getDetailedUserProgress:', e)
         return []
     }
-
-    return data || []
 }

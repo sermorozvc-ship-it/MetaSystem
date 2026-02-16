@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { X, Send, Camera, CheckCircle, AlertCircle } from 'lucide-react'
 import FileUpload from '../ui/FileUpload'
-import { submitDayReport, ReportFile } from '@/lib/services/reports'
+import { submitDayReport, uploadReportFiles, ReportFile } from '@/lib/services/reports'
+import { useAuth } from '@/lib/auth'
 
 interface DayReportModalProps {
     isOpen: boolean
@@ -20,6 +21,7 @@ interface UploadedFile {
 }
 
 export default function DayReportModal({ isOpen, onClose, dayNumber }: DayReportModalProps) {
+    const { user } = useAuth()
     const [files, setFiles] = useState<UploadedFile[]>([])
     const [comment, setComment] = useState('')
     const [isSubmitting, setIsSubmitting] = useState(false)
@@ -36,13 +38,24 @@ export default function DayReportModal({ isOpen, onClose, dayNumber }: DayReport
         setErrorMessage('')
 
         try {
-            // Convert uploaded files to ReportFile format
-            // For demo mode (no auth), we'll save file info locally
-            const reportFiles: ReportFile[] = files.map(f => ({
-                name: f.name,
-                url: f.preview || '',
-                type: f.file.type
-            }))
+            let reportFiles: ReportFile[] = []
+
+            if (user) {
+                // Real mode: upload files to storage first
+                const rawFiles = files.map(f => f.file)
+                reportFiles = await uploadReportFiles(dayNumber, rawFiles, user.id)
+
+                if (reportFiles.length === 0 && files.length > 0) {
+                    throw new Error('Не удалось загрузить файлы. Попробуйте еще раз.')
+                }
+            } else {
+                // Demo mode (no auth), we'll save file info locally (previews)
+                reportFiles = files.map(f => ({
+                    name: f.name,
+                    url: f.preview || '',
+                    type: f.file.type
+                }))
+            }
 
             // Submit the report
             const result = await submitDayReport(dayNumber, reportFiles, comment || undefined)
@@ -61,9 +74,9 @@ export default function DayReportModal({ isOpen, onClose, dayNumber }: DayReport
                 setSubmitStatus('error')
                 setErrorMessage(result.error || 'Произошла ошибка при отправке')
             }
-        } catch (error) {
+        } catch (error: any) {
             setSubmitStatus('error')
-            setErrorMessage('Произошла ошибка при отправке')
+            setErrorMessage(error.message || 'Произошла ошибка при отправке')
             console.error('Submit error:', error)
         } finally {
             setIsSubmitting(false)
@@ -220,9 +233,11 @@ export default function DayReportModal({ isOpen, onClose, dayNumber }: DayReport
                 </button>
 
                 {/* Demo Notice */}
-                <p className="text-xs text-gray-500 text-center mt-4">
-                    💡 Демо-режим: отчёты сохраняются локально
-                </p>
+                {!user && (
+                    <p className="text-xs text-gray-500 text-center mt-4">
+                        💡 Демо-режим: отчёты сохраняются локально (браузер)
+                    </p>
+                )}
             </div>
         </div>
     )

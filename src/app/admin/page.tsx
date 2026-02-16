@@ -419,7 +419,18 @@ export default function AdminPage() {
                         ))}
                         {filteredUsers.length === 0 && (
                             <div className="glass-card p-12 text-center text-gray-400">
-                                Пользователи не найдены
+                                <p className="mb-2">Пользователи не найдены</p>
+                                <p className="text-xs text-gray-600 mb-4 mix-blend-plus-lighter">
+                                    Status: {isLoading ? 'Load' : 'Done'} |
+                                    Users: {users.length} |
+                                    Err: {accessError || 'None'}
+                                </p>
+                                <button
+                                    onClick={() => window.location.reload()}
+                                    className="text-meta-orange hover:text-white transition-colors underline text-sm"
+                                >
+                                    Обновить данные
+                                </button>
                             </div>
                         )}
                     </div>
@@ -586,8 +597,10 @@ export default function AdminPage() {
                         {/* User Stats */}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
                             <div className="glass-card p-3 md:p-4 bg-deep-dark-200/40">
-                                <p className="text-xs md:text-sm text-gray-400 mb-1">Прогресс</p>
-                                <p className="text-xl md:text-2xl font-bold text-white">{selectedUser.completed_days}/7</p>
+                                <p className="text-xs md:text-sm text-gray-400 mb-1">Заданий</p>
+                                <p className="text-xl md:text-2xl font-bold text-white">
+                                    {selectedUser.completed_days}/{courseData.reduce((acc, d) => acc + d.tasks.length, 0)}
+                                </p>
                             </div>
                             <div className="glass-card p-3 md:p-4 bg-deep-dark-200/40">
                                 <p className="text-xs md:text-sm text-gray-400 mb-1">Отчётов</p>

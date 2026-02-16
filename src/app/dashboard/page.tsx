@@ -7,8 +7,10 @@ import { VisceralCalculator, BodyMeasurements } from '@/components/modals'
 import { courseData } from '@/lib/data/courseData'
 import { getCurrentCourseDay, getNextMondayStart, isCohortActive } from '@/lib/utils/cohort'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '@/lib/auth'
 
 export default function DashboardPage() {
+    const { user } = useAuth()
     const router = useRouter()
 
     // Для демо: курс уже активен (день 1)
@@ -151,10 +153,12 @@ export default function DashboardPage() {
         }
     }
 
+    const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Атлет'
+
     return (
         <>
             <DashboardLayout
-                userName="Атлет"
+                userName={userName}
                 currentDay={currentDay}
                 showMobileSheet={showMobileSheet}
                 onCloseMobileSheet={() => setShowMobileSheet(false)}
