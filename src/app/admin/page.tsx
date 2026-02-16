@@ -753,22 +753,26 @@ export default function AdminPage() {
                                             <p className="text-gray-500">История переписки пуста</p>
                                         </div>
                                     ) : (
-                                        [...selectedUserMessages].reverse().map(msg => {
-                                            const isFromStudent = msg.from_user_id === selectedUser.id;
+                                        selectedUserMessages.map(msg => {
+                                            // Message is from ME (Admin) if from_user_id matches my ID
+                                            const isFromMe = msg.from_user_id === user?.id;
+                                            // Label shows Student name only if it's NOT from me
+                                            const label = isFromMe ? 'Вы' : (selectedUser.full_name || 'Подопечный');
+
                                             return (
-                                                <div key={msg.id} className={`flex flex-col ${isFromStudent ? 'items-start' : 'items-end'}`}>
+                                                <div key={msg.id} className={`flex flex-col ${isFromMe ? 'items-end' : 'items-start'}`}>
                                                     <span className="text-[10px] text-gray-500 font-bold uppercase mb-1 px-1">
-                                                        {isFromStudent ? (selectedUser.full_name || 'Подопечный') : 'Вы'}
+                                                        {label}
                                                     </span>
-                                                    <div className={`max-w-[85%] p-4 rounded-2xl ${isFromStudent
+                                                    <div className={`max-w-[85%] p-4 rounded-2xl ${!isFromMe
                                                         ? 'bg-deep-dark-200/80 text-gray-200 rounded-tl-none border border-white/10'
                                                         : msg.message_type === 'warning'
                                                             ? 'bg-yellow-500 text-black rounded-tr-none shadow-lg shadow-yellow-500/10'
                                                             : 'bg-meta-orange text-white rounded-tr-none shadow-lg shadow-meta-orange/10'
                                                         }`}>
                                                         <div className="flex items-center gap-2 mb-1.5 opacity-70">
-                                                            {msg.message_type === 'warning' && <AlertTriangle className={`w-3 h-3 ${isFromStudent ? 'text-yellow-400' : 'text-black'}`} />}
-                                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${!isFromStudent && msg.message_type === 'warning' ? 'text-black' : ''}`}>
+                                                            {msg.message_type === 'warning' && <AlertTriangle className={`w-3 h-3 ${!isFromMe ? 'text-yellow-400' : 'text-black'}`} />}
+                                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${isFromMe && msg.message_type === 'warning' ? 'text-black' : ''}`}>
                                                                 {new Date(msg.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                                                             </span>
                                                         </div>

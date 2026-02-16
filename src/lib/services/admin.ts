@@ -375,25 +375,25 @@ export async function sendMessageToUser(
     return { success: true }
 }
 
-// Get messages for user
+// Get messages for user (fixed two-way query)
 export async function getUserMessages(userId: string): Promise<AdminMessage[]> {
     const supabase = createClient()
+    const user = await safeGetUser()
+
+    if (!user) return []
 
     try {
-        const { data, error } = await supabase.rpc('get_user_messages_secure', {
-            p_user_id: userId
-        })
-
-        if (!error && data) return data
-
-        // Fallback
-        const fallback = await supabase
+        // We use a direct query with .or to ensure we get both directions:
+        // 1. Sent TO this user
+        // 2. Sent BY this user
+        const { data, error } = await supabase
             .from('admin_messages')
             .select('*, from_user:profiles!from_user_id(full_name, email)')
             .or(`to_user_id.eq.${userId},from_user_id.eq.${userId}`)
-            .order('created_at', { ascending: false })
+            .order('created_at', { ascending: true }) // Ascending for chat history
 
-        return fallback.data || []
+        if (error) throw error
+        return data || []
     } catch (e) {
         console.error('Error in getUserMessages:', e)
         return []
