@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { MessageSquare, AlertTriangle, Bell, ArrowLeft, CheckCircle, Mail, Trash2 } from 'lucide-react'
+import { MessageSquare, AlertTriangle, Bell, ArrowLeft, CheckCircle, Mail, X } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/client'
 import Sidebar from '@/components/layout/Sidebar'
@@ -17,6 +17,37 @@ interface AdminMessage {
     created_at: string
 }
 
+// Демо-сообщения для показа при отсутствии реальных данных
+const demoMessages: AdminMessage[] = [
+    {
+        id: 1,
+        from_user_id: null,
+        to_user_id: 'demo',
+        message: 'Добро пожаловать в программу «Метаболический Запуск»! 🔥\n\nЯ ваш куратор и буду помогать вам на протяжении всего курса. Если у вас возникнут вопросы — пишите сюда, я отвечу в течение 24 часов.\n\nУспешного старта!',
+        is_read: false,
+        message_type: 'message',
+        created_at: new Date().toISOString()
+    },
+    {
+        id: 2,
+        from_user_id: null,
+        to_user_id: 'demo',
+        message: '📢 Важное обновление: добавлен новый калькулятор висцерального жира!\n\nТеперь вы можете отслеживать свой WHR и WHtR прямо в приложении. Инструмент доступен в задании Дня 1.',
+        is_read: true,
+        message_type: 'announcement',
+        created_at: new Date(Date.now() - 86400000).toISOString()
+    },
+    {
+        id: 3,
+        from_user_id: null,
+        to_user_id: 'demo',
+        message: 'Напоминание: не забудьте отправить отчёт за день 1!\n\nПришлите:\n1. Скриншот результата калькулятора\n2. Фото продуктового набора\n\nЭто поможет мне оценить ваш прогресс.',
+        is_read: true,
+        message_type: 'warning',
+        created_at: new Date(Date.now() - 172800000).toISOString()
+    }
+]
+
 export default function MessagesPage() {
     const { user, isLoading: authLoading } = useAuth()
     const router = useRouter()
@@ -25,21 +56,27 @@ export default function MessagesPage() {
     const [selectedMessage, setSelectedMessage] = useState<AdminMessage | null>(null)
 
     useEffect(() => {
-        if (!authLoading && !user) {
-            router.push('/auth')
-            return
-        }
-
-        if (user) {
-            loadMessages()
-        }
+        if (authLoading) return
+        loadMessages()
     }, [user, authLoading])
 
     const loadMessages = async () => {
         try {
+            if (!user) {
+                // Демо-режим — показываем демо-сообщения
+                const stored = localStorage.getItem('demo_messages')
+                if (stored) {
+                    setMessages(JSON.parse(stored))
+                } else {
+                    localStorage.setItem('demo_messages', JSON.stringify(demoMessages))
+                    setMessages(demoMessages)
+                }
+                setIsLoading(false)
+                return
+            }
+
             const supabase = createClient()
 
-            // Добавляем таймаут чтобы страница не зависала
             const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('Timeout')), 5000)
             )
@@ -47,26 +84,38 @@ export default function MessagesPage() {
             const fetchPromise = supabase
                 .from('admin_messages')
                 .select('*')
-                .eq('to_user_id', user?.id)
+                .eq('to_user_id', user.id)
                 .order('created_at', { ascending: false })
 
             const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any
 
             if (error) {
                 console.error('Error loading messages:', error)
+                // Fallback к демо
+                setMessages(demoMessages)
             } else {
-                setMessages(data || [])
+                setMessages(data && data.length > 0 ? data : demoMessages)
             }
         } catch (e) {
             console.error('Messages fetch failed:', e)
+            setMessages(demoMessages)
         } finally {
             setIsLoading(false)
         }
     }
 
     const markAsRead = async (messageId: number) => {
-        const supabase = createClient()
+        if (!user) {
+            // Демо-режим
+            const updated = messages.map(m =>
+                m.id === messageId ? { ...m, is_read: true } : m
+            )
+            setMessages(updated)
+            localStorage.setItem('demo_messages', JSON.stringify(updated))
+            return
+        }
 
+        const supabase = createClient()
         await supabase
             .from('admin_messages')
             .update({ is_read: true })
@@ -122,10 +171,10 @@ export default function MessagesPage() {
 
             <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-8">
-                    <div className="flex items-center gap-4">
+                <div className="flex items-center justify-between mb-6 md:mb-8">
+                    <div className="flex items-center gap-3 md:gap-4">
                         <button
-                            onClick={() => router.back()}
+                            onClick={() => router.push('/dashboard')}
                             className="w-10 h-10 rounded-xl bg-deep-dark-200/60 border border-white/10
                                        flex items-center justify-center text-gray-400 hover:text-white transition-colors"
                         >
@@ -136,9 +185,9 @@ export default function MessagesPage() {
                                 <MessageSquare className="w-5 h-5 md:w-7 md:h-7 text-meta-orange shrink-0" />
                                 <span className="truncate">Сообщения от куратора</span>
                             </h1>
-                            <p className="text-gray-400 mt-1">
+                            <p className="text-xs md:text-sm text-gray-400 mt-1">
                                 {unreadCount > 0
-                                    ? `${unreadCount} непрочитанных сообщений`
+                                    ? `${unreadCount} непрочитанных`
                                     : 'Все сообщения прочитаны'
                                 }
                             </p>
@@ -146,10 +195,34 @@ export default function MessagesPage() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Mobile: Message Detail Overlay */}
+                {selectedMessage && (
+                    <div className="lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedMessage(null)}>
+                        <div
+                            className="absolute bottom-0 left-0 right-0 bg-deep-dark-100 border-t border-white/10 rounded-t-3xl max-h-[80vh] overflow-y-auto animate-slide-up"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="sticky top-0 bg-deep-dark-100 rounded-t-3xl z-10 px-4 pt-3 pb-2 flex items-center justify-between">
+                                <div className="w-10 h-1 rounded-full bg-white/20 mx-auto absolute left-1/2 -translate-x-1/2 top-3" />
+                                <div />
+                                <button
+                                    onClick={() => setSelectedMessage(null)}
+                                    className="w-8 h-8 rounded-full bg-deep-dark-300 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                            <div className="px-4 pb-6">
+                                <MessageDetail message={selectedMessage} getMessageIcon={getMessageIcon} getMessageTypeLabel={getMessageTypeLabel} />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
                     {/* Messages List */}
-                    <div className="glass-card p-6">
-                        <h2 className="text-lg font-semibold text-white mb-4">Входящие</h2>
+                    <div className="glass-card p-4 md:p-6">
+                        <h2 className="text-base md:text-lg font-semibold text-white mb-4">Входящие</h2>
 
                         {messages.length === 0 ? (
                             <div className="text-center py-12">
@@ -165,13 +238,13 @@ export default function MessagesPage() {
                                     <div
                                         key={msg.id}
                                         onClick={() => handleMessageClick(msg)}
-                                        className={`p-4 rounded-xl cursor-pointer transition-all ${selectedMessage?.id === msg.id
+                                        className={`p-3 md:p-4 rounded-xl cursor-pointer transition-all ${selectedMessage?.id === msg.id
                                             ? 'bg-meta-orange/10 border border-meta-orange/30'
                                             : 'bg-deep-dark-200/40 border border-white/5 hover:border-white/10'
                                             } ${!msg.is_read ? 'border-l-4 border-l-meta-orange' : ''}`}
                                     >
                                         <div className="flex items-start gap-3">
-                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${msg.message_type === 'warning'
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${msg.message_type === 'warning'
                                                 ? 'bg-yellow-500/10'
                                                 : msg.message_type === 'announcement'
                                                     ? 'bg-blue-500/10'
@@ -208,71 +281,10 @@ export default function MessagesPage() {
                         )}
                     </div>
 
-                    {/* Message Detail */}
-                    <div className="glass-card p-6">
+                    {/* Desktop: Message Detail */}
+                    <div className="hidden lg:block glass-card p-6">
                         {selectedMessage ? (
-                            <>
-                                <div className="flex items-center justify-between mb-6">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${selectedMessage.message_type === 'warning'
-                                            ? 'bg-yellow-500/10'
-                                            : selectedMessage.message_type === 'announcement'
-                                                ? 'bg-blue-500/10'
-                                                : 'bg-meta-orange/10'
-                                            }`}>
-                                            {getMessageIcon(selectedMessage.message_type)}
-                                        </div>
-                                        <div>
-                                            <h3 className={`font-semibold ${selectedMessage.message_type === 'warning'
-                                                ? 'text-yellow-400'
-                                                : selectedMessage.message_type === 'announcement'
-                                                    ? 'text-blue-400'
-                                                    : 'text-meta-orange'
-                                                }`}>
-                                                {getMessageTypeLabel(selectedMessage.message_type)}
-                                            </h3>
-                                            <p className="text-sm text-gray-400">
-                                                От куратора курса
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        {selectedMessage.is_read && (
-                                            <span className="flex items-center gap-1 text-xs text-green-400">
-                                                <CheckCircle className="w-3 h-3" />
-                                                Прочитано
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="bg-deep-dark-200/40 rounded-xl p-4 mb-4">
-                                    <p className="text-sm text-gray-400 mb-2">
-                                        {new Date(selectedMessage.created_at).toLocaleString('ru-RU', {
-                                            day: 'numeric',
-                                            month: 'long',
-                                            year: 'numeric',
-                                            hour: '2-digit',
-                                            minute: '2-digit'
-                                        })}
-                                    </p>
-                                    <p className="text-white whitespace-pre-wrap leading-relaxed">
-                                        {selectedMessage.message}
-                                    </p>
-                                </div>
-
-                                {selectedMessage.message_type === 'warning' && (
-                                    <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
-                                        <div className="flex items-start gap-3">
-                                            <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-                                            <p className="text-sm text-yellow-200">
-                                                Это предупреждение от администрации. Пожалуйста, внимательно ознакомьтесь
-                                                с содержанием и примите необходимые меры.
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-                            </>
+                            <MessageDetail message={selectedMessage} getMessageIcon={getMessageIcon} getMessageTypeLabel={getMessageTypeLabel} />
                         ) : (
                             <div className="h-full flex items-center justify-center text-center py-20">
                                 <div>
@@ -285,5 +297,81 @@ export default function MessagesPage() {
                 </div>
             </main>
         </div>
+    )
+}
+
+// Вынесенный компонент детали сообщения
+function MessageDetail({
+    message,
+    getMessageIcon,
+    getMessageTypeLabel
+}: {
+    message: AdminMessage
+    getMessageIcon: (type: string) => React.ReactNode
+    getMessageTypeLabel: (type: string) => string
+}) {
+    return (
+        <>
+            <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${message.message_type === 'warning'
+                        ? 'bg-yellow-500/10'
+                        : message.message_type === 'announcement'
+                            ? 'bg-blue-500/10'
+                            : 'bg-meta-orange/10'
+                        }`}>
+                        {getMessageIcon(message.message_type)}
+                    </div>
+                    <div>
+                        <h3 className={`font-semibold ${message.message_type === 'warning'
+                            ? 'text-yellow-400'
+                            : message.message_type === 'announcement'
+                                ? 'text-blue-400'
+                                : 'text-meta-orange'
+                            }`}>
+                            {getMessageTypeLabel(message.message_type)}
+                        </h3>
+                        <p className="text-sm text-gray-400">
+                            От куратора курса
+                        </p>
+                    </div>
+                </div>
+                <div className="flex items-center gap-2">
+                    {message.is_read && (
+                        <span className="flex items-center gap-1 text-xs text-green-400">
+                            <CheckCircle className="w-3 h-3" />
+                            Прочитано
+                        </span>
+                    )}
+                </div>
+            </div>
+
+            <div className="bg-deep-dark-200/40 rounded-xl p-4 mb-4">
+                <p className="text-sm text-gray-400 mb-2">
+                    {new Date(message.created_at).toLocaleString('ru-RU', {
+                        day: 'numeric',
+                        month: 'long',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    })}
+                </p>
+                <p className="text-white whitespace-pre-wrap leading-relaxed">
+                    {message.message}
+                </p>
+            </div>
+
+            {message.message_type === 'warning' && (
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                        <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+                        <p className="text-sm text-yellow-200">
+                            Это предупреждение от администрации. Пожалуйста, внимательно ознакомьтесь
+                            с содержанием и примите необходимые меры.
+                        </p>
+                    </div>
+                </div>
+            )}
+        </>
     )
 }
