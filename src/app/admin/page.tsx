@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
     Users,
@@ -22,7 +22,8 @@ import {
     X,
     Flame,
     ArrowLeft,
-    RefreshCw
+    RefreshCw,
+    Mail
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import {
@@ -90,6 +91,15 @@ export default function AdminPage() {
     const [curatorComment, setCuratorComment] = useState('')
     const [isSendingMessage, setIsSendingMessage] = useState(false)
     const [accessError, setAccessError] = useState<string | null>(null)
+
+    const [activeTooltip, setActiveTooltip] = useState<{ day: number, taskId: number, text: string } | null>(null)
+    const tooltipTimeoutRef = useRef<any>(null)
+
+    const showTaskTooltip = (day: number, taskId: number, text: string) => {
+        if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current)
+        setActiveTooltip({ day, taskId, text })
+        tooltipTimeoutRef.current = setTimeout(() => setActiveTooltip(null), 2500)
+    }
 
     // Initialization effect
     useEffect(() => {
@@ -363,7 +373,7 @@ export default function AdminPage() {
                 </div>
 
                 {/* Tabs */}
-                <div className="flex gap-2 mb-4 md:mb-6 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0">
+                <div className="flex gap-2 mb-4 md:mb-6 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0 no-scrollbar">
                     {[
                         { id: 'users', label: 'Пользователи', shortLabel: 'Пользов.', icon: Users },
                         { id: 'reports', label: 'Отчёты', shortLabel: 'Отчёты', icon: FileCheck },
@@ -385,200 +395,146 @@ export default function AdminPage() {
                 </div>
 
                 {/* Search */}
-                <div className="relative mb-4 md:mb-6">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+                <div className="relative mb-6">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                     <input
                         type="text"
-                        placeholder="Поиск по имени или email..."
+                        placeholder="Поиск по имени или почте..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="glass-input w-full pl-12"
+                        className="glass-input w-full pl-11 text-sm h-12"
                     />
                 </div>
 
-                {/* Users List */}
+                {/* Content Sections */}
                 {activeTab === 'users' && (
-                    <div className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 animate-fade-in">
                         {filteredUsers.map(userItem => (
                             <div
                                 key={userItem.id}
-                                className="glass-card p-4 hover:bg-deep-dark-200/30 transition-colors cursor-pointer"
                                 onClick={() => handleUserClick(userItem)}
+                                className="glass-card group p-5 cursor-pointer hover:border-meta-orange/30 transition-all hover:bg-white/[0.02]"
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-meta-orange to-meta-orange-600
-                                                    flex items-center justify-center text-white font-bold shrink-0">
+                                <div className="flex items-center gap-4 mb-4">
+                                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-meta-orange to-meta-orange-600
+                                                  flex items-center justify-center text-white text-lg font-bold">
                                         {(userItem.full_name || userItem.email).charAt(0).toUpperCase()}
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-white font-medium text-sm truncate">{userItem.full_name || 'Без имени'}</p>
-                                        <p className="text-xs text-gray-400 truncate">{userItem.email}</p>
+                                        <h3 className="font-bold text-white truncate">{userItem.full_name || 'Без имени'}</h3>
+                                        <p className="text-xs text-gray-500 truncate">{userItem.email}</p>
                                     </div>
-                                    <div className="flex items-center gap-2 md:gap-4 shrink-0">
-                                        <div className="text-right">
-                                            <span className="text-white font-semibold text-sm">{userItem.completed_days}</span>
-                                            <span className="text-gray-400 text-xs">/7</span>
-                                            <div className="w-14 h-1.5 bg-deep-dark-200 rounded-full mt-1">
+                                    {userItem.is_blocked && (
+                                        <span className="px-2 py-1 rounded-md bg-red-500/10 text-red-500 text-[10px] font-bold uppercase">Заблокирован</span>
+                                    )}
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-white/5 rounded-xl p-3">
+                                        <p className="text-[10px] text-gray-500 uppercase font-black mb-1">Прогресс</p>
+                                        <div className="flex items-center gap-2">
+                                            <div className="h-1.5 flex-1 bg-white/10 rounded-full overflow-hidden">
                                                 <div
-                                                    className="h-full bg-meta-orange rounded-full"
-                                                    style={{ width: `${(userItem.completed_days / 7) * 100}%` }}
+                                                    className="h-full bg-cyan-400"
+                                                    style={{ width: `${Math.round((userItem.completed_days / 25) * 100)}%` }}
                                                 />
                                             </div>
+                                            <span className="text-xs font-bold">{userItem.completed_days}/25</span>
                                         </div>
-                                        {userItem.is_blocked ? (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full
-                                                           bg-red-500/10 text-red-400 text-xs">
-                                                <Ban className="w-3 h-3" />
-                                                <span className="hidden sm:inline">Заблок.</span>
-                                            </span>
-                                        ) : (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full
-                                                           bg-green-500/10 text-green-400 text-xs">
-                                                <CheckCircle className="w-3 h-3" />
-                                                <span className="hidden sm:inline">Актив</span>
-                                            </span>
-                                        )}
-                                        <ChevronRight className="w-4 h-4 text-gray-500 hidden md:block" />
+                                    </div>
+                                    <div className="bg-white/5 rounded-xl p-3">
+                                        <p className="text-[10px] text-gray-500 uppercase font-black mb-1">Активность</p>
+                                        <div className="flex items-center gap-1.5 text-xs font-bold">
+                                            <Clock className="w-3 h-3 text-meta-orange" />
+                                            {userItem.last_activity ? new Date(userItem.last_activity).toLocaleDateString('ru-RU') : 'Нет'}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         ))}
-                        {filteredUsers.length === 0 && (
-                            <div className="glass-card p-12 text-center text-gray-400">
-                                <p className="mb-2">Пользователи не найдены</p>
-                                <p className="text-xs text-gray-600 mb-4 mix-blend-plus-lighter">
-                                    Status: {isLoading ? 'Load' : 'Done'} |
-                                    Users: {users.length} |
-                                    Err: {accessError || 'None'}
-                                </p>
-                                <button
-                                    onClick={() => window.location.reload()}
-                                    className="text-meta-orange hover:text-white transition-colors underline text-sm"
-                                >
-                                    Обновить данные
-                                </button>
-                            </div>
-                        )}
                     </div>
                 )}
 
-                {/* Reports List */}
                 {activeTab === 'reports' && (
-                    <div className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 animate-fade-in">
                         {allReports.filter(r =>
                             !searchQuery ||
-                            (r.user as any)?.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            (r.user as any)?.full_name?.toLowerCase().includes(searchQuery.toLowerCase())
+                            r.user?.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            r.user?.email?.toLowerCase().includes(searchQuery.toLowerCase())
                         ).map(report => (
                             <div
                                 key={report.id}
-                                className="glass-card p-4 hover:bg-deep-dark-200/30 transition-colors cursor-pointer"
                                 onClick={() => {
-                                    const targetUser = users.find(u => u.id === report.user_id)
-                                    if (targetUser) handleUserClick(targetUser, 'reports')
+                                    const userObj = users.find(u => u.id === report.user_id)
+                                    if (userObj) {
+                                        setSelectedReport(report)
+                                        setShowReportModal(true)
+                                    }
                                 }}
+                                className="glass-card p-5 cursor-pointer hover:border-meta-orange/30 transition-all"
                             >
-                                <div className="flex items-center gap-3 mb-3">
-                                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600
-                                                    flex items-center justify-center text-white font-bold text-sm shrink-0">
-                                        {((report.user as any)?.full_name || (report.user as any)?.email || '?').charAt(0).toUpperCase()}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-white font-medium text-sm truncate">{(report.user as any)?.full_name || 'Без имени'}</p>
-                                        <p className="text-xs text-gray-400 truncate">{(report.user as any)?.email}</p>
-                                    </div>
-                                    <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-meta-orange/20 text-meta-orange font-bold text-sm shrink-0">
-                                        {report.day_number}
+                                <div className="flex items-center justify-between mb-4">
+                                    <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${report.status === 'pending' ? 'bg-orange-500/10 text-orange-400' :
+                                        report.status === 'approved' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                                        }`}>
+                                        {report.status === 'pending' ? 'Ожидает' : report.status === 'approved' ? 'Принят' : 'Отклонен'}
+                                    </span>
+                                    <span className="text-[10px] text-gray-500 font-bold uppercase">
+                                        {new Date(report.created_at).toLocaleDateString('ru-RU')}
                                     </span>
                                 </div>
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3 text-xs text-gray-400">
-                                        {report.files?.length ? (
-                                            <span className="flex items-center gap-1">
-                                                <Image className="w-3.5 h-3.5" />
-                                                {report.files.length} фото
-                                            </span>
-                                        ) : null}
-                                        <span>{new Date(report.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</span>
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-sm font-bold text-white">
+                                        {report.user?.full_name?.charAt(0) || 'U'}
                                     </div>
-                                    {report.status === 'approved' ? (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 text-xs">
-                                            <CheckCircle className="w-3 h-3" /> Одобрен
-                                        </span>
-                                    ) : report.status === 'rejected' ? (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 text-xs">
-                                            <X className="w-3 h-3" /> Отклонён
-                                        </span>
-                                    ) : (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 text-xs">
-                                            <Clock className="w-3 h-3" /> Ожидает
-                                        </span>
-                                    )}
+                                    <div>
+                                        <p className="text-sm font-bold text-white leading-none mb-1">{report.user?.full_name || 'Пользователь'}</p>
+                                        <p className="text-xs text-meta-orange font-bold uppercase">День {report.day_number}</p>
+                                    </div>
                                 </div>
-                                {report.comment && (
-                                    <p className="text-gray-400 text-xs mt-2 line-clamp-2">{report.comment}</p>
-                                )}
+                                <p className="text-xs text-gray-400 line-clamp-2 italic">{report.comment || 'Без комментария'}</p>
                             </div>
                         ))}
                         {allReports.length === 0 && (
-                            <div className="glass-card p-12 text-center text-gray-400">
+                            <div className="glass-card p-12 text-center text-gray-400 col-span-full">
                                 Отчёты не найдены
                             </div>
                         )}
                     </div>
                 )}
 
-                {/* Messages List */}
                 {activeTab === 'messages' && (
-                    <div className="space-y-3">
+                    <div className="space-y-3 animate-fade-in">
                         {allMessages.filter(m =>
                             !searchQuery ||
                             m.message.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            (m.from_user?.full_name?.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                            (m.to_user?.full_name?.toLowerCase().includes(searchQuery.toLowerCase()))
+                            m.from_user?.full_name?.toLowerCase().includes(searchQuery.toLowerCase())
                         ).map(msg => (
                             <div
                                 key={msg.id}
-                                className="glass-card p-4 hover:bg-deep-dark-200/30 transition-colors cursor-pointer"
                                 onClick={() => {
-                                    const targetUser = users.find(u => u.id === msg.to_user_id || u.id === msg.from_user_id)
-                                    if (targetUser) handleUserClick(targetUser, 'messages')
+                                    const userObj = users.find(u => u.id === msg.from_user_id || u.id === msg.to_user_id)
+                                    if (userObj) handleUserClick(userObj, 'messages')
                                 }}
+                                className={`glass-card p-4 cursor-pointer hover:border-meta-orange/30 transition-all flex items-center gap-4 ${!msg.is_read ? 'border-meta-orange/40 bg-meta-orange/5' : ''}`}
                             >
-                                <div className="flex items-start gap-3 mb-2">
-                                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                                        <div className="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs shrink-0">
-                                            {(msg.from_user?.full_name || msg.from_user?.email || '?').charAt(0).toUpperCase()}
-                                        </div>
-                                        <span className="text-white text-sm truncate">{msg.from_user?.full_name || 'Удалён'}</span>
-                                        <span className="text-gray-500 text-xs shrink-0">→</span>
-                                        <div className="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-xs shrink-0">
-                                            {(msg.to_user?.full_name || msg.to_user?.email || '?').charAt(0).toUpperCase()}
-                                        </div>
-                                        <span className="text-white text-sm truncate">{msg.to_user?.full_name || 'Удалён'}</span>
+                                <div className="w-10 h-10 rounded-xl bg-deep-dark-200 flex items-center justify-center text-meta-orange shrink-0">
+                                    {msg.message_type === 'warning' ? <AlertTriangle className="w-5 h-5" /> : <Mail className="w-5 h-5" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2 mb-1">
+                                        <p className="text-sm font-bold text-white truncate">
+                                            {msg.from_user?.full_name || 'Пользователь'}
+                                        </p>
+                                        <span className="text-[10px] text-gray-500 whitespace-nowrap">
+                                            {new Date(msg.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
                                     </div>
+                                    <p className="text-xs text-gray-400 truncate leading-relaxed">{msg.message}</p>
                                 </div>
-                                <p className="text-gray-300 text-sm line-clamp-2 mb-2">{msg.message}</p>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-xs text-gray-500">
-                                        {new Date(msg.created_at).toLocaleDateString('ru-RU', {
-                                            day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
-                                        })}
-                                    </span>
-                                    {msg.message_type === 'warning' ? (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 text-xs">
-                                            <AlertTriangle className="w-3 h-3" /> Внимание
-                                        </span>
-                                    ) : msg.message_type === 'announcement' ? (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 text-xs">
-                                            <Flame className="w-3 h-3" /> Объявление
-                                        </span>
-                                    ) : (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 text-xs">
-                                            <MessageSquare className="w-3 h-3" /> Сообщение
-                                        </span>
-                                    )}
-                                </div>
+                                {!msg.is_read && (
+                                    <div className="w-2 h-2 rounded-full bg-meta-orange shrink-0" />
+                                )}
                             </div>
                         ))}
                         {allMessages.length === 0 && (
@@ -594,34 +550,34 @@ export default function AdminPage() {
             {showUserModal && selectedUser && (
                 <div className="modal-overlay" onClick={() => setShowUserModal(false)}>
                     <div
-                        className="glass-card p-4 md:p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto animate-fade-in mx-3 md:mx-4"
+                        className="glass-card p-4 md:p-6 w-full max-w-4xl h-full md:h-auto md:max-h-[90vh] overflow-y-auto animate-fade-in md:mx-4 flex flex-col"
                         onClick={e => e.stopPropagation()}
                     >
                         {/* Modal Header */}
-                        <div className="flex items-center justify-between mb-6">
-                            <div className="flex items-center gap-4">
-                                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-meta-orange to-meta-orange-600
-                                                flex items-center justify-center text-white text-xl font-bold">
+                        <div className="flex items-center justify-between mb-4 md:mb-6 shrink-0">
+                            <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
+                                <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-gradient-to-br from-meta-orange to-meta-orange-600
+                                                flex items-center justify-center text-white text-xl font-bold shrink-0">
                                     {(selectedUser.full_name || selectedUser.email).charAt(0).toUpperCase()}
                                 </div>
-                                <div>
-                                    <h2 className="text-xl font-bold text-white">
+                                <div className="min-w-0">
+                                    <h2 className="text-lg md:text-xl font-bold text-white truncate">
                                         {selectedUser.full_name || 'Без имени'}
                                     </h2>
-                                    <p className="text-gray-400">{selectedUser.email}</p>
+                                    <p className="text-xs md:text-sm text-gray-400 truncate">{selectedUser.email}</p>
                                 </div>
                             </div>
                             <button
                                 onClick={() => setShowUserModal(false)}
                                 className="w-10 h-10 rounded-xl bg-deep-dark-200 flex items-center justify-center
-                                           text-gray-400 hover:text-white transition-colors"
+                                           text-gray-400 hover:text-white transition-colors shrink-0"
                             >
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
 
-                        {/* User Tabs */}
-                        <div className="flex gap-4 border-b border-white/5 mb-6">
+                        {/* User Tabs - Scrollable on mobile */}
+                        <div className="flex gap-4 border-b border-white/5 mb-6 overflow-x-auto no-scrollbar shrink-0">
                             {[
                                 { id: 'progress', label: 'Прогресс', icon: TrendingUp },
                                 { id: 'reports', label: 'Отчёты', icon: FileCheck },
@@ -630,10 +586,10 @@ export default function AdminPage() {
                                 <button
                                     key={tab.id}
                                     onClick={() => setUserModalTab(tab.id as any)}
-                                    className={`flex items-center gap-2 px-1 pb-4 text-sm font-bold transition-all relative ${userModalTab === tab.id ? 'text-meta-orange' : 'text-gray-500 hover:text-gray-300'
+                                    className={`flex items-center gap-2 px-1 pb-3 text-xs md:text-sm font-bold transition-all relative whitespace-nowrap ${userModalTab === tab.id ? 'text-meta-orange' : 'text-gray-500 hover:text-gray-300'
                                         }`}
                                 >
-                                    <tab.icon className="w-4 h-4" />
+                                    <tab.icon className="w-3.5 h-3.5" />
                                     {tab.label}
                                     {userModalTab === tab.id && (
                                         <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-meta-orange rounded-full" />
@@ -644,32 +600,32 @@ export default function AdminPage() {
 
                         {/* Overview Tab Content */}
                         {userModalTab === 'progress' && (
-                            <div className="animate-fade-in">
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-8">
-                                    <div className="glass-card p-3 md:p-4 bg-deep-dark-200/40">
-                                        <p className="text-xs md:text-sm text-gray-400 mb-1">Заданий</p>
-                                        <p className="text-xl md:text-2xl font-bold text-white">
+                            <div className="animate-fade-in flex-1">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
+                                    <div className="bg-white/5 border border-white/5 rounded-2xl p-3 md:p-4">
+                                        <p className="text-[10px] md:text-xs text-gray-500 font-black uppercase mb-1">Заданий</p>
+                                        <p className="text-lg md:text-2xl font-bold text-white">
                                             {selectedUser.completed_days}/{courseData.reduce((acc, d) => acc + d.tasks.length, 0)}
                                         </p>
                                     </div>
-                                    <div className="glass-card p-3 md:p-4 bg-deep-dark-200/40">
-                                        <p className="text-xs md:text-sm text-gray-400 mb-1">Отчётов</p>
-                                        <p className="text-xl md:text-2xl font-bold text-white">{selectedUserReports.length}</p>
+                                    <div className="bg-white/5 border border-white/5 rounded-2xl p-3 md:p-4">
+                                        <p className="text-[10px] md:text-xs text-gray-500 font-black uppercase mb-1">Отчётов</p>
+                                        <p className="text-lg md:text-2xl font-bold text-white">{selectedUserReports.length}</p>
                                     </div>
-                                    <div className="glass-card p-3 md:p-4 bg-deep-dark-200/40">
-                                        <p className="text-xs md:text-sm text-gray-400 mb-1">Сообщений</p>
-                                        <p className="text-xl md:text-2xl font-bold text-white">{selectedUserMessages.length}</p>
+                                    <div className="bg-white/5 border border-white/5 rounded-2xl p-3 md:p-4">
+                                        <p className="text-[10px] md:text-xs text-gray-500 font-black uppercase mb-1">Сообщений</p>
+                                        <p className="text-lg md:text-2xl font-bold text-white">{selectedUserMessages.length}</p>
                                     </div>
-                                    <div className="glass-card p-3 md:p-4 bg-deep-dark-200/40">
-                                        <p className="text-xs md:text-sm text-gray-400 mb-1">Регистрация</p>
-                                        <p className="text-base md:text-lg font-bold text-white">
+                                    <div className="bg-white/5 border border-white/5 rounded-2xl p-3 md:p-4">
+                                        <p className="text-[10px] md:text-xs text-gray-500 font-black uppercase mb-1">Регистрация</p>
+                                        <p className="text-sm md:text-lg font-bold text-white leading-tight">
                                             {new Date(selectedUser.created_at).toLocaleDateString('ru-RU')}
                                         </p>
                                     </div>
                                 </div>
 
-                                <h3 className="text-base md:text-lg font-bold text-white mb-4 italic uppercase tracking-wider">Прогресс заданий (7 дней)</h3>
-                                <div className="glass-card p-4 md:p-6 bg-deep-dark-200/40 space-y-4">
+                                <h3 className="text-sm md:text-base font-bold text-white mb-4 italic uppercase tracking-wider">Прогресс заданий (7 дней)</h3>
+                                <div className="bg-black/20 rounded-2xl p-4 md:p-6 space-y-4">
                                     {courseData.map(day => {
                                         const completedTasks = userProgressDetails.filter(p => p.day_number === day.dayNumber && p.completed === true)
                                         const completedTaskIds = completedTasks.map(p => p.task_id)
@@ -678,24 +634,34 @@ export default function AdminPage() {
                                         const percent = totalTasks > 0 ? Math.round((completedCount / totalTasks) * 100) : 0
 
                                         return (
-                                            <div key={day.dayNumber} className="flex items-center gap-4">
-                                                <div className="w-16 flex-shrink-0">
-                                                    <span className="text-xs font-black text-gray-500 uppercase">День {day.dayNumber}</span>
+                                            <div key={day.dayNumber} className="flex flex-col gap-2">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[10px] font-black text-gray-500 uppercase">День {day.dayNumber}</span>
+                                                    <span className="text-[10px] font-bold text-white">{percent}%</span>
                                                 </div>
-                                                <div className="flex-1 flex gap-1.5 h-6 items-center bg-black/30 rounded-lg px-2">
-                                                    {day.tasks.map(task => {
-                                                        const isCompleted = completedTaskIds.includes(task.id)
-                                                        return (
-                                                            <div
-                                                                key={task.id}
-                                                                title={task.text}
-                                                                className={`h-3 flex-1 rounded-full transition-all ${isCompleted ? 'bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.3)]' : 'bg-white/5'}`}
-                                                            />
-                                                        )
-                                                    })}
-                                                </div>
-                                                <div className="w-10 text-right">
-                                                    <span className="text-xs font-bold text-white">{percent}%</span>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex-1 flex gap-1 h-8 items-center bg-black/40 rounded-xl px-2 relative group overflow-visible">
+                                                        {day.tasks.map(task => {
+                                                            const isCompleted = completedTaskIds.includes(task.id)
+                                                            const isTooltipActive = activeTooltip?.day === day.dayNumber && activeTooltip?.taskId === task.id
+
+                                                            return (
+                                                                <div
+                                                                    key={task.id}
+                                                                    onClick={() => showTaskTooltip(day.dayNumber, task.id, task.text)}
+                                                                    className={`h-4 flex-1 rounded-full transition-all cursor-pointer relative ${isCompleted ? 'bg-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.4)]' : 'bg-white/5 hover:bg-white/10'}`}
+                                                                >
+                                                                    {/* Custom Tooltip Overlay */}
+                                                                    {isTooltipActive && (
+                                                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[100] w-48 py-2 px-3 bg-meta-orange text-white text-[10px] font-bold rounded-lg shadow-2xl shadow-black pointer-events-none animate-bounce-subtle outline outline-4 outline-black/20">
+                                                                            <div className="relative z-10">{task.text}</div>
+                                                                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-[6px] border-transparent border-t-meta-orange" />
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )
+                                                        })}
+                                                    </div>
                                                 </div>
                                             </div>
                                         )
@@ -743,7 +709,7 @@ export default function AdminPage() {
 
                         {/* Messages Tab Content */}
                         {userModalTab === 'messages' && (
-                            <div className="animate-fade-in flex flex-col h-[500px]">
+                            <div className="animate-fade-in flex flex-col h-[60vh] md:h-[500px]">
                                 <div id="admin-chat-container" className="flex-1 overflow-y-auto space-y-6 mb-6 pr-2 custom-scrollbar scroll-smooth">
                                     {selectedUserMessages.length === 0 ? (
                                         <div className="h-full flex flex-col items-center justify-center text-center">
