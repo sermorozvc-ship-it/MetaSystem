@@ -87,7 +87,7 @@ export default function AdminPage() {
     const [messageType, setMessageType] = useState<'message' | 'warning'>('message')
     const [blockReason, setBlockReason] = useState('')
     const [curatorComment, setCuratorComment] = useState('')
-
+    const [isSendingMessage, setIsSendingMessage] = useState(false)
     const [accessError, setAccessError] = useState<string | null>(null)
 
     // Initialization effect
@@ -200,15 +200,25 @@ export default function AdminPage() {
     }
 
     const handleSendMessage = async () => {
-        if (!selectedUser || !messageText.trim()) return
+        if (!selectedUser || !messageText.trim() || isSendingMessage) return
 
-        const result = await sendMessageToUser(selectedUser.id, messageText, messageType)
-        if (result.success) {
-            setMessageText('')
-            setShowMessageModal(false)
-            // Refresh messages
-            const messages = await getUserMessages(selectedUser.id)
-            setSelectedUserMessages(messages)
+        setIsSendingMessage(true)
+        try {
+            const result = await sendMessageToUser(selectedUser.id, messageText, messageType)
+            if (result.success) {
+                setMessageText('')
+                setShowMessageModal(false)
+                // Refresh messages history for this user immediately
+                const messages = await getUserMessages(selectedUser.id)
+                setSelectedUserMessages(messages)
+            } else {
+                alert(`Ошибка при отправке: ${result.error || 'Неизвестная ошибка'}`)
+            }
+        } catch (error: any) {
+            console.error('Send message exception:', error)
+            alert('Не удалось отправить сообщение. Проверьте интернет-соединение.')
+        } finally {
+            setIsSendingMessage(false)
         }
     }
 
@@ -823,11 +833,15 @@ export default function AdminPage() {
                             </button>
                             <button
                                 onClick={handleSendMessage}
-                                disabled={!messageText.trim()}
-                                className="glass-button flex-1 flex items-center justify-center gap-2"
+                                disabled={!messageText.trim() || isSendingMessage}
+                                className="glass-button flex-1 flex items-center justify-center gap-2 disabled:opacity-50"
                             >
-                                <Send className="w-4 h-4" />
-                                Отправить
+                                {isSendingMessage ? (
+                                    <RefreshCw className="w-4 h-4 animate-spin" />
+                                ) : (
+                                    <Send className="w-4 h-4" />
+                                )}
+                                {isSendingMessage ? 'Отправка...' : 'Отправить'}
                             </button>
                         </div>
                     </div>
