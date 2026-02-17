@@ -5,7 +5,7 @@ let client: SupabaseClient | undefined
 // Кеш для пользователя
 let cachedUser: User | null = null
 let userCacheTimestamp = 0
-const USER_CACHE_TTL = 5000
+const USER_CACHE_TTL = 30000 // 30 секунд — достаточно для предотвращения race conditions
 
 export function createClient(): SupabaseClient {
     if (client) return client
@@ -57,6 +57,7 @@ export function createClient(): SupabaseClient {
 
 /**
  * Безопасное получение пользователя с кешированием
+ * Никогда не кидает ошибки — всегда возвращает User | null
  */
 export async function safeGetUser(): Promise<User | null> {
     const now = Date.now()
@@ -68,26 +69,28 @@ export async function safeGetUser(): Promise<User | null> {
     const supabase = createClient()
 
     try {
-        const { data: { user }, error } = await supabase.auth.getUser()
+        // Используем getSession вместо getUser — это быстрее и не делает лишний запрос к серверу
+        const { data: { session }, error } = await supabase.auth.getSession()
 
         if (error) {
             if (error.name === 'AbortError' || error.message?.includes('abort')) {
-                console.warn('getUser aborted, returning cached user')
+                console.warn('[safeGetUser] getSession aborted, returning cached user')
                 return cachedUser
             }
-            console.error('getUser error:', error)
+            console.error('[safeGetUser] getSession error:', error.message)
             return cachedUser
         }
 
+        const user = session?.user ?? null
         cachedUser = user
         userCacheTimestamp = now
         return user
     } catch (error: any) {
-        if (error.name === 'AbortError') {
-            console.warn('getUser aborted (catch), returning cached user')
+        if (error.name === 'AbortError' || error.message?.includes('abort') || error.message?.includes('Failed to fetch')) {
+            console.warn('[safeGetUser] request failed, returning cached user')
             return cachedUser
         }
-        console.error('getUser exception:', error)
+        console.error('[safeGetUser] exception:', error.message)
         return cachedUser
     }
 }
@@ -99,3 +102,4 @@ export function clearUserCache() {
     cachedUser = null
     userCacheTimestamp = 0
 }
+

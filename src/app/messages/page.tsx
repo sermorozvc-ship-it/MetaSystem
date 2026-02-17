@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, Bell, ArrowLeft, CheckCircle, Mail, X, CheckCheck, ExternalLink, Send } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
@@ -58,12 +58,8 @@ export default function MessagesPage() {
     const [replyText, setReplyText] = useState('')
     const [isSending, setIsSending] = useState(false)
 
-    useEffect(() => {
-        if (authLoading) return
-        loadMessages()
-    }, [user, authLoading])
-
-    const loadMessages = async () => {
+    const loadMessages = useCallback(async () => {
+        setIsLoading(true)
         try {
             if (!user) {
                 // Демо-режим — показываем демо-сообщения
@@ -74,7 +70,6 @@ export default function MessagesPage() {
                     localStorage.setItem('demo_messages', JSON.stringify(demoMessages))
                     setMessages(demoMessages)
                 }
-                setIsLoading(false)
                 return
             }
 
@@ -86,7 +81,12 @@ export default function MessagesPage() {
         } finally {
             setIsLoading(false)
         }
-    }
+    }, [user])
+
+    useEffect(() => {
+        if (authLoading) return
+        loadMessages()
+    }, [authLoading, loadMessages])
 
     const markAsRead = async (messageId: number) => {
         if (!user) {

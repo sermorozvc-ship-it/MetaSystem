@@ -57,13 +57,10 @@ export default function JournalPage() {
         setIsLoading(true)
         setError(null)
         try {
-            if (authLoading) return;
-
             if (!user) {
                 const stored = localStorage.getItem('demo_journal')
                 const demoEntries = stored ? JSON.parse(stored) : []
                 setEntries(Array.isArray(demoEntries) ? demoEntries : [])
-                setIsLoading(false)
                 return
             }
 
@@ -75,11 +72,12 @@ export default function JournalPage() {
         } finally {
             setIsLoading(false)
         }
-    }, [user, authLoading])
+    }, [user])
 
     useEffect(() => {
+        if (authLoading) return
         loadEntries()
-    }, [loadEntries, retryCount])
+    }, [authLoading, loadEntries, retryCount])
 
     const handleEdit = (entry: JournalEntry) => {
         setForm({ ...entry })
@@ -181,7 +179,7 @@ export default function JournalPage() {
 
     const getMoodInfo = (mood: number) => moodIcons.find(m => m.value === mood) || moodIcons[2]
 
-    if (authLoading || (isLoading && entries.length === 0)) {
+    if (authLoading || isLoading) {
         return (
             <div className="min-h-screen bg-deep-dark flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">

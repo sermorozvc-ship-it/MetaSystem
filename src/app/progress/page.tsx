@@ -34,7 +34,11 @@ export default function ProgressPage() {
             const { getUserProgress } = await import('@/lib/services/progress')
             const progress = await getUserProgress()
             setTaskProgress(progress)
+        } catch (e) {
+            console.error('Failed to load course progress', e)
+        }
 
+        try {
             // Загрузка записей дневника
             if (user) {
                 const entries = await getJournalEntries()
@@ -44,10 +48,10 @@ export default function ProgressPage() {
                 setJournalEntries(stored ? JSON.parse(stored) : [])
             }
         } catch (e) {
-            console.error('Failed to load progress data', e)
-        } finally {
-            setIsLoading(false)
+            console.error('Failed to load journal data', e)
         }
+
+        setIsLoading(false)
     }, [user])
 
     useEffect(() => {

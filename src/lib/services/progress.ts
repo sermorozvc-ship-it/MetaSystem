@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/client'
+import { createClient, safeGetUser } from '@/lib/supabase/client'
 
 export interface TaskProgress {
     user_id: string
@@ -11,34 +11,49 @@ export interface TaskProgress {
 // Get all progress for current user
 export async function getUserProgress(): Promise<Record<number, number[]>> {
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+
+    let user = null
+    try {
+        user = await safeGetUser()
+    } catch (e) {
+        console.warn('getUserProgress: safeGetUser failed', e)
+    }
 
     if (!user) {
         // Demo mode - get from localStorage
-        return JSON.parse(localStorage.getItem('demo_task_progress') || '{}')
+        try {
+            return JSON.parse(localStorage.getItem('demo_task_progress') || '{}')
+        } catch {
+            return {}
+        }
     }
 
-    const { data, error } = await supabase
-        .from('user_progress')
-        .select('day_number, task_id')
-        .eq('user_id', user.id)
-        .eq('completed', true)
+    try {
+        const { data, error } = await supabase
+            .from('user_progress')
+            .select('day_number, task_id')
+            .eq('user_id', user.id)
+            .eq('completed', true)
 
-    if (error) {
-        console.error('Error fetching progress:', error)
+        if (error) {
+            console.error('Error fetching progress:', error)
+            return {}
+        }
+
+        // Group by day
+        const progress: Record<number, number[]> = {}
+        data?.forEach(item => {
+            if (!progress[item.day_number]) {
+                progress[item.day_number] = []
+            }
+            progress[item.day_number].push(item.task_id)
+        })
+
+        return progress
+    } catch (e: any) {
+        console.error('getUserProgress failed:', e)
         return {}
     }
-
-    // Group by day
-    const progress: Record<number, number[]> = {}
-    data?.forEach(item => {
-        if (!progress[item.day_number]) {
-            progress[item.day_number] = []
-        }
-        progress[item.day_number].push(item.task_id)
-    })
-
-    return progress
 }
 
 // Toggle task completion
@@ -48,7 +63,13 @@ export async function toggleTaskProgress(
     completed: boolean
 ): Promise<{ success: boolean; error?: string }> {
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+
+    let user = null
+    try {
+        user = await safeGetUser()
+    } catch (e) {
+        console.warn('toggleTaskProgress: safeGetUser failed', e)
+    }
 
     if (!user) {
         // Demo mode - save to localStorage

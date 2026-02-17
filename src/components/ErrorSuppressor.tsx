@@ -5,10 +5,16 @@ export function ErrorSuppressor() {
     useEffect(() => {
         // 1. Suppress Unhandled Rejection
         const handler = (event: PromiseRejectionEvent) => {
+            const reason = event.reason
             if (
-                event.reason?.name === 'AbortError' ||
-                event.reason?.message?.includes('aborted') ||
-                event.reason?.code === 'PGRST116'
+                reason?.name === 'AbortError' ||
+                reason?.message?.includes('aborted') ||
+                reason?.message?.includes('signal is aborted') ||
+                reason?.message?.includes('Auth timeout') ||
+                reason?.message?.includes('Failed to fetch') ||
+                reason?.message?.includes('NetworkError') ||
+                reason?.message?.includes('Load failed') ||
+                reason?.code === 'PGRST116'
             ) {
                 event.preventDefault()
             }
@@ -16,7 +22,13 @@ export function ErrorSuppressor() {
 
         // 2. Suppress Error Events
         const errorHandler = (event: ErrorEvent) => {
-            if (event.error?.name === 'AbortError' || event.error?.message?.includes('aborted')) {
+            if (
+                event.error?.name === 'AbortError' ||
+                event.error?.message?.includes('aborted') ||
+                event.error?.message?.includes('Auth timeout') ||
+                event.error?.message?.includes('Failed to fetch') ||
+                event.error?.message?.includes('Load failed')
+            ) {
                 event.preventDefault()
             }
         }
@@ -27,7 +39,10 @@ export function ErrorSuppressor() {
             const msg = args[0]
             if (
                 typeof msg === 'string' &&
-                (msg.includes('AbortError') || msg.includes('signal is aborted'))
+                (msg.includes('AbortError') ||
+                    msg.includes('signal is aborted') ||
+                    msg.includes('Auth timeout') ||
+                    msg.includes('Failed to fetch'))
             ) {
                 // Suppress
                 return
