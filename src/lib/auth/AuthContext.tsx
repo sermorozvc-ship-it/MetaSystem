@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, useRef, useCallback, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react'
 import { User, Session } from '@supabase/supabase-js'
 import { createClient, clearUserCache } from '@/lib/supabase/client'
 
@@ -16,14 +16,16 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 /**
- * Пытается получить сессию из localStorage напрямую, как fallback
+ * Синхронно читаем сессию из localStorage — это мгновенно!
+ * Позволяет показать UI до завершения сетевого запроса.
  */
-function tryGetSessionFromStorage(): { user: User | null; session: Session | null } {
+function getInitialSessionFromStorage(): { user: User | null; session: Session | null } {
+    if (typeof window === 'undefined') return { user: null, session: null }
+
     try {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
         if (!supabaseUrl) return { user: null, session: null }
 
-        // Supabase хранит сессию по ключу: sb-<project-ref>-auth-token
         const projectRef = new URL(supabaseUrl).hostname.split('.')[0]
         const storageKey = `sb-${projectRef}-auth-token`
         const stored = localStorage.getItem(storageKey)
@@ -31,10 +33,13 @@ function tryGetSessionFromStorage(): { user: User | null; session: Session | nul
         if (!stored) return { user: null, session: null }
 
         const parsed = JSON.parse(stored)
-        // Проверяем не истёк ли токен
+
+        // Проверяем не истёк ли access_token
         if (parsed?.expires_at) {
             const expiresAt = parsed.expires_at * 1000
             if (Date.now() > expiresAt) {
+                // Токен истёк, но refresh_token может быть валидным — 
+                // пусть getSession() обновит. Пока возвращаем null.
                 return { user: null, session: null }
             }
         }
@@ -49,88 +54,65 @@ function tryGetSessionFromStorage(): { user: User | null; session: Session | nul
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-    const [user, setUser] = useState<User | null>(null)
-    const [session, setSession] = useState<Session | null>(null)
-    const [isLoading, setIsLoading] = useState(true)
-    const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const hasResolved = useRef(false)
+    // Ключевое изменение: инициализируем user/session СИНХРОННО из localStorage
+    // Это позволяет страницам сразу начать загрузку данных без ожидания getSession()
+    const [initialData] = useState(() => getInitialSessionFromStorage())
+    const [user, setUser] = useState<User | null>(initialData.user)
+    const [session, setSession] = useState<Session | null>(initialData.session)
+    // Если есть данные в localStorage — считаем что auth уже готов!
+    const [isLoading, setIsLoading] = useState(!initialData.user)
+    const hasResolved = useRef(!!initialData.user)
 
-    // Create client once
     const [supabase] = useState(() => createClient())
 
-    // Гарантированный сброс isLoading через максимальный таймаут
+    // Safety timeout — если getSession зависнет, принудительно снимаем loading
     useEffect(() => {
-        loadingTimerRef.current = setTimeout(() => {
+        if (hasResolved.current) return
+
+        const timer = setTimeout(() => {
             if (!hasResolved.current) {
-                console.warn('[Auth] Force-resolving loading state after safety timeout')
-                // Попробуем fallback из localStorage
-                const fallback = tryGetSessionFromStorage()
-                if (fallback.user) {
-                    setUser(fallback.user)
-                    setSession(fallback.session)
-                }
+                console.warn('[Auth] Force-resolving after safety timeout')
                 hasResolved.current = true
                 setIsLoading(false)
             }
-        }, 10000) // Абсолютный максимум — 10 секунд
+        }, 5000)
 
-        return () => {
-            if (loadingTimerRef.current) {
-                clearTimeout(loadingTimerRef.current)
-            }
-        }
+        return () => clearTimeout(timer)
     }, [])
 
     useEffect(() => {
         let isMounted = true
 
-        const getSession = async () => {
+        // Фоновая валидация сессии — не блокирует UI
+        const validateSession = async () => {
             try {
-                const sessionPromise = supabase.auth.getSession()
-                const timeoutPromise = new Promise<never>((_, reject) =>
-                    setTimeout(() => reject(new Error('Auth timeout')), 8000)
-                )
-
-                const { data: { session: currentSession }, error } = await Promise.race([
-                    sessionPromise,
-                    timeoutPromise
-                ]) as any
+                const { data: { session: currentSession }, error } = await supabase.auth.getSession()
 
                 if (!isMounted) return
 
-                if (error) {
-                    // При ошибке пробуем fallback из localStorage
-                    console.warn('[Auth] getSession error, trying localStorage fallback:', error.message)
-                    const fallback = tryGetSessionFromStorage()
-                    setSession(fallback.session)
-                    setUser(fallback.user)
-                } else {
+                if (!error && currentSession) {
                     setSession(currentSession)
-                    setUser(currentSession?.user ?? null)
+                    setUser(currentSession.user)
+                } else if (!error && !currentSession) {
+                    // Сессия отсутствует на сервере — пользователь вышел
+                    setSession(null)
+                    setUser(null)
                 }
-            } catch (error: any) {
-                if (!isMounted) return
-
-                // При таймауте или AbortError — пробуем из localStorage
-                if (error?.message === 'Auth timeout' || error?.name === 'AbortError' || error?.message?.includes('aborted')) {
-                    console.warn('[Auth] Session fetch timed out/aborted, trying localStorage fallback')
-                    const fallback = tryGetSessionFromStorage()
-                    setSession(fallback.session)
-                    setUser(fallback.user)
-                } else {
-                    console.error('[Auth] Unexpected error getting session:', error)
-                }
+                // При ошибке — оставляем текущие значения (из localStorage)
+            } catch (e: any) {
+                // При ошибке сети — оставляем данные из localStorage
+                console.warn('[Auth] Session validation failed:', e.message)
             } finally {
-                if (isMounted) {
+                if (isMounted && !hasResolved.current) {
                     hasResolved.current = true
                     setIsLoading(false)
                 }
             }
         }
 
-        getSession()
+        validateSession()
 
-        // Listen for auth changes
+        // Слушаем изменения auth
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (event, newSession) => {
                 if (!isMounted) return
@@ -138,13 +120,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setSession(newSession)
                 setUser(newSession?.user ?? null)
 
-                // Если loading ещё true — сбрасываем
                 if (!hasResolved.current) {
                     hasResolved.current = true
                     setIsLoading(false)
                 }
 
-                // Create profile on sign up
+                // Создаём профиль при регистрации
                 if (event === 'SIGNED_IN' && newSession?.user) {
                     try {
                         const { data: profile } = await supabase
@@ -160,8 +141,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                                 full_name: newSession.user.user_metadata?.full_name
                             })
                         }
-                    } catch (e) {
-                        // silently fail profile creation checks
+                    } catch {
+                        // silently fail
                     }
                 }
             }
@@ -177,20 +158,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.auth.signUp({
             email,
             password,
-            options: {
-                data: {
-                    full_name: fullName
-                }
-            }
+            options: { data: { full_name: fullName } }
         })
         return { error: error as Error | null }
     }
 
     const signIn = async (email: string, password: string) => {
-        const { error } = await supabase.auth.signInWithPassword({
-            email,
-            password
-        })
+        const { error } = await supabase.auth.signInWithPassword({ email, password })
         return { error: error as Error | null }
     }
 
@@ -200,14 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     return (
-        <AuthContext.Provider value={{
-            user,
-            session,
-            isLoading,
-            signUp,
-            signIn,
-            signOut
-        }}>
+        <AuthContext.Provider value={{ user, session, isLoading, signUp, signIn, signOut }}>
             {children}
         </AuthContext.Provider>
     )
