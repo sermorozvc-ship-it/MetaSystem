@@ -343,6 +343,13 @@ export async function updateReportStatus(
     return { success: true }
 }
 
+export async function deleteReport(reportId: number): Promise<{ success: boolean; error?: string }> {
+    const supabase = createClient()
+    const { error } = await supabase.from('day_reports').delete().eq('id', reportId)
+    if (error) return { success: false, error: error.message }
+    return { success: true }
+}
+
 // Send message to user
 export async function sendMessageToUser(
     toUserId: string,

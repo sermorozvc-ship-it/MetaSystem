@@ -37,6 +37,7 @@ import {
     blockUser,
     unblockUser,
     updateReportStatus,
+    deleteReport,
     getAdminStats,
     UserWithProgress,
     DayReportWithUser,
@@ -270,6 +271,22 @@ export default function AdminPage() {
         }
     }
 
+    const handleDeleteReport = async (reportId: number) => {
+        if (!confirm('Удалить этот отчёт? Это действие нельзя отменить.')) return
+
+        const result = await deleteReport(reportId)
+        if (result.success) {
+            setShowReportModal(false)
+            if (activeTab === 'users' && selectedUser) {
+                const reports = await getUserReports(selectedUser.id)
+                setSelectedUserReports(reports)
+            }
+            await loadData()
+        } else {
+            alert('Ошибка сервера при удалении: ' + result.error)
+        }
+    }
+
     const handleReportAction = async (status: 'approved' | 'rejected') => {
         if (!selectedReport) return
 
@@ -479,9 +496,22 @@ export default function AdminPage() {
                                         }`}>
                                         {report.status === 'pending' ? 'Ожидает' : report.status === 'approved' ? 'Принят' : 'Отклонен'}
                                     </span>
-                                    <span className="text-[10px] text-gray-500 font-bold uppercase">
-                                        {new Date(report.created_at).toLocaleDateString('ru-RU')}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] text-gray-500 font-bold uppercase">
+                                            {new Date(report.created_at).toLocaleDateString('ru-RU')}
+                                        </span>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                handleDeleteReport(report.id)
+                                            }}
+                                            className="w-7 h-7 rounded-lg bg-red-500/10 text-red-500 flex items-center justify-center 
+                                                       hover:bg-red-500/20 transition-all"
+                                            title="Удалить"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-3 mb-4">
                                     <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-sm font-bold text-white">
@@ -852,13 +882,23 @@ export default function AdminPage() {
                             <h2 className="text-xl font-bold text-white">
                                 Отчёт по Дню {selectedReport.day_number}
                             </h2>
-                            <button
-                                onClick={() => setShowReportModal(false)}
-                                className="w-10 h-10 rounded-xl bg-deep-dark-200 flex items-center justify-center
-                                           text-gray-400 hover:text-white transition-colors"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => handleDeleteReport(selectedReport.id)}
+                                    className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center
+                                               text-red-500 hover:bg-red-500/20 transition-all"
+                                    title="Удалить отчёт"
+                                >
+                                    <Trash2 className="w-5 h-5" />
+                                </button>
+                                <button
+                                    onClick={() => setShowReportModal(false)}
+                                    className="w-10 h-10 rounded-xl bg-deep-dark-200 flex items-center justify-center
+                                               text-gray-400 hover:text-white transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
 
                         {/* Photos */}
