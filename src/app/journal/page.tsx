@@ -276,8 +276,8 @@ export default function JournalPage() {
                                                     <label className={`aspect-[3/4] rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden
                                                         ${photoUrl ? 'border-emerald-500/30' : 'border-white/10 hover:border-meta-orange/30 bg-white/5'}`}>
                                                         {photoUrl ? (
-                                                            <div className="relative w-full h-full">
-                                                                <img src={photoUrl} alt={type} className="w-full h-full object-cover transition-transform group-hover:scale-110" />
+                                                            <div className="relative w-full h-full bg-black/40">
+                                                                <img src={photoUrl} alt={type} className="w-full h-full object-contain transition-transform group-hover:scale-105" />
                                                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                                                     <Camera className="w-6 h-6 text-white" />
                                                                 </div>
@@ -521,12 +521,16 @@ export default function JournalPage() {
 
                                     {/* Photo Preview Strip - NEW */}
                                     {hasPhotos && (
-                                        <div className="flex gap-2 mb-6 h-28 relative z-10">
+                                        <div className="flex gap-2 mb-6 h-48 relative z-10">
                                             {[entry.photo_front, entry.photo_side, entry.photo_back].filter(Boolean).map((url, i) => (
-                                                <div key={i} className="flex-1 rounded-2xl overflow-hidden border border-white/5 shadow-lg group/photo relative">
-                                                    <img src={url} className="w-full h-full object-cover" alt="Progress" />
+                                                <div
+                                                    key={i}
+                                                    onClick={() => window.open(url!, '_blank')}
+                                                    className="flex-1 rounded-2xl overflow-hidden border border-white/5 bg-black/40 shadow-lg group/photo relative cursor-pointer"
+                                                >
+                                                    <img src={url!} className="w-full h-full object-contain" alt="Progress" />
                                                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/photo:opacity-100 transition-opacity flex items-center justify-center">
-                                                        <Eye className="w-4 h-4 text-white" />
+                                                        <Eye className="w-5 h-5 text-white" />
                                                     </div>
                                                 </div>
                                             ))}

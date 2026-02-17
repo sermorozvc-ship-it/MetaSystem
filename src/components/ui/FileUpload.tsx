@@ -144,12 +144,12 @@ export default function FileUpload({
                                 className="relative group rounded-xl overflow-hidden bg-deep-dark-200/60 border border-white/10"
                             >
                                 {file.type === 'image' && file.preview ? (
-                                    <div className="relative aspect-square">
+                                    <div className="relative aspect-square bg-black/20">
                                         <Image
                                             src={file.preview}
                                             alt={file.name}
                                             fill
-                                            className="object-cover"
+                                            className="object-contain"
                                             unoptimized
                                         />
                                     </div>

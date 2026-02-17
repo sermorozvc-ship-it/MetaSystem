@@ -865,15 +865,27 @@ export default function AdminPage() {
                         {selectedReport.files && selectedReport.files.length > 0 && (
                             <div className="mb-6">
                                 <h3 className="text-sm font-semibold text-gray-400 mb-3">Прикреплённые фото</h3>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     {selectedReport.files.map((file, idx) => (
-                                        <div key={idx} className="aspect-video rounded-xl overflow-hidden bg-deep-dark-200">
+                                        <div key={idx} className="group relative rounded-2xl overflow-hidden bg-black/40 border border-white/5 flex items-center justify-center min-h-[300px] max-h-[600px]">
                                             {file.url ? (
-                                                <img
-                                                    src={file.url}
-                                                    alt={file.name}
-                                                    className="w-full h-full object-cover"
-                                                />
+                                                <>
+                                                    <img
+                                                        src={file.url}
+                                                        alt={file.name}
+                                                        className="w-full h-full object-contain"
+                                                    />
+                                                    {/* Full Screen Overlay */}
+                                                    <button
+                                                        onClick={() => window.open(file.url, '_blank')}
+                                                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2"
+                                                    >
+                                                        <div className="w-12 h-12 rounded-full bg-meta-orange text-white flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition-transform">
+                                                            <Eye className="w-6 h-6" />
+                                                        </div>
+                                                        <span className="text-[10px] font-bold text-white uppercase tracking-widest bg-black/20 px-3 py-1 rounded-full backdrop-blur-sm">Открыть оригинал</span>
+                                                    </button>
+                                                </>
                                             ) : (
                                                 <div className="w-full h-full flex items-center justify-center">
                                                     <Image className="w-8 h-8 text-gray-500" />
