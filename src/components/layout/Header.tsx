@@ -123,7 +123,7 @@ export default function Header({ currentDay = 1, userName: propUserName }: Heade
             </div>
 
             {/* Right Section: Actions */}
-            <div className="flex items-center gap-4 shrink-0">
+            <div className="flex items-center gap-3 md:gap-4 shrink-0 self-end md:self-auto">
                 {/* Search - desktop only */}
                 <div className="relative hidden lg:block group">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-meta-orange transition-colors" />
@@ -208,7 +208,7 @@ export default function Header({ currentDay = 1, userName: propUserName }: Heade
                                 className="fixed inset-0 z-40"
                                 onClick={() => setShowUserMenu(false)}
                             />
-                            <div className="absolute right-0 top-full mt-2 w-56 glass-card p-2 z-50 animate-fade-in">
+                            <div className="absolute right-0 top-full mt-3 w-64 md:w-56 glass-card p-2 z-50 animate-fade-in origin-top-right shadow-2xl">
                                 {user ? (
                                     <>
                                         <div className="px-3 py-2 border-b border-white/10 mb-2">
