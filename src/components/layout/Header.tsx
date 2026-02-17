@@ -216,7 +216,7 @@ export default function Header({ currentDay = 1, userName: propUserName }: Heade
                                             <p className="text-xs text-gray-400 truncate">{user.email}</p>
                                         </div>
                                         <button
-                                            onClick={() => router.push('/profile')}
+                                            onClick={() => router.push('/settings')}
                                             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl
                                                        text-gray-300 hover:bg-deep-dark-200 transition-colors text-left"
                                         >
