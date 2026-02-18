@@ -97,13 +97,6 @@ export default function SettingsPage() {
         }
     }
 
-    if (authLoading) {
-        return (
-            <div className="min-h-screen bg-deep-dark flex items-center justify-center">
-                <div className="animate-spin w-8 h-8 border-2 border-meta-orange border-t-transparent rounded-full" />
-            </div>
-        )
-    }
 
     return (
         <div className="flex min-h-screen bg-deep-dark">
@@ -138,132 +131,142 @@ export default function SettingsPage() {
                     </div>
                 )}
 
-                {/* Profile Section */}
-                <div className="glass-card p-4 md:p-6 mb-4 md:mb-6">
-                    <h2 className="text-base md:text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                        <User className="w-5 h-5 text-meta-orange" />
-                        Профиль
-                    </h2>
-
-                    {/* Avatar & Name */}
-                    <div className="flex items-center gap-4 mb-4">
-                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-meta-orange to-meta-orange-600
-                                        flex items-center justify-center text-white font-bold text-xl shrink-0">
-                            {(fullName || 'A').charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            {editingName ? (
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="text"
-                                        value={fullName}
-                                        onChange={e => setFullName(e.target.value)}
-                                        className="glass-input flex-1 py-2 text-sm"
-                                        autoFocus
-                                    />
-                                    <button onClick={handleSaveName} disabled={saving} className="text-green-400 p-2">
-                                        <Save className="w-4 h-4" />
-                                    </button>
-                                    <button onClick={() => setEditingName(false)} className="text-gray-400 p-2">
-                                        <X className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            ) : (
-                                <div onClick={() => setEditingName(true)} className="cursor-pointer group">
-                                    <h3 className="text-base font-semibold text-white group-hover:text-meta-orange transition-colors">
-                                        {fullName || 'Нет имени'}
-                                    </h3>
-                                    <p className="text-xs text-gray-500">Нажмите для изменения</p>
-                                </div>
-                            )}
-                            <p className="text-sm text-gray-400 mt-1">{user?.email || 'Демо-режим'}</p>
-                        </div>
+                {authLoading ? (
+                    <div className="space-y-4 animate-pulse">
+                        <div className="h-32 rounded-2xl bg-white/5" />
+                        <div className="h-24 rounded-2xl bg-white/5" />
+                        <div className="h-16 rounded-2xl bg-white/5" />
                     </div>
-                </div>
+                ) : (
+                    <>
+                        {/* Profile Section */}
+                        <div className="glass-card p-4 md:p-6 mb-4 md:mb-6">
+                            <h2 className="text-base md:text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                                <User className="w-5 h-5 text-meta-orange" />
+                                Профиль
+                            </h2>
 
-                {/* Security Section */}
-                {user && (
-                    <div className="glass-card p-4 md:p-6 mb-4 md:mb-6">
-                        <h2 className="text-base md:text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                            <Shield className="w-5 h-5 text-meta-orange" />
-                            Безопасность
-                        </h2>
-
-                        {/* Change Password */}
-                        <button
-                            onClick={() => setShowPasswordForm(!showPasswordForm)}
-                            className="w-full flex items-center justify-between p-4 rounded-2xl bg-deep-dark-200/40
-                                       border border-white/5 hover:border-white/10 transition-all mb-3"
-                        >
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
-                                    <Shield className="w-5 h-5 text-blue-400" />
+                            {/* Avatar & Name */}
+                            <div className="flex items-center gap-4 mb-4">
+                                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-meta-orange to-meta-orange-600
+                                        flex items-center justify-center text-white font-bold text-xl shrink-0">
+                                    {(fullName || 'A').charAt(0).toUpperCase()}
                                 </div>
-                                <span className="text-sm text-white">Сменить пароль</span>
+                                <div className="flex-1 min-w-0">
+                                    {editingName ? (
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="text"
+                                                value={fullName}
+                                                onChange={e => setFullName(e.target.value)}
+                                                className="glass-input flex-1 py-2 text-sm"
+                                                autoFocus
+                                            />
+                                            <button onClick={handleSaveName} disabled={saving} className="text-green-400 p-2">
+                                                <Save className="w-4 h-4" />
+                                            </button>
+                                            <button onClick={() => setEditingName(false)} className="text-gray-400 p-2">
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div onClick={() => setEditingName(true)} className="cursor-pointer group">
+                                            <h3 className="text-base font-semibold text-white group-hover:text-meta-orange transition-colors">
+                                                {fullName || 'Нет имени'}
+                                            </h3>
+                                            <p className="text-xs text-gray-500">Нажмите для изменения</p>
+                                        </div>
+                                    )}
+                                    <p className="text-sm text-gray-400 mt-1">{user?.email || 'Демо-режим'}</p>
+                                </div>
                             </div>
-                            <ChevronRight className={`w-4 h-4 text-gray-500 transition-transform ${showPasswordForm ? 'rotate-90' : ''}`} />
-                        </button>
+                        </div>
 
-                        {showPasswordForm && (
-                            <div className="p-4 rounded-2xl bg-deep-dark-200/40 border border-white/5 mb-3 space-y-3 animate-fade-in">
-                                <div className="relative">
-                                    <input
-                                        type={showPassword ? 'text' : 'password'}
-                                        value={newPassword}
-                                        onChange={e => setNewPassword(e.target.value)}
-                                        placeholder="Новый пароль (мин. 6 символов)"
-                                        className="glass-input w-full pr-10"
-                                    />
-                                    <button
-                                        onClick={() => setShowPassword(!showPassword)}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
-                                    >
-                                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                    </button>
-                                </div>
+                        {/* Security Section */}
+                        {user && (
+                            <div className="glass-card p-4 md:p-6 mb-4 md:mb-6">
+                                <h2 className="text-base md:text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                                    <Shield className="w-5 h-5 text-meta-orange" />
+                                    Безопасность
+                                </h2>
+
+                                {/* Change Password */}
                                 <button
-                                    onClick={handleChangePassword}
-                                    disabled={saving || newPassword.length < 6}
-                                    className="glass-button w-full text-sm py-2.5 disabled:opacity-50"
+                                    onClick={() => setShowPasswordForm(!showPasswordForm)}
+                                    className="w-full flex items-center justify-between p-4 rounded-2xl bg-deep-dark-200/40
+                                       border border-white/5 hover:border-white/10 transition-all mb-3"
                                 >
-                                    {saving ? 'Сохранение...' : 'Сохранить пароль'}
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
+                                            <Shield className="w-5 h-5 text-blue-400" />
+                                        </div>
+                                        <span className="text-sm text-white">Сменить пароль</span>
+                                    </div>
+                                    <ChevronRight className={`w-4 h-4 text-gray-500 transition-transform ${showPasswordForm ? 'rotate-90' : ''}`} />
                                 </button>
+
+                                {showPasswordForm && (
+                                    <div className="p-4 rounded-2xl bg-deep-dark-200/40 border border-white/5 mb-3 space-y-3 animate-fade-in">
+                                        <div className="relative">
+                                            <input
+                                                type={showPassword ? 'text' : 'password'}
+                                                value={newPassword}
+                                                onChange={e => setNewPassword(e.target.value)}
+                                                placeholder="Новый пароль (мин. 6 символов)"
+                                                className="glass-input w-full pr-10"
+                                            />
+                                            <button
+                                                onClick={() => setShowPassword(!showPassword)}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+                                            >
+                                                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                            </button>
+                                        </div>
+                                        <button
+                                            onClick={handleChangePassword}
+                                            disabled={saving || newPassword.length < 6}
+                                            className="glass-button w-full text-sm py-2.5 disabled:opacity-50"
+                                        >
+                                            {saving ? 'Сохранение...' : 'Сохранить пароль'}
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
-                    </div>
-                )}
 
 
-                {/* About Section */}
-                <div className="glass-card p-4 md:p-6 mb-4 md:mb-6">
-                    <h2 className="text-base md:text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                        <Info className="w-5 h-5 text-meta-orange" />
-                        О приложении
-                    </h2>
+                        {/* About Section */}
+                        <div className="glass-card p-4 md:p-6 mb-4 md:mb-6">
+                            <h2 className="text-base md:text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                                <Info className="w-5 h-5 text-meta-orange" />
+                                О приложении
+                            </h2>
 
-                    <div className="space-y-3 text-sm text-gray-400">
+                            <div className="space-y-3 text-sm text-gray-400">
 
-                        <div className="flex items-center justify-between p-3 rounded-xl bg-deep-dark-200/40">
-                            <span>Курс</span>
-                            <span className="text-white">Метаболический Запуск</span>
+                                <div className="flex items-center justify-between p-3 rounded-xl bg-deep-dark-200/40">
+                                    <span>Курс</span>
+                                    <span className="text-white">Метаболический Запуск</span>
+                                </div>
+                                <div className="flex items-center justify-between p-3 rounded-xl bg-deep-dark-200/40">
+                                    <span>Длительность</span>
+                                    <span className="text-white">7 дней</span>
+                                </div>
+                            </div>
                         </div>
-                        <div className="flex items-center justify-between p-3 rounded-xl bg-deep-dark-200/40">
-                            <span>Длительность</span>
-                            <span className="text-white">7 дней</span>
-                        </div>
-                    </div>
-                </div>
 
-                {/* Logout Button */}
-                <button
-                    onClick={handleSignOut}
-                    className="w-full flex items-center justify-center gap-3 p-4 rounded-2xl
+                        {/* Logout Button */}
+                        <button
+                            onClick={handleSignOut}
+                            className="w-full flex items-center justify-center gap-3 p-4 rounded-2xl
                                bg-red-500/10 border border-red-500/20 hover:border-red-500/40
                                text-red-400 hover:text-red-300 transition-all"
-                >
-                    <LogOut className="w-5 h-5" />
-                    <span className="font-medium">Выйти из аккаунта</span>
-                </button>
+                        >
+                            <LogOut className="w-5 h-5" />
+                            <span className="font-medium">Выйти из аккаунта</span>
+                        </button>
+                    </>
+                )}
             </main>
         </div>
     )

@@ -75,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 hasResolved.current = true
                 setIsLoading(false)
             }
-        }, 5000)
+        }, 2000) // 2 секунды — достаточно для нормальной сети
 
         return () => clearTimeout(timer)
     }, [])
@@ -86,7 +86,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Фоновая валидация сессии — не блокирует UI
         const validateSession = async () => {
             try {
-                const { data: { session: currentSession }, error } = await supabase.auth.getSession()
+                // Таймаут 3 секунды — если Supabase не ответил, не ждём
+                const sessionPromise = supabase.auth.getSession()
+                const timeoutPromise = new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error('Session timeout')), 3000)
+                )
+
+                const { data: { session: currentSession }, error } = await Promise.race([
+                    sessionPromise,
+                    timeoutPromise
+                ]) as Awaited<ReturnType<typeof supabase.auth.getSession>>
 
                 if (!isMounted) return
 
@@ -100,7 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 }
                 // При ошибке — оставляем текущие значения (из localStorage)
             } catch (e: any) {
-                // При ошибке сети — оставляем данные из localStorage
+                // При ошибке сети или таймауте — оставляем данные из localStorage
                 console.warn('[Auth] Session validation failed:', e.message)
             } finally {
                 if (isMounted && !hasResolved.current) {

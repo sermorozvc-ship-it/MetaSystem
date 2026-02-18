@@ -131,13 +131,6 @@ export default function ProgressPage() {
         }
     }
 
-    if (authLoading || isLoading) {
-        return (
-            <div className="min-h-screen bg-deep-dark flex items-center justify-center">
-                <div className="animate-spin w-8 h-8 border-2 border-meta-orange border-t-transparent rounded-full" />
-            </div>
-        )
-    }
 
     return (
         <div className="flex min-h-screen bg-deep-dark">
@@ -179,7 +172,13 @@ export default function ProgressPage() {
                     </div>
                 </div>
 
-                {activeTab === 'course' ? (
+                {(authLoading || isLoading) ? (
+                    <div className="space-y-6 animate-pulse">
+                        <div className="h-40 rounded-3xl bg-white/5" />
+                        <div className="h-64 rounded-3xl bg-white/5" />
+                        <div className="h-32 rounded-3xl bg-white/5" />
+                    </div>
+                ) : activeTab === 'course' ? (
                     <div className="animate-fade-in space-y-8">
                         {/* Course Progress Summary */}
                         <div className="glass-card p-6 md:p-10">

@@ -215,13 +215,6 @@ export default function MessagesPage() {
         }
     }
 
-    if (authLoading || isLoading) {
-        return (
-            <div className="min-h-screen bg-deep-dark flex items-center justify-center">
-                <div className="animate-spin w-8 h-8 border-2 border-meta-orange border-t-transparent rounded-full" />
-            </div>
-        )
-    }
 
     return (
         <div className="flex min-h-screen bg-deep-dark">
@@ -307,7 +300,11 @@ export default function MessagesPage() {
                         </div>
 
                         <div className="p-2 space-y-1 max-h-[65vh] overflow-y-auto custom-scrollbar">
-                            {messages.length === 0 ? (
+                            {(authLoading || isLoading) ? (
+                                <div className="space-y-2 p-2 animate-pulse">
+                                    {[1, 2, 3].map(i => <div key={i} className="h-16 rounded-2xl bg-white/5" />)}
+                                </div>
+                            ) : messages.length === 0 ? (
                                 <div className="text-center py-20 px-4">
                                     <div className="w-16 h-16 rounded-3xl bg-white/5 flex items-center justify-center mx-auto mb-4">
                                         <Mail className="w-8 h-8 text-gray-600" />
