@@ -147,8 +147,10 @@ export default function JournalPage() {
         const file = e.target.files?.[0]
         if (!file) return
 
+        // Support for demo mode: show local preview even without auth
         if (!user) {
-            alert('Загрузка фото доступна только авторизованным пользователям.')
+            const previewUrl = URL.createObjectURL(file)
+            setForm(prev => ({ ...prev, [`photo_${type}`]: previewUrl }))
             return
         }
 
@@ -160,6 +162,9 @@ export default function JournalPage() {
             } else {
                 alert(result.error || 'Ошибка загрузки фото')
             }
+        } catch (error) {
+            console.error('Upload failed:', error)
+            alert('Не удалось загрузить фото. Попробуйте другой формат или размер.')
         } finally {
             setUploading(prev => ({ ...prev, [type]: false }))
         }
@@ -271,10 +276,23 @@ export default function JournalPage() {
                                         {(['front', 'side', 'back'] as const).map(type => {
                                             const photoUrl = form[`photo_${type}` as keyof JournalEntry] as string
                                             const isUploading = uploading[type]
+                                            const inputId = `photo-upload-${type}`
+
                                             return (
                                                 <div key={type} className="relative group">
-                                                    <label className={`aspect-[3/4] rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden
-                                                        ${photoUrl ? 'border-emerald-500/30' : 'border-white/10 hover:border-meta-orange/30 bg-white/5'}`}>
+                                                    <input
+                                                        id={inputId}
+                                                        type="file"
+                                                        className="hidden"
+                                                        accept="image/*"
+                                                        onChange={(e) => handleFileChange(e, type)}
+                                                        disabled={isUploading}
+                                                    />
+                                                    <label
+                                                        htmlFor={inputId}
+                                                        className={`aspect-[3/4] rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden relative
+                                                         ${photoUrl ? 'border-emerald-500/30 ring-1 ring-emerald-500/10' : 'border-white/10 hover:border-meta-orange/30 bg-white/5 active:bg-white/10'}`}
+                                                    >
                                                         {photoUrl ? (
                                                             <div className="relative w-full h-full bg-black/40">
                                                                 <img src={photoUrl} alt={type} className="w-full h-full object-contain transition-transform group-hover:scale-105" />
@@ -283,31 +301,25 @@ export default function JournalPage() {
                                                                 </div>
                                                             </div>
                                                         ) : (
-                                                            <>
+                                                            <div className="flex flex-col items-center justify-center p-2 text-center">
                                                                 {isUploading ? (
                                                                     <RefreshCw className="w-6 h-6 text-meta-orange animate-spin" />
                                                                 ) : (
                                                                     <>
                                                                         <Camera className="w-6 h-6 text-gray-600 mb-2 group-hover:text-meta-orange transition-colors" />
-                                                                        <span className="text-[8px] md:text-[10px] font-black text-gray-600 uppercase text-center px-1">
+                                                                        <span className="text-[10px] font-black text-gray-600 uppercase tracking-wider">
                                                                             {type === 'front' ? 'Анфас' : type === 'side' ? 'Профиль' : 'Спина'}
                                                                         </span>
                                                                     </>
                                                                 )}
-                                                            </>
+                                                            </div>
                                                         )}
-                                                        <input
-                                                            type="file"
-                                                            className="hidden"
-                                                            accept="image/*"
-                                                            onChange={(e) => handleFileChange(e, type)}
-                                                            disabled={isUploading}
-                                                        />
                                                     </label>
                                                     {photoUrl && (
                                                         <button
+                                                            type="button"
                                                             onClick={() => setForm(prev => ({ ...prev, [`photo_${type}`]: '' }))}
-                                                            className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white shadow-lg"
+                                                            className="absolute -top-2 -right-2 w-7 h-7 bg-red-500 rounded-full flex items-center justify-center text-white shadow-xl z-20 hover:scale-110 active:scale-90 transition-all border-2 border-deep-dark-100"
                                                         >
                                                             <X className="w-4 h-4" />
                                                         </button>

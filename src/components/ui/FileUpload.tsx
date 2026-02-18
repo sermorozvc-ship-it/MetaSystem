@@ -95,7 +95,7 @@ export default function FileUpload({
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 className={`
-                    border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer
+                    border-2 border-dashed rounded-2xl p-4 sm:p-6 text-center cursor-pointer
                     transition-all duration-200
                     ${isDragging
                         ? 'border-meta-orange bg-meta-orange/10'
@@ -112,18 +112,18 @@ export default function FileUpload({
                     className="hidden"
                 />
 
-                <div className="flex flex-col items-center gap-3">
+                <div className="flex flex-col items-center gap-2 sm:gap-3">
                     <div className={`
-                        w-12 h-12 rounded-xl flex items-center justify-center
+                        w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center
                         ${isDragging ? 'bg-meta-orange/20' : 'bg-deep-dark-300'}
                     `}>
-                        <Upload className={`w-6 h-6 ${isDragging ? 'text-meta-orange' : 'text-gray-400'}`} />
+                        <Upload className={`w-5 h-5 sm:w-6 sm:h-6 ${isDragging ? 'text-meta-orange' : 'text-gray-400'}`} />
                     </div>
                     <div>
-                        <p className="text-sm text-white font-medium">
+                        <p className="text-xs sm:text-sm text-white font-medium px-2">
                             Перетащите файлы или нажмите для выбора
                         </p>
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-[10px] sm:text-xs text-gray-500 mt-1">
                             {acceptImages && 'JPG, PNG, WebP'}
                             {acceptImages && acceptDocuments && ' • '}
                             {acceptDocuments && 'PDF, DOC'}

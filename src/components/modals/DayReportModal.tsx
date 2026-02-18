@@ -137,47 +137,47 @@ export default function DayReportModal({ isOpen, onClose, dayNumber }: DayReport
     return (
         <div className="modal-overlay" onClick={onClose}>
             <div
-                className="glass-card p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto animate-fade-in"
+                className="glass-card p-4 sm:p-6 w-full max-w-lg max-h-[95vh] sm:max-h-[90vh] overflow-y-auto animate-fade-in mx-4"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
-                <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-xl bg-meta-orange/20 flex items-center justify-center">
-                            <Camera className="w-6 h-6 text-meta-orange" />
+                <div className="flex items-center justify-between mb-4 sm:mb-6">
+                    <div className="flex items-center gap-2 sm:gap-3">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-meta-orange/20 flex items-center justify-center shrink-0">
+                            <Camera className="w-5 h-5 sm:w-6 sm:h-6 text-meta-orange" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-white">Отчёт по Дню {dayNumber}</h2>
-                            <p className="text-sm text-gray-400">Загрузите фото для проверки</p>
+                            <h2 className="text-lg sm:text-xl font-bold text-white leading-tight">Отчёт по Дню {dayNumber}</h2>
+                            <p className="text-xs sm:text-sm text-gray-400">Загрузите фото для проверки</p>
                         </div>
                     </div>
                     <button
                         onClick={onClose}
-                        className="w-10 h-10 rounded-xl bg-deep-dark-200 flex items-center justify-center
-                                   text-gray-400 hover:text-white transition-colors"
+                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-deep-dark-200 flex items-center justify-center
+                                   text-gray-400 hover:text-white transition-colors shrink-0"
                     >
-                        <X className="w-5 h-5" />
+                        <X className="w-4 h-4 sm:w-5 sm:h-5" />
                     </button>
                 </div>
 
                 {/* Error Message */}
                 {submitStatus === 'error' && (
-                    <div className="flex items-center gap-3 p-4 mb-4 rounded-xl bg-red-500/10 border border-red-500/30">
-                        <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
-                        <p className="text-sm text-red-400">{errorMessage}</p>
+                    <div className="flex items-center gap-2 p-3 mb-4 rounded-xl bg-red-500/10 border border-red-500/30">
+                        <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                        <p className="text-xs sm:text-sm text-red-400">{errorMessage}</p>
                     </div>
                 )}
 
                 {/* Requirements */}
                 {requirements.length > 0 && (
-                    <div className="glass-card p-4 mb-6 bg-deep-dark-200/40">
-                        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
-                            Что нужно загрузить:
+                    <div className="glass-card p-3 sm:p-4 mb-5 sm:mb-6 bg-deep-dark-200/40">
+                        <h3 className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 sm:mb-3">
+                            ЧТО НУЖНО ЗАГРУЗИТЬ:
                         </h3>
-                        <ul className="space-y-2">
+                        <ul className="space-y-1.5 sm:space-y-2">
                             {requirements.map((req, index) => (
-                                <li key={index} className="flex items-start gap-2 text-sm text-gray-300">
-                                    <span className="text-meta-orange font-semibold">{index + 1}.</span>
+                                <li key={index} className="flex items-start gap-2 text-[13px] sm:text-sm text-gray-300 leading-snug">
+                                    <span className="text-meta-orange font-semibold shrink-0">{index + 1}.</span>
                                     {req}
                                 </li>
                             ))}
@@ -194,15 +194,15 @@ export default function DayReportModal({ isOpen, onClose, dayNumber }: DayReport
                 />
 
                 {/* Comment */}
-                <div className="mt-6">
-                    <label className="block text-sm font-medium text-gray-400 mb-2">
+                <div className="mt-4 sm:mt-6">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-400 mb-1.5 sm:mb-2 ml-1">
                         Комментарий (опционально)
                     </label>
                     <textarea
                         value={comment}
                         onChange={(e) => setComment(e.target.value)}
                         placeholder="Как прошёл день? Какие ощущения?"
-                        className="glass-input w-full h-24 resize-none"
+                        className="glass-input w-full h-20 sm:h-24 resize-none text-sm"
                     />
                 </div>
 
@@ -211,22 +211,22 @@ export default function DayReportModal({ isOpen, onClose, dayNumber }: DayReport
                     onClick={handleSubmit}
                     disabled={files.length === 0 || isSubmitting}
                     className={`
-                        w-full mt-6 py-4 rounded-xl font-semibold flex items-center justify-center gap-2
-                        transition-all duration-200
+                        w-full mt-5 sm:mt-6 py-3.5 sm:py-4 rounded-xl font-semibold flex items-center justify-center gap-2
+                        transition-all duration-200 text-sm sm:text-base
                         ${files.length === 0
-                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                            : 'glass-button'
+                            ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed'
+                            : 'glass-button shadow-lg shadow-meta-orange/10'
                         }
                     `}
                 >
                     {isSubmitting ? (
                         <>
-                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            <div className="w-4 h-4 sm:w-5 sm:h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                             Отправка...
                         </>
                     ) : (
                         <>
-                            <Send className="w-5 h-5" />
+                            <Send className="w-4 h-4 sm:w-5 sm:h-5" />
                             Отправить отчёт
                         </>
                     )}

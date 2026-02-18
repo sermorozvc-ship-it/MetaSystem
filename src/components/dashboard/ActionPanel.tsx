@@ -193,23 +193,23 @@ function ContentModal({
     return (
         <div className="modal-overlay" onClick={onClose}>
             <div
-                className="glass-card p-5 md:p-8 w-full max-w-2xl max-h-[85vh] overflow-y-auto animate-fade-in mx-4"
+                className="glass-card p-4 sm:p-6 md:p-8 w-full max-w-2xl max-h-[90vh] sm:max-h-[85vh] overflow-y-auto animate-fade-in mx-4"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
-                <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center justify-between mb-4 sm:mb-6">
                     <div>
-                        <h2 className="text-2xl font-bold text-white">{title}</h2>
+                        <h2 className="text-xl sm:text-2xl font-bold text-white leading-tight">{title}</h2>
                         {duration && (
-                            <span className="text-sm text-meta-orange">{duration}</span>
+                            <span className="text-xs sm:text-sm text-meta-orange mt-1 block">{duration}</span>
                         )}
                     </div>
                     <button
                         onClick={onClose}
-                        className="w-10 h-10 rounded-xl bg-deep-dark-200 flex items-center justify-center
-                                   text-gray-400 hover:text-white transition-colors"
+                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-deep-dark-200 flex items-center justify-center
+                                   text-gray-400 hover:text-white transition-colors shrink-0"
                     >
-                        <X className="w-5 h-5" />
+                        <X className="w-4 h-4 sm:w-5 sm:h-5" />
                     </button>
                 </div>
 
