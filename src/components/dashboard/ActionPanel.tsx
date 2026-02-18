@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
     Play,
     Headphones,
@@ -16,10 +16,14 @@ import {
     X,
     Sparkles,
     ArrowRight,
-    Camera
+    Camera,
+    Clock,
+    CheckCircle,
+    XCircle
 } from 'lucide-react'
 import { DayData, DayTask } from './DayCard'
 import { DayReportModal } from '../modals'
+import { getDayReports, DayReport } from '@/lib/services/reports'
 
 interface ActionPanelProps {
     selectedDay: DayData | null
@@ -247,6 +251,8 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: A
         content: ''
     })
     const [isReportOpen, setIsReportOpen] = useState(false)
+    const [reportStatus, setReportStatus] = useState<DayReport | null>(null)
+    const [loadingStatus, setLoadingStatus] = useState(false)
 
     const openModal = (title: string, content: string, duration?: string, type?: 'morning' | 'evening' | 'task') => {
         setModalState({ isOpen: true, title, content, duration, type })
@@ -254,6 +260,41 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: A
 
     const closeModal = () => {
         setModalState({ ...modalState, isOpen: false })
+    }
+
+    // Загружаем статус отчёта при смене дня
+    useEffect(() => {
+        if (!selectedDay) return
+        let cancelled = false
+
+        const loadStatus = async () => {
+            setLoadingStatus(true)
+            try {
+                const reports = await getDayReports(selectedDay.dayNumber)
+                if (!cancelled) {
+                    setReportStatus(reports[0] || null)
+                }
+            } catch (e) {
+                console.error('Failed to load report status:', e)
+            } finally {
+                if (!cancelled) setLoadingStatus(false)
+            }
+        }
+
+        loadStatus()
+        return () => { cancelled = true }
+    }, [selectedDay?.dayNumber])
+
+    // После закрытия модалки — обновляем статус
+    const handleReportClose = async () => {
+        setIsReportOpen(false)
+        if (!selectedDay) return
+        try {
+            const reports = await getDayReports(selectedDay.dayNumber)
+            setReportStatus(reports[0] || null)
+        } catch (e) {
+            console.error('Failed to refresh report status:', e)
+        }
     }
 
     if (!selectedDay) {
@@ -430,14 +471,86 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: A
                     </button>
                 )}
 
-                {/* Report Button */}
-                <button
-                    onClick={() => setIsReportOpen(true)}
-                    className="glass-button-secondary w-full mt-3 flex items-center justify-center gap-2"
-                >
-                    <Camera className="w-5 h-5" />
-                    Отправить отчёт дня
-                </button>
+                {/* Report Button — динамический статус */}
+                {(() => {
+                    if (loadingStatus) {
+                        return (
+                            <div className="w-full mt-3 py-3.5 rounded-xl bg-white/5 flex items-center justify-center gap-2 text-gray-500 text-sm">
+                                <div className="w-4 h-4 border-2 border-gray-600 border-t-gray-400 rounded-full animate-spin" />
+                                Загрузка...
+                            </div>
+                        )
+                    }
+
+                    if (!reportStatus) {
+                        // Отчёт не отправлен
+                        return (
+                            <button
+                                onClick={() => setIsReportOpen(true)}
+                                className="glass-button-secondary w-full mt-3 flex items-center justify-center gap-2"
+                            >
+                                <Camera className="w-5 h-5" />
+                                Отправить отчёт дня
+                            </button>
+                        )
+                    }
+
+                    if (reportStatus.status === 'pending') {
+                        // Отчёт отправлен, ожидает проверки
+                        return (
+                            <div className="w-full mt-3 py-3.5 rounded-xl bg-yellow-500/10 border border-yellow-500/30
+                                           flex items-center justify-center gap-2 text-yellow-400 text-sm font-semibold">
+                                <Clock className="w-5 h-5" />
+                                Отчёт отправлен — ожидает проверки
+                            </div>
+                        )
+                    }
+
+                    if (reportStatus.status === 'approved') {
+                        // Отчёт принят куратором
+                        return (
+                            <div className="w-full mt-3 py-3.5 rounded-xl bg-green-500/10 border border-green-500/30
+                                           flex flex-col items-center justify-center gap-1">
+                                <div className="flex items-center gap-2 text-green-400 text-sm font-semibold">
+                                    <CheckCircle className="w-5 h-5" />
+                                    Отчёт принят куратором ✓
+                                </div>
+                                {reportStatus.curator_comment && (
+                                    <p className="text-xs text-green-300/70 text-center px-2">
+                                        {reportStatus.curator_comment}
+                                    </p>
+                                )}
+                            </div>
+                        )
+                    }
+
+                    if (reportStatus.status === 'rejected') {
+                        // Нужна доработка
+                        return (
+                            <div className="w-full mt-3 rounded-xl bg-red-500/10 border border-red-500/30 overflow-hidden">
+                                <div className="py-3 flex items-center justify-center gap-2 text-red-400 text-sm font-semibold">
+                                    <XCircle className="w-5 h-5" />
+                                    Требуется доработка
+                                </div>
+                                {reportStatus.curator_comment && (
+                                    <div className="px-4 pb-3 text-xs text-red-300/80 text-center border-t border-red-500/20 pt-2">
+                                        {reportStatus.curator_comment}
+                                    </div>
+                                )}
+                                <button
+                                    onClick={() => setIsReportOpen(true)}
+                                    className="w-full py-2.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs font-bold
+                                               transition-all flex items-center justify-center gap-1.5 border-t border-red-500/20"
+                                >
+                                    <Camera className="w-4 h-4" />
+                                    Отправить повторно
+                                </button>
+                            </div>
+                        )
+                    }
+
+                    return null
+                })()}
             </div>
 
             {/* Content Modal */}
@@ -453,7 +566,7 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: A
             {/* Day Report Modal */}
             <DayReportModal
                 isOpen={isReportOpen}
-                onClose={() => setIsReportOpen(false)}
+                onClose={handleReportClose}
                 dayNumber={selectedDay.dayNumber}
             />
         </>
