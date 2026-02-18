@@ -147,24 +147,26 @@ export default function JournalPage() {
         const file = e.target.files?.[0]
         if (!file) return
 
-        // Support for demo mode: show local preview even without auth
-        if (!user) {
-            const previewUrl = URL.createObjectURL(file)
-            setForm(prev => ({ ...prev, [`photo_${type}`]: previewUrl }))
-            return
-        }
+        // Показываем локальный превью сразу (для быстрого отклика)
+        const previewUrl = URL.createObjectURL(file)
+        setForm(prev => ({ ...prev, [`photo_${type}`]: previewUrl }))
+
+        // Если не авторизован — только локальный превью
+        if (!user) return
 
         setUploading(prev => ({ ...prev, [type]: true }))
         try {
             const result = await uploadJournalPhoto(file, type)
             if (result.url) {
+                // Заменяем локальный превью на реальный URL из Supabase
                 setForm(prev => ({ ...prev, [`photo_${type}`]: result.url }))
             } else {
-                alert(result.error || 'Ошибка загрузки фото')
+                // При ошибке оставляем локальный превью (уже установлен выше)
+                console.error('Photo upload error:', result.error)
             }
         } catch (error) {
             console.error('Upload failed:', error)
-            alert('Не удалось загрузить фото. Попробуйте другой формат или размер.')
+            // Локальный превью уже показан — пользователь видит фото
         } finally {
             setUploading(prev => ({ ...prev, [type]: false }))
         }
