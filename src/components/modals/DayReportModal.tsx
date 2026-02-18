@@ -137,7 +137,11 @@ export default function DayReportModal({ isOpen, onClose, dayNumber }: DayReport
     return (
         <div className="modal-overlay" onClick={onClose}>
             <div
-                className="glass-card w-full max-w-lg max-h-[95vh] sm:max-h-[90vh] animate-fade-in mx-4 flex flex-col overflow-hidden"
+                className="glass-card w-full max-w-lg animate-fade-in mx-3 flex flex-col overflow-hidden"
+                style={{
+                    maxHeight: 'calc(100dvh - 80px)',
+                    marginBottom: 'max(16px, env(safe-area-inset-bottom, 16px))'
+                }}
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Scrollable content area */}
@@ -210,7 +214,9 @@ export default function DayReportModal({ isOpen, onClose, dayNumber }: DayReport
                 </div>
 
                 {/* Sticky Footer with Submit Button */}
-                <div className="flex-shrink-0 px-4 sm:px-6 pb-4 sm:pb-5 pt-3 border-t border-white/5 bg-deep-dark-100/80 backdrop-blur-sm">
+                <div className="flex-shrink-0 px-4 sm:px-6 pt-3 border-t border-white/5 bg-deep-dark-100/80 backdrop-blur-sm"
+                    style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom, 16px))' }}
+                >
                     {/* Demo Notice */}
                     {!user && (
                         <p className="text-[10px] text-gray-600 text-center mb-2">

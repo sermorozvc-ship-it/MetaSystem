@@ -160,9 +160,19 @@ body {
   backdrop-filter: blur(4px);
   z-index: 60;
   display: flex;
-  align-items: center;
+  /* На мобильных — прижимаем к низу (bottom sheet стиль) */
+  align-items: flex-end;
   justify-content: center;
-  padding: 1rem;
+  padding: 0.5rem;
+  /* Учитываем навигационную панель Android/iOS */
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0.5rem));
+}
+
+@media (min-width: 640px) {
+  .modal-overlay {
+    align-items: center;
+    padding: 1rem;
+  }
 }
 
 .modal-content {
