@@ -272,7 +272,12 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: A
             try {
                 const reports = await getDayReports(selectedDay.dayNumber)
                 if (!cancelled) {
-                    setReportStatus(reports[0] || null)
+                    // Ищем "лучший" статус: сначала approved, потом pending, потом rejected
+                    const preferredReport = reports.find(r => r.status === 'approved')
+                        || reports.find(r => r.status === 'pending')
+                        || reports[0]
+                        || null
+                    setReportStatus(preferredReport)
                 }
             } catch (e) {
                 console.error('Failed to load report status:', e)
@@ -282,7 +287,15 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: A
         }
 
         loadStatus()
-        return () => { cancelled = true }
+
+        // Добавляем слушатель фокуса окна для авто-обновления статуса
+        const handleFocus = () => loadStatus()
+        window.addEventListener('focus', handleFocus)
+
+        return () => {
+            cancelled = true
+            window.removeEventListener('focus', handleFocus)
+        }
     }, [selectedDay?.dayNumber])
 
     // После закрытия модалки — обновляем статус
@@ -291,7 +304,12 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: A
         if (!selectedDay) return
         try {
             const reports = await getDayReports(selectedDay.dayNumber)
-            setReportStatus(reports[0] || null)
+            // Ищем "лучший" статус: сначала approved, потом pending, потом rejected
+            const preferredReport = reports.find(r => r.status === 'approved')
+                || reports.find(r => r.status === 'pending')
+                || reports[0]
+                || null
+            setReportStatus(preferredReport)
         } catch (e) {
             console.error('Failed to refresh report status:', e)
         }
