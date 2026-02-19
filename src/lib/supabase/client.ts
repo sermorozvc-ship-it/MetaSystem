@@ -14,11 +14,12 @@ export function createClient(): SupabaseClient {
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
     if (!supabaseUrl || !supabaseKey) {
-        if (typeof window !== 'undefined') {
-            console.error('CRITICAL: Supabase variables are missing! Check Vercel Environment Variables.')
-        }
-        // Возвращаем мок-объект, который имитирует методы Supabase
-        // Это предотвратит падение всего приложения
+        console.error('CRITICAL: Supabase variables are missing! client.ts', {
+            hasUrl: !!supabaseUrl,
+            hasKey: !!supabaseKey
+        })
+
+        // Возвращаем мок-объект, чтобы приложение не упало с ошибкой "cannot read property auth of undefined"
         return {
             auth: {
                 getUser: async () => ({ data: { user: null }, error: null }),
@@ -26,14 +27,21 @@ export function createClient(): SupabaseClient {
                 getSession: async () => ({ data: { session: null }, error: null }),
             },
             from: () => ({
-                select: () => ({ order: () => ({ data: [], error: null }) }),
+                select: () => ({ order: () => ({ eq: () => ({ data: [], error: null }), data: [], error: null }) }),
                 insert: () => ({ error: null }),
                 update: () => ({ error: null }),
+                upsert: () => ({ error: null }),
+                delete: () => ({ eq: () => ({ error: null }) }),
             }),
+            storage: {
+                from: () => ({
+                    upload: async () => ({ data: null, error: new Error('Missing Supabase Config') }),
+                    getPublicUrl: () => ({ data: { publicUrl: '' } })
+                })
+            }
         } as any
     }
 
-    // Используем @supabase/supabase-js напрямую с отключенными locks
     client = createSupabaseClient(
         supabaseUrl,
         supabaseKey,
@@ -41,13 +49,8 @@ export function createClient(): SupabaseClient {
             auth: {
                 persistSession: true,
                 autoRefreshToken: true,
-                detectSessionInUrl: false,
-                flowType: 'implicit',
-                // Отключаем Web Locks
-                lock: async <R>(name: string, acquireTimeout: number, fn: () => Promise<R>): Promise<R> => {
-                    // Выполняем функцию напрямую без блокировок
-                    return await fn()
-                }
+                detectSessionInUrl: true,
+                flowType: 'pkce' // PKCE более надежен для современных браузеров
             }
         }
     )
@@ -57,7 +60,7 @@ export function createClient(): SupabaseClient {
 
 /**
  * Безопасное получение пользователя с кешированием
- * Никогда не кидает ошибки — всегда возвращает User | null
+ * Никогда не кидает фатальные ошибки — всегда возвращает User | null
  */
 export async function safeGetUser(): Promise<User | null> {
     const now = Date.now()
@@ -69,28 +72,23 @@ export async function safeGetUser(): Promise<User | null> {
     const supabase = createClient()
 
     try {
-        // Используем getSession вместо getUser — это быстрее и не делает лишний запрос к серверу
-        const { data: { session }, error } = await supabase.auth.getSession()
+        // Таймаут для получения сессии — 5 секунд
+        const timeout = new Promise<null>((_, reject) =>
+            setTimeout(() => reject(new Error('Session fetch timeout')), 5000)
+        )
 
-        if (error) {
-            if (error.name === 'AbortError' || error.message?.includes('abort')) {
-                console.warn('[safeGetUser] getSession aborted, returning cached user')
-                return cachedUser
-            }
-            console.error('[safeGetUser] getSession error:', error.message)
-            return cachedUser
-        }
+        const sessionPromise = supabase.auth.getSession()
+
+        const result = await Promise.race([sessionPromise, timeout]) as any
+        const session = result?.data?.session ?? null
 
         const user = session?.user ?? null
         cachedUser = user
         userCacheTimestamp = now
         return user
     } catch (error: any) {
-        if (error.name === 'AbortError' || error.message?.includes('abort') || error.message?.includes('Failed to fetch')) {
-            console.warn('[safeGetUser] request failed, returning cached user')
-            return cachedUser
-        }
-        console.error('[safeGetUser] exception:', error.message)
+        console.warn('[safeGetUser] failed or timeout:', error.message)
+        // Если есть старый кеш — используем его, это лучше чем ничего
         return cachedUser
     }
 }

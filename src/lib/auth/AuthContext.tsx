@@ -16,8 +16,9 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 /**
- * Синхронно читаем сессию из localStorage — это мгновенно!
- * Позволяет показать UI до завершения сетевого запроса.
+ * Синхронно читаем сессию из localStorage.
+ * Мы возвращаем данные даже если токен истек, 
+ * чтобы SDK Supabase мог использовать refresh_token для обновления.
  */
 function getInitialSessionFromStorage(): { user: User | null; session: Session | null } {
     if (typeof window === 'undefined') return { user: null, session: null }
@@ -34,16 +35,6 @@ function getInitialSessionFromStorage(): { user: User | null; session: Session |
 
         const parsed = JSON.parse(stored)
 
-        // Проверяем не истёк ли access_token
-        if (parsed?.expires_at) {
-            const expiresAt = parsed.expires_at * 1000
-            if (Date.now() > expiresAt) {
-                // Токен истёк, но refresh_token может быть валидным — 
-                // пусть getSession() обновит. Пока возвращаем null.
-                return { user: null, session: null }
-            }
-        }
-
         if (parsed?.user) {
             return { user: parsed.user, session: parsed as Session }
         }
@@ -54,28 +45,23 @@ function getInitialSessionFromStorage(): { user: User | null; session: Session |
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-    // Ключевое изменение: инициализируем user/session СИНХРОННО из localStorage
-    // Это позволяет страницам сразу начать загрузку данных без ожидания getSession()
     const [initialData] = useState(() => getInitialSessionFromStorage())
     const [user, setUser] = useState<User | null>(initialData.user)
     const [session, setSession] = useState<Session | null>(initialData.session)
-    // Если есть данные в localStorage — считаем что auth уже готов!
     const [isLoading, setIsLoading] = useState(!initialData.user)
-    const hasResolved = useRef(!!initialData.user)
+    const hasResolved = useRef(false)
 
     const [supabase] = useState(() => createClient())
 
-    // Safety timeout — если getSession зависнет, принудительно снимаем loading
+    // Safety timeout — если всё совсем плохо, снимаем loading через 5 секунд
     useEffect(() => {
-        if (hasResolved.current) return
-
         const timer = setTimeout(() => {
             if (!hasResolved.current) {
-                console.warn('[Auth] Force-resolving after safety timeout')
-                hasResolved.current = true
+                console.warn('[Auth] Safety timeout reached, resolving...')
                 setIsLoading(false)
+                hasResolved.current = true
             }
-        }, 2000) // 2 секунды — достаточно для нормальной сети
+        }, 5000)
 
         return () => clearTimeout(timer)
     }, [])
@@ -83,33 +69,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         let isMounted = true
 
-        // Фоновая валидация сессии — не блокирует UI
         const validateSession = async () => {
             try {
-                // Таймаут 3 секунды — если Supabase не ответил, не ждём
-                const sessionPromise = supabase.auth.getSession()
-                const timeoutPromise = new Promise<never>((_, reject) =>
-                    setTimeout(() => reject(new Error('Session timeout')), 3000)
-                )
-
-                const { data: { session: currentSession }, error } = await Promise.race([
-                    sessionPromise,
-                    timeoutPromise
-                ]) as Awaited<ReturnType<typeof supabase.auth.getSession>>
+                // Пытаемся получить актуальную сессию (Supabase сам обновит её через refresh_token если нужно)
+                const { data: { session: currentSession }, error } = await supabase.auth.getSession()
 
                 if (!isMounted) return
 
-                if (!error && currentSession) {
+                if (error) {
+                    console.error('[Auth] getSession error:', error.message)
+                    // Если ошибка серьезная — разлогиниваем для безопасности
+                    if (error.message.includes('refresh_token_not_found') || error.message.includes('Invalid Refresh Token')) {
+                        setSession(null)
+                        setUser(null)
+                    }
+                } else if (currentSession) {
                     setSession(currentSession)
                     setUser(currentSession.user)
-                } else if (!error && !currentSession) {
-                    // Сессия отсутствует на сервере — пользователь вышел
+                } else {
                     setSession(null)
                     setUser(null)
                 }
-                // При ошибке — оставляем текущие значения (из localStorage)
             } catch (e: any) {
-                // При ошибке сети или таймауте — оставляем данные из localStorage
                 console.warn('[Auth] Session validation failed:', e.message)
             } finally {
                 if (isMounted && !hasResolved.current) {
