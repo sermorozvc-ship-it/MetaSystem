@@ -50,42 +50,57 @@ export async function isAdmin(): Promise<boolean> {
     const user = await safeGetUser()
 
     if (!user) {
-        console.log('[isAdmin] No user, assuming demo mode access')
-        return true // Allow access in demo mode
+        console.log('[isAdmin] No user session found, allowing for demo/checking')
+        return false
     }
 
-    // 🚨 EMERGENCY ACCESS override for owners
-    if (user.email === 'hunternik005@gmail.com' || user.email === 'dgmukhin@gmail.com') {
+    // 1. Check Owner Emails (Hardcoded bypass)
+    const owners = ['hunternik005@gmail.com', 'dgmukhin@gmail.com']
+    if (owners.includes(user.email || '')) {
         console.log('[isAdmin] Emergency admin access granted for owner:', user.email)
         return true
     }
 
+    // 2. Check User Metadata (Fastest)
+    if (user.user_metadata?.role === 'admin' || user.user_metadata?.role === 'curator') {
+        console.log('[isAdmin] Access granted via token metadata')
+        return true
+    }
+
     try {
-        console.log('[isAdmin] Checking RPC is_admin...')
-        // Try secure RPC function first (bypasses RLS)
+        console.log('[isAdmin] Checking DB via RPC is_admin...')
         const { data: isRpcAdmin, error: rpcError } = await supabase.rpc('is_admin')
+
         if (!rpcError && isRpcAdmin === true) {
-            console.log('[isAdmin] RPC check successful')
+            console.log('[isAdmin] RPC check successful: IS ADMIN')
             return true
         }
-        if (rpcError) console.warn('[isAdmin] RPC error:', rpcError.message)
+
+        if (rpcError) {
+            console.warn('[isAdmin] RPC error:', rpcError.code, rpcError.message)
+            // If function doesn't exist, we fall back to table query
+        }
     } catch (e: any) {
         console.warn('[isAdmin] RPC exception:', e.message)
     }
 
-    // Fallback to table query
-    console.log('[isAdmin] Falling back to profile table check...')
+    // 3. Fallback to profiles table query
+    console.log('[isAdmin] Falling back to direct profile query...')
     const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single()
 
-    if (profileError) console.error('[isAdmin] Profile table check failed:', profileError.message)
+    if (profileError) {
+        console.error('[isAdmin] Profile query failed:', profileError.message)
+        return false
+    }
 
-    const result = profile?.role === 'admin' || profile?.role === 'curator'
-    console.log('[isAdmin] Final result for', user.email, ':', result)
-    return result
+    const hasAccess = profile?.role === 'admin' || profile?.role === 'curator'
+    console.log('[isAdmin] Profile role check result:', profile?.role, '-> Access:', hasAccess)
+
+    return hasAccess
 }
 
 // Helper function to check if error is AbortError

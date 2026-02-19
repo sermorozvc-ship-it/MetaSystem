@@ -36,42 +36,22 @@ export default function Sidebar({ activeItem = 'dashboard', onItemClick }: Sideb
 
     useEffect(() => {
         let isMounted = true;
+        const { isAdmin: checkAdminService } = require('@/lib/services/admin');
+
         const checkAdmin = async () => {
-            if (!user) {
-                // Demo mode - show admin link
-                setIsAdmin(true)
-                return
-            }
-
-            // Сначала проверяем роль в метаданных (это мгновенно)
-            const roleInMetadata = user.user_metadata?.role
-            if (roleInMetadata === 'admin' || roleInMetadata === 'curator') {
-                if (isMounted) setIsAdmin(true)
-                return
-            }
-
-            // Если в метаданных нет, проверяем БД один раз
             try {
-                const supabase = createClient()
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('role')
-                    .eq('id', user.id)
-                    .single()
-
-                if (isMounted) {
-                    setIsAdmin(profile?.role === 'admin' || profile?.role === 'curator')
-                }
+                const admin = await checkAdminService();
+                if (isMounted) setIsAdmin(admin);
             } catch (e) {
-                console.error('Sidebar admin check failed', e)
+                console.error('Sidebar admin check failed', e);
             }
         }
 
-        checkAdmin()
-        return () => { isMounted = false }
-    }, [user])
+        checkAdmin();
+        return () => { isMounted = false };
+    }, [user]);
 
-    const handleItemClick = (item: typeof menuItems[0]) => {
+    const handleItemClick = (item: any) => {
         if (onItemClick) {
             onItemClick(item.id)
         } else {
@@ -135,7 +115,7 @@ export default function Sidebar({ activeItem = 'dashboard', onItemClick }: Sideb
                     {/* Admin Link */}
                     {isAdmin && (
                         <button
-                            onClick={() => window.open('/admin', '_blank')}
+                            onClick={() => router.push('/admin')}
                             onMouseEnter={() => setHoveredItem('admin')}
                             onMouseLeave={() => setHoveredItem(null)}
                             className={`

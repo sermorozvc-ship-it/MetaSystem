@@ -302,15 +302,14 @@ export default function AdminPage() {
         }
     }
 
-    const filteredUsers = users.filter(u =>
-        u.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        u.email.toLowerCase().includes(searchQuery.toLowerCase())
-    )
+    const filteredUsers = users.filter(u => {
+        const query = searchQuery.toLowerCase();
+        const nameMatch = u.full_name?.toLowerCase().includes(query);
+        const emailMatch = (u.email || '').toLowerCase().includes(query);
+        return nameMatch || emailMatch;
+    })
 
-    // Non-blocking loading check
-    const isPageLoading = isLoading || (authLoading && !isAdminUser)
-
-    if (accessError) {
+    if (accessError || (!isAdminUser && !isLoading && !authLoading)) {
         return (
             <div className="min-h-screen bg-deep-dark flex items-center justify-center p-4">
                 <div className="glass-card max-w-md w-full p-8 text-center border-red-500/30">
@@ -318,27 +317,51 @@ export default function AdminPage() {
                         <Shield className="w-8 h-8 text-red-500" />
                     </div>
                     <h1 className="text-xl font-bold text-white mb-2">Ошибка доступа</h1>
-                    <p className="text-gray-400 mb-6">{accessError}</p>
+                    <p className="text-gray-400 mb-6">{accessError || 'У вас нет прав администратора для просмотра этой страницы.'}</p>
 
-                    <div className="bg-black/30 p-4 rounded-lg text-left text-xs font-mono text-gray-500 mb-6 overflow-auto">
+                    <div className="bg-black/30 p-4 rounded-lg text-left text-xs font-mono text-gray-500 mb-6 overflow-auto max-h-40">
+                        <p className="text-meta-orange mb-1">// Diagnostic Info</p>
                         <p>User ID: {user?.id || 'null'}</p>
                         <p>Email: {user?.email || 'null'}</p>
-                        <p>Loading: {isLoading ? 'true' : 'false'}</p>
+                        <p>Role: {user?.user_metadata?.role || 'not set'}</p>
+                        <p>App Loading: {isLoading ? 'true' : 'false'}</p>
+                        <p>Auth Loading: {authLoading ? 'true' : 'false'}</p>
                     </div>
 
-                    <button
-                        onClick={() => router.push('/dashboard')}
-                        className="glass-button w-full"
-                    >
-                        Вернуться в Кабинет
-                    </button>
-                    <button
-                        onClick={signOut}
-                        className="text-gray-500 text-sm mt-4 hover:text-white underline"
-                    >
-                        Выйти из аккаунта (Hard Reset)
-                    </button>
+                    <div className="space-y-3">
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="glass-button w-full flex items-center justify-center gap-2"
+                        >
+                            <RefreshCw className="w-4 h-4" />
+                            Попробовать снова
+                        </button>
+                        <button
+                            onClick={() => router.push('/dashboard')}
+                            className="glass-button-secondary w-full"
+                        >
+                            Вернуться в Кабинет
+                        </button>
+                        <button
+                            onClick={signOut}
+                            className="text-gray-500 text-sm mt-2 hover:text-white underline inline-block"
+                        >
+                            Выйти из аккаунта (Hard Reset)
+                        </button>
+                    </div>
                 </div>
+            </div>
+        )
+    }
+
+    if (isLoading || (authLoading && !isAdminUser)) {
+        return (
+            <div className="min-h-screen bg-deep-dark flex flex-col items-center justify-center p-4">
+                <div className="w-16 h-16 rounded-2xl bg-meta-orange/20 flex items-center justify-center mb-4 animate-pulse">
+                    <Shield className="w-8 h-8 text-meta-orange animate-bounce" />
+                </div>
+                <h2 className="text-xl font-bold text-white mb-2">Загрузка данных...</h2>
+                <p className="text-gray-400 text-sm animate-pulse">Проверка прав и получение статистики</p>
             </div>
         )
     }
