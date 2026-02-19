@@ -56,6 +56,12 @@ export default function JournalPage() {
     const loadEntries = useCallback(async () => {
         setIsLoading(true)
         setError(null)
+
+        // Предохранительный таймер на 8 секунд
+        const safetyTimer = setTimeout(() => {
+            setIsLoading(false)
+        }, 8000)
+
         try {
             if (!user) {
                 const stored = localStorage.getItem('demo_journal')
@@ -71,6 +77,7 @@ export default function JournalPage() {
             setError('Сессия истекла или возникла ошибка сети. Попробуйте обновить страницу.')
         } finally {
             setIsLoading(false)
+            clearTimeout(safetyTimer)
         }
     }, [user])
 

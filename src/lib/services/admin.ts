@@ -47,10 +47,18 @@ export interface DayReportWithUser {
 // Check if current user is admin
 export async function isAdmin(): Promise<boolean> {
     const supabase = createClient()
-    const user = await safeGetUser()
+
+    // Пытаемся получить юзера с небольшой задержкой/повтором если это первый рендер после жесткой перезагрузки
+    let user = await safeGetUser()
 
     if (!user) {
-        console.log('[isAdmin] No user session found, allowing for demo/checking')
+        console.log('[isAdmin] First check failed, retrying in 500ms...')
+        await new Promise(r => setTimeout(r, 500))
+        user = await safeGetUser()
+    }
+
+    if (!user) {
+        console.log('[isAdmin] No user session found after retry')
         return false
     }
 

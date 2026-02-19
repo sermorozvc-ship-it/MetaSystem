@@ -68,8 +68,11 @@ export function createClient(): SupabaseClient {
     return client
 }
 
+// Симафор для предотвращения параллельных запросов к auth
+let getUserPromise: Promise<User | null> | null = null
+
 /**
- * Безопасное получение пользователя с кешированием
+ * Безопасное получение пользователя с кешированием и защитой от параллелизма
  */
 export async function safeGetUser(): Promise<User | null> {
     const now = Date.now()
@@ -77,33 +80,42 @@ export async function safeGetUser(): Promise<User | null> {
         return cachedUser
     }
 
-    const supabase = createClient()
-    try {
-        // Добавляем таймаут на получение сессии, чтобы не вешать всё приложение
-        const sessionPromise = supabase.auth.getSession()
-        const timeoutPromise = new Promise<{ data: { session: null }, error: any }>((res) =>
-            setTimeout(() => res({ data: { session: null }, error: new Error('Auth Timeout') }), 3000)
-        )
+    // Если запрос уже идет — ждем его, а не создаем новый
+    if (getUserPromise) return getUserPromise
 
-        const { data: { session }, error } = await Promise.race([
-            sessionPromise,
-            timeoutPromise
-        ]) as any
+    getUserPromise = (async () => {
+        const supabase = createClient()
+        try {
+            console.log('[safeGetUser] Fetching fresh session...')
 
-        if (error) {
-            console.warn('[safeGetUser] auth error:', error.message)
-            // Если таймаут или ошибка — возвращаем кеш (если есть) или null
+            const sessionPromise = supabase.auth.getSession()
+            const timeoutPromise = new Promise<{ data: { session: null }, error: any }>((res) =>
+                setTimeout(() => res({ data: { session: null }, error: new Error('Auth Timeout') }), 3000)
+            )
+
+            const { data: { session }, error } = await Promise.race([
+                sessionPromise,
+                timeoutPromise
+            ]) as any
+
+            if (error) {
+                console.warn('[safeGetUser] Auth notice:', error.message)
+                return cachedUser // Возвращаем что есть в кеше
+            }
+
+            const user = session?.user ?? null
+            cachedUser = user
+            userCacheTimestamp = Date.now()
+            return user
+        } catch (error: any) {
+            console.warn('[safeGetUser] Critical failure:', error.message)
             return cachedUser
+        } finally {
+            getUserPromise = null
         }
+    })()
 
-        const user = session?.user ?? null
-        cachedUser = user
-        userCacheTimestamp = now
-        return user
-    } catch (error: any) {
-        console.warn('[safeGetUser] exception fallback:', error.message)
-        return cachedUser
-    }
+    return getUserPromise
 }
 
 /**

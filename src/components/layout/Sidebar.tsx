@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
     LayoutDashboard,
     TrendingUp,
@@ -81,9 +82,12 @@ export default function Sidebar({ activeItem = 'dashboard', onItemClick }: Sideb
                         const isHovered = hoveredItem === item.id
 
                         return (
-                            <button
+                            <Link
                                 key={item.id}
-                                onClick={() => handleItemClick(item)}
+                                href={item.href}
+                                onClick={(e) => {
+                                    if (onItemClick) onItemClick(item.id)
+                                }}
                                 onMouseEnter={() => setHoveredItem(item.id)}
                                 onMouseLeave={() => setHoveredItem(null)}
                                 className={`
@@ -108,14 +112,14 @@ export default function Sidebar({ activeItem = 'dashboard', onItemClick }: Sideb
                                 >
                                     {item.label}
                                 </span>
-                            </button>
+                            </Link>
                         )
                     })}
 
                     {/* Admin Link */}
                     {isAdmin && (
                         <button
-                            onClick={() => router.push('/admin')}
+                            onClick={() => window.open('/admin', '_blank')}
                             onMouseEnter={() => setHoveredItem('admin')}
                             onMouseLeave={() => setHoveredItem(null)}
                             className={`
@@ -164,23 +168,38 @@ export default function Sidebar({ activeItem = 'dashboard', onItemClick }: Sideb
                         const isActive = activeItem === item.id
                         const isAdminItem = item.id === 'admin'
 
+                        if (isAdminItem) {
+                            return (
+                                <button
+                                    key={item.id}
+                                    onClick={() => window.open('/admin', '_blank')}
+                                    className={`
+                                        flex flex-col items-center gap-1 px-3 py-2 rounded-xl
+                                        transition-all duration-200 min-w-[56px]
+                                        ${isActive ? 'text-purple-400' : 'text-gray-500'}
+                                    `}
+                                >
+                                    <Icon className={`w-5 h-5 ${isActive ? 'scale-110' : ''} transition-transform`} />
+                                    <span className="text-[10px] font-medium leading-none">{item.label}</span>
+                                    {isActive && (
+                                        <div className={`w-1 h-1 rounded-full bg-purple-400`} />
+                                    )}
+                                </button>
+                            )
+                        }
+
                         return (
-                            <button
+                            <Link
                                 key={item.id}
-                                onClick={() => {
-                                    if (isAdminItem) {
-                                        window.open('/admin', '_blank')
-                                    } else {
-                                        handleItemClick(item)
-                                    }
+                                href={item.href}
+                                onClick={(e) => {
+                                    if (onItemClick) onItemClick(item.id)
                                 }}
                                 className={`
                                     flex flex-col items-center gap-1 px-3 py-2 rounded-xl
                                     transition-all duration-200 min-w-[56px]
                                     ${isActive
-                                        ? isAdminItem
-                                            ? 'text-purple-400'
-                                            : 'text-meta-orange'
+                                        ? 'text-meta-orange'
                                         : 'text-gray-500'
                                     }
                                 `}
@@ -188,9 +207,9 @@ export default function Sidebar({ activeItem = 'dashboard', onItemClick }: Sideb
                                 <Icon className={`w-5 h-5 ${isActive ? 'scale-110' : ''} transition-transform`} />
                                 <span className="text-[10px] font-medium leading-none">{item.label}</span>
                                 {isActive && (
-                                    <div className={`w-1 h-1 rounded-full ${isAdminItem ? 'bg-purple-400' : 'bg-meta-orange'}`} />
+                                    <div className={`w-1 h-1 rounded-full bg-meta-orange`} />
                                 )}
-                            </button>
+                            </Link>
                         )
                     })}
                 </div>

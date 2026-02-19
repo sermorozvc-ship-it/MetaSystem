@@ -18,11 +18,17 @@ export default function Header({ currentDay = 1, userName: propUserName }: Heade
     const [showUserMenu, setShowUserMenu] = useState(false)
     const [unreadMessages, setUnreadMessages] = useState(0)
 
-    // Search states
+    const [mounted, setMounted] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
     const [isSearchFocused, setIsSearchFocused] = useState(false)
 
-    const userName = propUserName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Атлет'
+    useEffect(() => {
+        setMounted(true)
+    }, [])
+
+    const userName = mounted && (propUserName || user?.user_metadata?.full_name || user?.email?.split('@')[0])
+        ? (propUserName || user?.user_metadata?.full_name || user?.email?.split('@')[0])
+        : 'Атлет'
 
     // Search logic
     const allSearchItems = [

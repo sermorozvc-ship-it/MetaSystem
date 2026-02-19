@@ -265,10 +265,20 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: A
     // Загружаем статус отчёта при смене дня
     useEffect(() => {
         if (!selectedDay) return
+        setReportStatus(null) // Очищаем статус при смене дня
         let cancelled = false
 
         const loadStatus = async () => {
-            setLoadingStatus(true)
+            // Если у нас уже есть статус, не показываем состояние загрузки (фоновое обновление)
+            if (!reportStatus) {
+                setLoadingStatus(true)
+            }
+
+            // Предохранительный таймер на 5 секунд
+            const safetyTimer = setTimeout(() => {
+                if (!cancelled) setLoadingStatus(false)
+            }, 5000)
+
             try {
                 const reports = await getDayReports(selectedDay.dayNumber)
                 if (!cancelled) {
@@ -282,7 +292,10 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: A
             } catch (e) {
                 console.error('Failed to load report status:', e)
             } finally {
-                if (!cancelled) setLoadingStatus(false)
+                if (!cancelled) {
+                    setLoadingStatus(false)
+                    clearTimeout(safetyTimer)
+                }
             }
         }
 
