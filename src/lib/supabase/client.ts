@@ -79,14 +79,29 @@ export async function safeGetUser(): Promise<User | null> {
 
     const supabase = createClient()
     try {
-        const { data: { session } } = await supabase.auth.getSession()
+        // Добавляем таймаут на получение сессии, чтобы не вешать всё приложение
+        const sessionPromise = supabase.auth.getSession()
+        const timeoutPromise = new Promise<{ data: { session: null }, error: any }>((res) =>
+            setTimeout(() => res({ data: { session: null }, error: new Error('Auth Timeout') }), 3000)
+        )
+
+        const { data: { session }, error } = await Promise.race([
+            sessionPromise,
+            timeoutPromise
+        ]) as any
+
+        if (error) {
+            console.warn('[safeGetUser] auth error:', error.message)
+            // Если таймаут или ошибка — возвращаем кеш (если есть) или null
+            return cachedUser
+        }
 
         const user = session?.user ?? null
         cachedUser = user
         userCacheTimestamp = now
         return user
     } catch (error: any) {
-        console.warn('[safeGetUser] fallback to cache:', error.message)
+        console.warn('[safeGetUser] exception fallback:', error.message)
         return cachedUser
     }
 }

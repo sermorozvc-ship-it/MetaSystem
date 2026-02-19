@@ -49,32 +49,43 @@ export async function isAdmin(): Promise<boolean> {
     const supabase = createClient()
     const user = await safeGetUser()
 
-    if (!user) return true // Allow access in demo mode
+    if (!user) {
+        console.log('[isAdmin] No user, assuming demo mode access')
+        return true // Allow access in demo mode
+    }
 
     // 🚨 EMERGENCY ACCESS override for owners
     if (user.email === 'hunternik005@gmail.com' || user.email === 'dgmukhin@gmail.com') {
-        console.log('Emergency admin access granted for owner')
+        console.log('[isAdmin] Emergency admin access granted for owner:', user.email)
         return true
     }
 
     try {
+        console.log('[isAdmin] Checking RPC is_admin...')
         // Try secure RPC function first (bypasses RLS)
         const { data: isRpcAdmin, error: rpcError } = await supabase.rpc('is_admin')
         if (!rpcError && isRpcAdmin === true) {
+            console.log('[isAdmin] RPC check successful')
             return true
         }
-    } catch (e) {
-        console.warn('RPC admin check failed, falling back to table query')
+        if (rpcError) console.warn('[isAdmin] RPC error:', rpcError.message)
+    } catch (e: any) {
+        console.warn('[isAdmin] RPC exception:', e.message)
     }
 
     // Fallback to table query
-    const { data: profile } = await supabase
+    console.log('[isAdmin] Falling back to profile table check...')
+    const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single()
 
-    return profile?.role === 'admin' || profile?.role === 'curator'
+    if (profileError) console.error('[isAdmin] Profile table check failed:', profileError.message)
+
+    const result = profile?.role === 'admin' || profile?.role === 'curator'
+    console.log('[isAdmin] Final result for', user.email, ':', result)
+    return result
 }
 
 // Helper function to check if error is AbortError
