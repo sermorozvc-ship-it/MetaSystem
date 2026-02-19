@@ -14,28 +14,35 @@ export function createClient(): SupabaseClient {
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
     if (!supabaseUrl || !supabaseKey) {
-        console.error('CRITICAL: Supabase variables are missing! client.ts', {
-            hasUrl: !!supabaseUrl,
-            hasKey: !!supabaseKey
+        if (typeof window !== 'undefined') {
+            console.error('CRITICAL: Supabase variables are missing! Check .env.local file.')
+        }
+
+        // Мок-объект с цепочкой методов, чтобы ничего не падало
+        const mockFn = () => ({
+            select: mockFn,
+            insert: mockFn,
+            update: mockFn,
+            upsert: mockFn,
+            delete: mockFn,
+            eq: mockFn,
+            or: mockFn,
+            order: mockFn,
+            single: () => Promise.resolve({ data: null, error: null }),
+            then: (fn: any) => Promise.resolve({ data: [], error: null }).then(fn)
         })
 
-        // Возвращаем мок-объект, чтобы приложение не упало с ошибкой "cannot read property auth of undefined"
         return {
             auth: {
                 getUser: async () => ({ data: { user: null }, error: null }),
                 onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => { } } } }),
                 getSession: async () => ({ data: { session: null }, error: null }),
+                signOut: async () => { }
             },
-            from: () => ({
-                select: () => ({ order: () => ({ eq: () => ({ data: [], error: null }), data: [], error: null }) }),
-                insert: () => ({ error: null }),
-                update: () => ({ error: null }),
-                upsert: () => ({ error: null }),
-                delete: () => ({ eq: () => ({ error: null }) }),
-            }),
+            from: mockFn,
             storage: {
                 from: () => ({
-                    upload: async () => ({ data: null, error: new Error('Missing Supabase Config') }),
+                    upload: async () => ({ data: null, error: new Error('Missing Config') }),
                     getPublicUrl: () => ({ data: { publicUrl: '' } })
                 })
             }
@@ -50,7 +57,10 @@ export function createClient(): SupabaseClient {
                 persistSession: true,
                 autoRefreshToken: true,
                 detectSessionInUrl: true,
-                flowType: 'pkce' // PKCE более надежен для современных браузеров
+                flowType: 'implicit',
+                // Отключаем Web Locks корректно через конфиг
+                // @ts-ignore
+                isLockingSupported: false
             }
         }
     )
@@ -60,35 +70,23 @@ export function createClient(): SupabaseClient {
 
 /**
  * Безопасное получение пользователя с кешированием
- * Никогда не кидает фатальные ошибки — всегда возвращает User | null
  */
 export async function safeGetUser(): Promise<User | null> {
     const now = Date.now()
-
     if (cachedUser && (now - userCacheTimestamp) < USER_CACHE_TTL) {
         return cachedUser
     }
 
     const supabase = createClient()
-
     try {
-        // Таймаут для получения сессии — 5 секунд
-        const timeout = new Promise<null>((_, reject) =>
-            setTimeout(() => reject(new Error('Session fetch timeout')), 5000)
-        )
-
-        const sessionPromise = supabase.auth.getSession()
-
-        const result = await Promise.race([sessionPromise, timeout]) as any
-        const session = result?.data?.session ?? null
+        const { data: { session } } = await supabase.auth.getSession()
 
         const user = session?.user ?? null
         cachedUser = user
         userCacheTimestamp = now
         return user
     } catch (error: any) {
-        console.warn('[safeGetUser] failed or timeout:', error.message)
-        // Если есть старый кеш — используем его, это лучше чем ничего
+        console.warn('[safeGetUser] fallback to cache:', error.message)
         return cachedUser
     }
 }

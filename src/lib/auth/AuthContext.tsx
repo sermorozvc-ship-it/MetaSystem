@@ -45,24 +45,30 @@ function getInitialSessionFromStorage(): { user: User | null; session: Session |
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-    const [initialData] = useState(() => getInitialSessionFromStorage())
+    const [initialData] = useState(() => {
+        const data = getInitialSessionFromStorage()
+        if (typeof window !== 'undefined') {
+            console.log('[Auth] Initial data from storage:', data.user ? 'User found' : 'No user')
+        }
+        return data
+    })
+
     const [user, setUser] = useState<User | null>(initialData.user)
     const [session, setSession] = useState<Session | null>(initialData.session)
-    const [isLoading, setIsLoading] = useState(!initialData.user)
+    const [isLoading, setIsLoading] = useState(true) // Начинаем с true
     const hasResolved = useRef(false)
 
     const [supabase] = useState(() => createClient())
 
-    // Safety timeout — если всё совсем плохо, снимаем loading через 5 секунд
+    // SAFETY FIRST: Если через 3 секунды мы всё еще "грузимся" — принудительно показываем приложение
     useEffect(() => {
         const timer = setTimeout(() => {
             if (!hasResolved.current) {
-                console.warn('[Auth] Safety timeout reached, resolving...')
+                console.warn('[Auth] FORCED RESOLVE: session check took too long (>3s)')
                 setIsLoading(false)
                 hasResolved.current = true
             }
-        }, 5000)
-
+        }, 3000)
         return () => clearTimeout(timer)
     }, [])
 
@@ -70,28 +76,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let isMounted = true
 
         const validateSession = async () => {
+            console.log('[Auth] Validating session...')
             try {
-                // Пытаемся получить актуальную сессию (Supabase сам обновит её через refresh_token если нужно)
+                // Мы НЕ сбрасываем user/session из initialData сразу.
+                // Просто пробуем получить свежую сессию.
                 const { data: { session: currentSession }, error } = await supabase.auth.getSession()
 
                 if (!isMounted) return
 
-                if (error) {
-                    console.error('[Auth] getSession error:', error.message)
-                    // Если ошибка серьезная — разлогиниваем для безопасности
+                if (currentSession) {
+                    console.log('[Auth] Session active:', currentSession.user.email)
+                    setSession(currentSession)
+                    setUser(currentSession.user)
+                } else if (error) {
+                    console.warn('[Auth] getSession result:', error.message)
+                    // Только критические ошибки авторизации должны сбрасывать сессию
                     if (error.message.includes('refresh_token_not_found') || error.message.includes('Invalid Refresh Token')) {
                         setSession(null)
                         setUser(null)
                     }
-                } else if (currentSession) {
-                    setSession(currentSession)
-                    setUser(currentSession.user)
                 } else {
+                    console.log('[Auth] Session not found on server')
+                    // Если SDK говорит, что сессии нет — значит её действительно нет.
                     setSession(null)
                     setUser(null)
                 }
             } catch (e: any) {
-                console.warn('[Auth] Session validation failed:', e.message)
+                console.error('[Auth] Validation exception:', e.message)
             } finally {
                 if (isMounted && !hasResolved.current) {
                     hasResolved.current = true
@@ -102,10 +113,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         validateSession()
 
-        // Слушаем изменения auth
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (event, newSession) => {
                 if (!isMounted) return
+                console.log('[Auth] State change event:', event)
 
                 setSession(newSession)
                 setUser(newSession?.user ?? null)
@@ -115,24 +126,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     setIsLoading(false)
                 }
 
-                // Создаём профиль при регистрации
+                // ВАЖНО: Если юзер зашел, но его нет в базе профилей — создаем его
                 if (event === 'SIGNED_IN' && newSession?.user) {
-                    try {
-                        const { data: profile } = await supabase
-                            .from('profiles')
-                            .select('id')
-                            .eq('id', newSession.user.id)
-                            .single()
+                    const { data: existing } = await supabase
+                        .from('profiles')
+                        .select('id')
+                        .eq('id', newSession.user.id)
+                        .maybeSingle()
 
-                        if (!profile) {
-                            await supabase.from('profiles').insert({
-                                id: newSession.user.id,
-                                email: newSession.user.email,
-                                full_name: newSession.user.user_metadata?.full_name
-                            })
-                        }
-                    } catch {
-                        // silently fail
+                    if (!existing) {
+                        await supabase.from('profiles').insert({
+                            id: newSession.user.id,
+                            email: newSession.user.email,
+                            full_name: newSession.user.user_metadata?.full_name || 'Пользователь',
+                            role: 'user'
+                        }).select().single()
                     }
                 }
             }
@@ -159,8 +167,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const signOut = async () => {
+        console.log('[Auth] Signing out...')
         clearUserCache()
+
+        // Очищаем Supabase
         await supabase.auth.signOut()
+
+        // Принудительно чистим наш кастомный сторадж и localStorage Supabase
+        if (typeof window !== 'undefined') {
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+            if (supabaseUrl) {
+                const projectRef = new URL(supabaseUrl).hostname.split('.')[0]
+                localStorage.removeItem(`sb-${projectRef}-auth-token`)
+            }
+            // Полная очистка для надежности
+            localStorage.clear()
+
+            // Сбрасываем состояния
+            setUser(null)
+            setSession(null)
+
+            // Перекидываем на вход
+            window.location.href = '/auth'
+        }
     }
 
     return (

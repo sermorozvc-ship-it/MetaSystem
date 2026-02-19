@@ -1,6 +1,3 @@
-// ВАЖНО: Импорт должен быть первым для отключения Web Locks до Supabase
-import '@/lib/supabase/disableLocks'
-
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'

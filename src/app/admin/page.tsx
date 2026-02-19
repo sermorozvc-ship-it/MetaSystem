@@ -48,7 +48,7 @@ import { courseData } from '@/lib/data/courseData'
 type Tab = 'users' | 'reports' | 'messages'
 
 export default function AdminPage() {
-    const { user, isLoading: authLoading } = useAuth()
+    const { user, signOut, isLoading: authLoading } = useAuth()
     const router = useRouter()
 
     // Helper for reload
@@ -333,7 +333,7 @@ export default function AdminPage() {
                         Вернуться в Кабинет
                     </button>
                     <button
-                        onClick={() => window.location.href = '/auth'}
+                        onClick={signOut}
                         className="text-gray-500 text-sm mt-4 hover:text-white underline"
                     >
                         Выйти из аккаунта (Hard Reset)

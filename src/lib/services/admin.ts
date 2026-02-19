@@ -86,12 +86,14 @@ function isAbortError(error: any): boolean {
 
 // Get all users with progress stats (Optimized)
 export async function getAllUsers(): Promise<UserWithProgress[]> {
-    console.log('Fetching all users...')
     const supabase = createClient()
+    const user = await safeGetUser()
+    console.log('[Admin] Current user for fetch:', user?.email || 'None')
 
     let profiles: any[] | null = null
     let allProgress: any[] | null = null
     let allReports: any[] | null = null
+    let lastError: any = null
 
     // 1. Fetch all profiles using secure RPC to bypass RLS
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -99,12 +101,13 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
             const result = await supabase.rpc('get_all_users_secure')
 
             if (result.error) {
+                lastError = result.error
                 if (isAbortError(result.error)) {
                     console.warn(`Profiles fetch aborted, attempt ${attempt + 1}/3`)
                     await new Promise(r => setTimeout(r, 150 * (attempt + 1)))
                     continue
                 }
-                console.error('Error fetching profiles via RPC:', result.error)
+                console.warn('[Admin] RPC error (fetching profiles):', result.error.message)
 
                 // Fallback to table query if RPC fails (e.g. if it doesn't exist yet)
                 const fallback = await supabase
@@ -113,7 +116,9 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
                     .order('created_at', { ascending: false })
 
                 if (fallback.error && !isAbortError(fallback.error)) {
-                    throw fallback.error
+                    console.error('[Admin] Fallback fetch failed:', fallback.error.message)
+                    lastError = fallback.error
+                    break
                 }
                 profiles = fallback.data
                 break
@@ -121,23 +126,24 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
             profiles = result.data
             break
         } catch (e: any) {
+            lastError = e
             if (isAbortError(e)) {
                 console.warn(`Profiles fetch exception aborted, attempt ${attempt + 1}/3`)
                 await new Promise(r => setTimeout(r, 150 * (attempt + 1)))
                 continue
             }
-            console.error('Exception fetching profiles:', e)
+            console.error('[Admin] Exception fetching profiles:', e)
             break
         }
     }
 
-    if (!profiles) {
-        console.error('All profile fetch attempts failed')
-        throw new Error('Не удалось загрузить список пользователей. Проверьте соединение или права доступа.')
+    if (profiles === null) {
+        console.error('[Admin] All profile fetch attempts failed. Last error:', lastError)
+        throw new Error(`Ошибка загрузки: ${lastError?.message || 'Неизвестная ошибка базы данных'}`)
     }
 
     if (profiles.length === 0) {
-        console.log('No profiles found')
+        console.log('[Admin] No profiles found in DB')
         return []
     }
 
