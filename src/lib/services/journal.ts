@@ -20,7 +20,12 @@ export interface JournalEntry {
 
 export async function getJournalEntries(): Promise<JournalEntry[]> {
     const supabase = createClient()
-    const user = await safeGetUser()
+    let user = null
+    try {
+        user = await safeGetUser()
+    } catch (e) {
+        console.warn('getJournalEntries: safeGetUser failed', e)
+    }
 
     if (!user) return []
 
@@ -31,10 +36,13 @@ export async function getJournalEntries(): Promise<JournalEntry[]> {
             .eq('user_id', user.id)
             .order('date', { ascending: false })
 
-        if (error) throw error
+        if (error) {
+            console.error('Error fetching journal entries from Supabase:', error)
+            return []
+        }
         return data || []
     } catch (e) {
-        console.error('Error fetching journal entries:', e)
+        console.error('Exception fetching journal entries:', e)
         return []
     }
 }

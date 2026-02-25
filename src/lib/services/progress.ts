@@ -42,12 +42,14 @@ export async function getUserProgress(): Promise<Record<number, number[]>> {
 
         // Group by day
         const progress: Record<number, number[]> = {}
-        data?.forEach(item => {
-            if (!progress[item.day_number]) {
-                progress[item.day_number] = []
-            }
-            progress[item.day_number].push(item.task_id)
-        })
+        if (data && data.length > 0) {
+            data.forEach((item: any) => {
+                if (!progress[item.day_number]) {
+                    progress[item.day_number] = []
+                }
+                progress[item.day_number].push(item.task_id)
+            })
+        }
 
         return progress
     } catch (e: any) {

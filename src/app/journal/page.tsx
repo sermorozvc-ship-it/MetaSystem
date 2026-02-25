@@ -57,10 +57,10 @@ export default function JournalPage() {
         setIsLoading(true)
         setError(null)
 
-        // Предохранительный таймер на 8 секунд
+        // Предохранительный таймер на 5 секунд
         const safetyTimer = setTimeout(() => {
             setIsLoading(false)
-        }, 8000)
+        }, 5000)
 
         try {
             if (!user) {
@@ -76,8 +76,8 @@ export default function JournalPage() {
             console.error('Journal fetch error:', e)
             setError('Сессия истекла или возникла ошибка сети. Попробуйте обновить страницу.')
         } finally {
-            setIsLoading(false)
             clearTimeout(safetyTimer)
+            setIsLoading(false)
         }
     }, [user])
 

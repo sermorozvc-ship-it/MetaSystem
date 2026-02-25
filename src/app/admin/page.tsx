@@ -26,6 +26,7 @@ import {
     Mail
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
+import { createClient, clearUserCache } from '@/lib/supabase/client'
 import {
     isAdmin,
     getAllUsers,
@@ -117,19 +118,14 @@ export default function AdminPage() {
             setAccessError(null)
 
             try {
-                // 1. Check if user is logged in
+                // 1. Проверяем что пользователь залогинен
                 if (!user) {
-                    console.warn('[AdminPage] No user found, attempting wait...')
-                    // Небольшая задержка, вдруг useAuth еще не отработал (маловероятно из-за флага authLoading, но на всякий случай)
-                    await new Promise(r => setTimeout(r, 1000))
-                    if (!user) {
-                        setAccessError('Сессия не найдена. Попробуйте обновить страницу.')
-                        setIsLoading(false)
-                        return
-                    }
+                    console.warn('[AdminPage] No user found, will show login form')
+                    setIsLoading(false)
+                    return
                 }
 
-                // 2. Check Admin Rights
+                // 2. Check Admin Rights — теперь всегда берёт свежую сессию
                 const adminRights = await isAdmin()
                 if (!mounted) return
 
@@ -140,9 +136,8 @@ export default function AdminPage() {
                     return
                 }
                 setIsAdminUser(true)
-                setIsAdminUser(true)
 
-                // 2. Load Data Parallel with individual error handling
+                // 3. Load Data Parallel with individual error handling
                 const [usersData, statsData, reportsData, messagesData] = await Promise.all([
                     getAllUsers().catch(err => { console.error('Users fetch error:', err); return []; }),
                     getAdminStats().catch(err => { console.error('Stats fetch error:', err); return stats; }),
@@ -151,16 +146,17 @@ export default function AdminPage() {
                 ])
 
                 if (mounted) {
-                    if (usersData.length > 0) setUsers(usersData)
+                    setUsers(usersData)  // всегда обновляем, даже если пустой массив
                     setStats(statsData)
                     setAllReports(reportsData)
                     setAllMessages(messagesData)
+                    console.log(`[AdminPage] Loaded: ${usersData.length} users, ${reportsData.length} reports, ${messagesData.length} messages`)
                 }
             } catch (err: any) {
                 console.error('Admin Init failed:', err)
-                // Only show error if we have no data at all
-                if (mounted && users.length === 0) {
-                    setAccessError(`Ошибка при загрузке данных. Пожалуйста, обновите страницу.`)
+                // Показываем ошибку только если это не ошибка доступа (она уже обработана выше)
+                if (mounted && !accessError) {
+                    console.warn('[AdminPage] Ошибка загрузки данных:', err.message)
                 }
             } finally {
                 if (mounted) {
@@ -273,21 +269,8 @@ export default function AdminPage() {
     })
 
     if (accessError || (!isAdminUser && !isLoading && !authLoading)) {
-        return (
-            <div className="min-h-screen bg-deep-dark flex items-center justify-center p-4">
-                <div className="glass-card max-w-md w-full p-8 text-center border-red-500/30">
-                    <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4">
-                        <Shield className="w-8 h-8 text-red-500" />
-                    </div>
-                    <h1 className="text-xl font-bold text-white mb-2">Ошибка доступа</h1>
-                    <p className="text-gray-400 mb-6">{accessError || 'У вас нет прав администратора.'}</p>
-                    <div className="space-y-3">
-                        <button onClick={() => window.location.reload()} className="glass-button w-full">Обновить страницу</button>
-                        <button onClick={() => router.push('/dashboard')} className="glass-button-secondary w-full">Вернуться в кабинет</button>
-                    </div>
-                </div>
-            </div>
-        )
+        // Всегда показываем форму входа при любой проблеме с доступом
+        return <AdminLoginForm />
     }
 
     const handleCloseModal = () => {
@@ -768,3 +751,106 @@ function StatCard({ icon: Icon, label, value, color }: { icon: any, label: strin
         </div>
     )
 }
+
+function AdminLoginForm() {
+    const [email, setEmail] = useState('')
+    const [password, setPassword] = useState('')
+    const [error, setError] = useState('')
+    const [loading, setLoading] = useState(false)
+
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault()
+        setError('')
+        setLoading(true)
+
+        try {
+            const supabase = createClient()
+            const { error: authError } = await supabase.auth.signInWithPassword({
+                email,
+                password
+            })
+
+            if (authError) {
+                setError(authError.message === 'Invalid login credentials'
+                    ? 'Неверный email или пароль'
+                    : authError.message)
+                setLoading(false)
+                return
+            }
+
+            // Очищаем кеш и перезагружаем — теперь сессия будет реальной
+            clearUserCache()
+            if (typeof window !== 'undefined') {
+                localStorage.removeItem('dev_admin_email')
+            }
+            window.location.reload()
+        } catch (err: any) {
+            setError('Ошибка подключения к серверу')
+            setLoading(false)
+        }
+    }
+
+    return (
+        <div className="min-h-screen bg-deep-dark flex items-center justify-center p-4">
+            <div className="glass-card max-w-md w-full p-8">
+                <div className="text-center mb-8">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-meta-orange to-orange-600 flex items-center justify-center mx-auto mb-4">
+                        <Shield className="w-8 h-8 text-white" />
+                    </div>
+                    <h1 className="text-2xl font-bold text-white mb-2">Админ-панель</h1>
+                    <p className="text-sm text-gray-400">Войдите с правами администратора</p>
+                </div>
+
+                <form onSubmit={handleLogin} className="space-y-4">
+                    <div>
+                        <label className="block text-xs text-gray-500 uppercase font-bold mb-2">Email</label>
+                        <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="admin@example.com"
+                            className="glass-input w-full"
+                            required
+                            autoFocus
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs text-gray-500 uppercase font-bold mb-2">Пароль</label>
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="••••••••"
+                            className="glass-input w-full"
+                        />
+                    </div>
+
+                    {error && (
+                        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-sm text-red-400">
+                            {error}
+                        </div>
+                    )}
+
+                    <button
+                        type="submit"
+                        disabled={loading || !email}
+                        className="glass-button w-full flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                        {loading ? (
+                            <>
+                                <RefreshCw className="w-4 h-4 animate-spin" />
+                                Вход...
+                            </>
+                        ) : (
+                            <>
+                                <Shield className="w-4 h-4" />
+                                Войти
+                            </>
+                        )}
+                    </button>
+                </form>
+            </div>
+        </div>
+    )
+}
+

@@ -48,33 +48,36 @@ export interface DayReportWithUser {
 export async function isAdmin(): Promise<boolean> {
     const supabase = createClient()
 
-    // Пытаемся получить юзера с небольшой задержкой/повтором если это первый рендер после жесткой перезагрузки
-    let user = await safeGetUser()
-
-    if (!user) {
-        console.log('[isAdmin] First check failed, retrying in 500ms...')
-        await new Promise(r => setTimeout(r, 500))
+    // Получаем СВЕЖУЮ сессию напрямую — без кеша, чтобы не получить null при инициализации
+    let user = null
+    try {
+        const { data: { session } } = await supabase.auth.getSession()
+        user = session?.user ?? null
+    } catch (e: any) {
+        console.warn('[isAdmin] getSession error:', e.message)
+        // Попробуем через кеш как fallback
         user = await safeGetUser()
     }
 
     if (!user) {
-        console.log('[isAdmin] No user session found after retry')
+        console.log('[isAdmin] No user session — instant false')
         return false
     }
 
-    // 1. Check Owner Emails (Hardcoded bypass)
-    const owners = ['hunternik005@gmail.com', 'dgmukhin@gmail.com']
+    // 1. Check Owner Emails (Hardcoded bypass — самый быстрый путь)
+    const owners = ['dgmukhin@gmail.com']
     if (owners.includes(user.email || '')) {
         console.log('[isAdmin] Emergency admin access granted for owner:', user.email)
         return true
     }
 
-    // 2. Check User Metadata (Fastest)
+    // 2. Check User Metadata в JWT токене (без запроса к БД)
     if (user.user_metadata?.role === 'admin' || user.user_metadata?.role === 'curator') {
         console.log('[isAdmin] Access granted via token metadata')
         return true
     }
 
+    // 3. Проверяем через RPC (SECURITY DEFINER — надёжно)
     try {
         console.log('[isAdmin] Checking DB via RPC is_admin...')
         const { data: isRpcAdmin, error: rpcError } = await supabase.rpc('is_admin')
@@ -86,13 +89,12 @@ export async function isAdmin(): Promise<boolean> {
 
         if (rpcError) {
             console.warn('[isAdmin] RPC error:', rpcError.code, rpcError.message)
-            // If function doesn't exist, we fall back to table query
         }
     } catch (e: any) {
         console.warn('[isAdmin] RPC exception:', e.message)
     }
 
-    // 3. Fallback to profiles table query
+    // 4. Fallback — прямой запрос к profiles
     console.log('[isAdmin] Falling back to direct profile query...')
     const { data: profile, error: profileError } = await supabase
         .from('profiles')
@@ -121,8 +123,7 @@ function isAbortError(error: any): boolean {
 // Get all users with progress stats (Optimized)
 export async function getAllUsers(): Promise<UserWithProgress[]> {
     const supabase = createClient()
-    const user = await safeGetUser()
-    console.log('[Admin] Current user for fetch:', user?.email || 'None')
+    console.log('[Admin] Fetching all users via secure RPC...')
 
     let profiles: any[] | null = null
     let allProgress: any[] | null = null

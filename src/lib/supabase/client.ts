@@ -5,7 +5,9 @@ let client: SupabaseClient | undefined
 // Кеш для пользователя
 let cachedUser: User | null = null
 let userCacheTimestamp = 0
-const USER_CACHE_TTL = 30000 // 30 секунд — достаточно для предотвращения race conditions
+let nullCacheTimestamp = 0
+const USER_CACHE_TTL = 30000 // 30 секунд для валидного пользователя
+const NULL_CACHE_TTL = 5000  // 5 секунд для null — чтобы не забивать Supabase впустую
 
 export function createClient(): SupabaseClient {
     if (client) return client
@@ -17,36 +19,7 @@ export function createClient(): SupabaseClient {
         if (typeof window !== 'undefined') {
             console.error('CRITICAL: Supabase variables are missing! Check .env.local file.')
         }
-
-        // Мок-объект с цепочкой методов, чтобы ничего не падало
-        const mockFn = () => ({
-            select: mockFn,
-            insert: mockFn,
-            update: mockFn,
-            upsert: mockFn,
-            delete: mockFn,
-            eq: mockFn,
-            or: mockFn,
-            order: mockFn,
-            single: () => Promise.resolve({ data: null, error: null }),
-            then: (fn: any) => Promise.resolve({ data: [], error: null }).then(fn)
-        })
-
-        return {
-            auth: {
-                getUser: async () => ({ data: { user: null }, error: null }),
-                onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => { } } } }),
-                getSession: async () => ({ data: { session: null }, error: null }),
-                signOut: async () => { }
-            },
-            from: mockFn,
-            storage: {
-                from: () => ({
-                    upload: async () => ({ data: null, error: new Error('Missing Config') }),
-                    getPublicUrl: () => ({ data: { publicUrl: '' } })
-                })
-            }
-        } as any
+        return createSupabaseClient('https://mock.supabase.co', 'mock-key', { auth: { persistSession: false } })
     }
 
     client = createSupabaseClient(
@@ -58,7 +31,6 @@ export function createClient(): SupabaseClient {
                 autoRefreshToken: true,
                 detectSessionInUrl: true,
                 flowType: 'implicit',
-                // Отключаем Web Locks корректно через конфиг
                 // @ts-ignore
                 isLockingSupported: false
             }
@@ -68,16 +40,24 @@ export function createClient(): SupabaseClient {
     return client
 }
 
-// Симафор для предотвращения параллельных запросов к auth
+// Семафор для предотвращения параллельных запросов к auth
 let getUserPromise: Promise<User | null> | null = null
 
 /**
- * Безопасное получение пользователя с кешированием и защитой от параллелизма
+ * Безопасное получение пользователя с кешированием и защитой от параллелизма.
+ * Кеширует и null-результат на 5 секунд, чтобы не забивать Supabase бессмысленными запросами.
  */
 export async function safeGetUser(): Promise<User | null> {
     const now = Date.now()
+
+    // Если есть валидный кеш пользователя — возвращаем
     if (cachedUser && (now - userCacheTimestamp) < USER_CACHE_TTL) {
         return cachedUser
+    }
+
+    // Если недавно получили null — не долбим Supabase повторно
+    if (!cachedUser && nullCacheTimestamp > 0 && (now - nullCacheTimestamp) < NULL_CACHE_TTL) {
+        return null
     }
 
     // Если запрос уже идет — ждем его, а не создаем новый
@@ -86,8 +66,6 @@ export async function safeGetUser(): Promise<User | null> {
     getUserPromise = (async () => {
         const supabase = createClient()
         try {
-            console.log('[safeGetUser] Fetching fresh session...')
-
             const sessionPromise = supabase.auth.getSession()
             const timeoutPromise = new Promise<{ data: { session: null }, error: any }>((res) =>
                 setTimeout(() => res({ data: { session: null }, error: new Error('Auth Timeout') }), 3000)
@@ -100,15 +78,23 @@ export async function safeGetUser(): Promise<User | null> {
 
             if (error) {
                 console.warn('[safeGetUser] Auth notice:', error.message)
-                return cachedUser // Возвращаем что есть в кеше
+                nullCacheTimestamp = Date.now()
+                return cachedUser
             }
 
             const user = session?.user ?? null
-            cachedUser = user
-            userCacheTimestamp = Date.now()
+            if (user) {
+                cachedUser = user
+                userCacheTimestamp = Date.now()
+                nullCacheTimestamp = 0
+            } else {
+                cachedUser = null
+                nullCacheTimestamp = Date.now()
+            }
             return user
         } catch (error: any) {
             console.warn('[safeGetUser] Critical failure:', error.message)
+            nullCacheTimestamp = Date.now()
             return cachedUser
         } finally {
             getUserPromise = null
@@ -119,10 +105,10 @@ export async function safeGetUser(): Promise<User | null> {
 }
 
 /**
- * Очистка кеша пользователя
+ * Очистка кеша пользователя (при логине/логауте)
  */
 export function clearUserCache() {
     cachedUser = null
     userCacheTimestamp = 0
+    nullCacheTimestamp = 0
 }
-

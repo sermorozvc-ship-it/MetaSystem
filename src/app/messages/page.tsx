@@ -60,6 +60,11 @@ export default function MessagesPage() {
 
     const loadMessages = useCallback(async () => {
         setIsLoading(true)
+
+        const safetyTimer = setTimeout(() => {
+            setIsLoading(false)
+        }, 5000)
+
         try {
             if (!user) {
                 // Демо-режим — показываем демо-сообщения
@@ -79,6 +84,7 @@ export default function MessagesPage() {
             console.error('Messages fetch failed:', e)
             setMessages(demoMessages)
         } finally {
+            clearTimeout(safetyTimer)
             setIsLoading(false)
         }
     }, [user])
@@ -400,36 +406,6 @@ export default function MessagesPage() {
                     </div>
                 </div>
             </main>
-
-            <style jsx global>{`
-                .custom-scrollbar::-webkit-scrollbar {
-                    width: 4px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-track {
-                    background: transparent;
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb {
-                    background: rgba(255, 255, 255, 0.05);
-                    border-radius: 10px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-                    background: rgba(255, 255, 255, 0.1);
-                }
-                @keyframes fade-in {
-                    from { opacity: 0; transform: translateY(5px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-                .animate-fade-in {
-                    animation: fade-in 0.3s ease-out forwards;
-                }
-                @keyframes slide-up {
-                    from { transform: translateY(100%); opacity: 0; }
-                    to { transform: translateY(0); opacity: 1; }
-                }
-                .animate-slide-up {
-                    animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-                }
-            `}</style>
         </div>
     )
 }

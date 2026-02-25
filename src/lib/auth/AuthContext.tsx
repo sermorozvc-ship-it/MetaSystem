@@ -62,18 +62,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const isValidating = useRef(false)
     const isLoggingOut = useRef(false)
 
-    // SAFETY FIRST: Если через 3 секунды мы всё еще "грузимся" — принудительно показываем приложение
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            if (!hasResolved.current) {
-                console.warn('[Auth] FORCED RESOLVE: session check took too long (>3s)')
-                setIsLoading(false)
-                hasResolved.current = true
-            }
-        }, 3000)
-        return () => clearTimeout(timer)
-    }, [])
-
     useEffect(() => {
         let isMounted = true
 
@@ -83,33 +71,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             console.log('[Auth] Validating session...')
             try {
-                // Пытаемся получить сессию с жестким таймаутом
+                // Пытаемся получить сессию с жестким таймаутом (уменьшили до 2с для большей отзывчивости)
                 const sessionPromise = supabase.auth.getSession()
-                const timeoutPromise = new Promise<{ data: { session: null }, error: any }>((res) =>
-                    setTimeout(() => res({ data: { session: null }, error: new Error('Auth Timeout') }), 3000)
+                const timeoutPromise = new Promise<{ data: { session: Session | null }, error: any }>((res) =>
+                    setTimeout(() => res({ data: { session: null }, error: new Error('Auth Timeout') }), 2000)
                 )
 
-                const { data: { session: currentSession }, error } = await Promise.race([
+                const result = await Promise.race([
                     sessionPromise,
                     timeoutPromise
-                ]) as any
+                ])
+
+                const { data: { session: currentSession }, error } = result
 
                 if (!isMounted) return
 
                 if (error) {
-                    console.warn('[Auth] getSession error:', error.message)
-                    // Не сбрасываем всё сразу, если это просто таймаут,
-                    // но если ошибка критическая (токен) — чистим
+                    console.warn('[Auth] getSession error/timeout:', error.message)
+                    // Не сбрасываем всё сразу, если это просто таймаут
                     if (error.message.includes('refresh_token_not_found') || error.message.includes('Invalid Refresh Token')) {
                         setSession(null)
                         setUser(null)
                     }
+                    // Если таймаут - считаем, что сессии нет, но не разлогиниваем принудительно, если локально что-то есть
                 } else if (currentSession) {
                     console.log('[Auth] Session valid, user:', currentSession.user.email)
                     setSession(currentSession)
                     setUser(currentSession.user)
                 } else {
-                    console.log('[Auth] No session found on validation')
+                    // console.log('[Auth] No session found on validation')
                     setSession(null)
                     setUser(null)
                 }
@@ -117,8 +107,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 console.error('[Auth] Validation exception:', e.message)
             } finally {
                 isValidating.current = false
-                if (isMounted && !hasResolved.current) {
-                    console.log('[Auth] Loading finished')
+                if (isMounted) {
+                    // Убираем искусственную задержку, сразу открываем интерфейс
                     hasResolved.current = true
                     setIsLoading(false)
                 }
@@ -130,15 +120,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (event, newSession) => {
                 if (!isMounted || isLoggingOut.current) return
-                console.log('[Auth] State change event:', event, newSession?.user?.email || 'no-user')
+                // console.log('[Auth] State change event:', event)
 
                 setSession(newSession)
                 setUser(newSession?.user ?? null)
-
-                if (!hasResolved.current) {
-                    hasResolved.current = true
-                    setIsLoading(false)
-                }
+                setIsLoading(false)
+                hasResolved.current = true
 
                 // ВАЖНО: Если юзер зашел, но его нет в базе профилей — создаем его
                 if (event === 'SIGNED_IN' && newSession?.user) {

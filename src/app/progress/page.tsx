@@ -30,76 +30,108 @@ export default function ProgressPage() {
     const loadData = useCallback(async () => {
         setIsLoading(true)
         try {
-            // Загрузка прогресса курса
+            // Загрузка прогресса курса (с предохранителем)
             const { getUserProgress } = await import('@/lib/services/progress')
-            const progress = await getUserProgress()
-            setTaskProgress(progress)
+
+            // Если юзера нет, ставим пустой прогресс, чтобы не блокировать UI
+            if (!user) {
+                setTaskProgress({})
+            } else {
+                // Пытаемся загрузить прогресс, но если виснет дольше 4 сек - скипаем
+                const progressPromise = getUserProgress()
+                const timeoutPromise = new Promise<Record<number, number[]>>((res) =>
+                    setTimeout(() => res({}), 4000)
+                )
+
+                const progress = await Promise.race([progressPromise, timeoutPromise])
+                setTaskProgress(progress || {})
+            }
         } catch (e) {
             console.error('Failed to load course progress', e)
+            setTaskProgress({}) // Фоллбэк, чтобы не сломать UI
         }
 
         try {
             // Загрузка записей дневника
             if (user) {
-                const entries = await getJournalEntries()
-                setJournalEntries(entries)
+                const entriesPromise = getJournalEntries()
+                const timeoutPromise = new Promise<JournalEntry[]>((res) =>
+                    setTimeout(() => res([]), 4000)
+                )
+                const entries = await Promise.race([entriesPromise, timeoutPromise])
+                setJournalEntries(Array.isArray(entries) ? entries : [])
             } else {
                 const stored = localStorage.getItem('demo_journal')
-                setJournalEntries(stored ? JSON.parse(stored) : [])
+                try {
+                    const parsed = stored ? JSON.parse(stored) : []
+                    setJournalEntries(Array.isArray(parsed) ? parsed : [])
+                } catch {
+                    setJournalEntries([])
+                }
             }
         } catch (e) {
             console.error('Failed to load journal data', e)
+        } finally {
+            setIsLoading(false)
         }
-
-        setIsLoading(false)
     }, [user])
 
     useEffect(() => {
+        let isMounted = true
+
         if (!authLoading) {
-            loadData()
+            loadData().finally(() => {
+                if (isMounted) setIsLoading(false)
+            })
         }
+
+        return () => { isMounted = false }
     }, [authLoading, loadData])
 
     // --- Логика курса ---
     const totalTasks = courseData.reduce((acc, day) => acc + day.tasks.length, 0)
-    const completedTasks = Object.values(taskProgress).reduce((acc, tasks) => acc + tasks.length, 0)
+
+    const safeTaskProgress = taskProgress || {}
+    const completedTasks = Object.values(safeTaskProgress).reduce((acc, tasks) => acc + (Array.isArray(tasks) ? tasks.length : 0), 0)
     const completionPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
 
     const completedDaysCount = courseData.filter(day => {
-        const completed = taskProgress[day.dayNumber] || []
-        return completed.length === day.tasks.length
+        const completed = safeTaskProgress[day.dayNumber] || []
+        return Array.isArray(completed) && completed.length === day.tasks.length
     }).length
 
     let streak = 0
     for (let i = 1; i <= 7; i++) {
         const dayData = courseData.find(d => d.dayNumber === i)
         if (!dayData) break
-        const completed = taskProgress[i] || []
-        if (completed.length === dayData.tasks.length) streak++
+        const completed = safeTaskProgress[i] || []
+        if (Array.isArray(completed) && completed.length === dayData.tasks.length) streak++
         else break
     }
 
     // --- Логика здоровья (Дневник) ---
+    const safeJournalEntries = Array.isArray(journalEntries) ? journalEntries : []
+
     const last7DaysJournal = useMemo(() => {
         // Берем последние 7 записей и переворачиваем для графика (от старых к новым)
-        return [...journalEntries].slice(0, 7).reverse()
-    }, [journalEntries])
+        return [...safeJournalEntries].slice(0, 7).reverse()
+    }, [safeJournalEntries])
 
     const avgSleep = useMemo(() => {
-        if (last7DaysJournal.length === 0) return "0"
-        const sum = last7DaysJournal.reduce((acc, curr) => acc + curr.sleep_hours, 0)
+        if (!last7DaysJournal || last7DaysJournal.length === 0) return "0"
+        const sum = last7DaysJournal.reduce((acc, curr) => acc + (curr?.sleep_hours || 0), 0)
         return (sum / last7DaysJournal.length).toFixed(1)
     }, [last7DaysJournal])
 
     const avgMood = useMemo(() => {
-        if (last7DaysJournal.length === 0) return "0"
-        const sum = last7DaysJournal.reduce((acc, curr) => acc + curr.mood, 0)
+        if (!last7DaysJournal || last7DaysJournal.length === 0) return "0"
+        const sum = last7DaysJournal.reduce((acc, curr) => acc + (curr?.mood || 0), 0)
         return (sum / last7DaysJournal.length).toFixed(1)
     }, [last7DaysJournal])
 
     // Построение пути для SVG графика (Mood & Energy)
     const generatePath = (data: number[], max: number) => {
-        if (data.length < 2) return ""
+        if (!Array.isArray(data) || data.length < 2) return ""
         const width = 100
         const height = 40
         const step = width / (data.length - 1)
@@ -111,15 +143,15 @@ export default function ProgressPage() {
         }, "")
     }
 
-    const moodPath = useMemo(() => generatePath(last7DaysJournal.map(e => e.mood), 5), [last7DaysJournal])
-    const energyPath = useMemo(() => generatePath(last7DaysJournal.map(e => e.energy), 5), [last7DaysJournal])
+    const moodPath = useMemo(() => generatePath(last7DaysJournal.map(e => e?.mood || 0), 5), [last7DaysJournal])
+    const energyPath = useMemo(() => generatePath(last7DaysJournal.map(e => e?.energy || 0), 5), [last7DaysJournal])
 
     // Достижения
     const achievements = [
         { id: 'first_task', title: 'Первый шаг', description: 'Выполните первое задание', icon: Star, color: 'text-yellow-400 bg-yellow-500/20', unlocked: completedTasks >= 1 },
         { id: 'day_complete', title: 'Полный день', description: 'Выполните все задания за день', icon: CheckCircle, color: 'text-green-400 bg-green-500/20', unlocked: completedDaysCount >= 1 },
         { id: 'streak_3', title: 'Три дня подряд', description: '3 дня без пропусков', icon: Flame, color: 'text-orange-400 bg-orange-500/20', unlocked: streak >= 3 },
-        { id: 'journal_pro', title: 'Осознанность', description: '7 записей в дневнике', icon: Brain, color: 'text-purple-400 bg-purple-500/20', unlocked: journalEntries.length >= 7 },
+        { id: 'journal_pro', title: 'Осознанность', description: '7 записей в дневнике', icon: Brain, color: 'text-purple-400 bg-purple-500/20', unlocked: safeJournalEntries.length >= 7 },
     ]
 
     const getTaskIcon = (type: string) => {
@@ -229,13 +261,16 @@ export default function ProgressPage() {
                             </div>
                         </div>
 
+                        {/* Day-by-Day Progress */}
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                            {/* Breakdown By Days */}
                             <div className="lg:col-span-2 space-y-4">
-                                <h3 className="text-sm font-black text-gray-400 uppercase tracking-[3px] ml-2 mb-4">Детализация по дням</h3>
+                                <h3 className="text-xs font-black text-gray-500 uppercase tracking-[2px] mb-4 flex items-center gap-2">
+                                    <BarChart3 className="w-4 h-4 text-meta-orange" /> Прогресс по дням
+                                </h3>
                                 {courseData.map(day => {
-                                    const completedIds = taskProgress[day.dayNumber] || []
-                                    const isFullyDone = completedIds.length === day.tasks.length
+                                    const completedIds = safeTaskProgress[day.dayNumber] || []
+                                    const validCompletedIds = Array.isArray(completedIds) ? completedIds : []
+                                    const isFullyDone = validCompletedIds.length === day.tasks.length
                                     const isExpanded = expandedDay === day.dayNumber
 
                                     return (
@@ -252,10 +287,10 @@ export default function ProgressPage() {
                                                 <div className="flex-1">
                                                     <h4 className="text-sm font-black text-white uppercase tracking-wider">{day.title}</h4>
                                                     <div className="flex items-center gap-3 mt-1.5 text-[10px] font-bold text-gray-600 uppercase">
-                                                        <span>Выполнено: {completedIds.length}/{day.tasks.length}</span>
+                                                        <span>Выполнено: {validCompletedIds.length}/{day.tasks.length}</span>
                                                         <div className="h-1 flex-1 bg-white/5 rounded-full overflow-hidden max-w-[100px]">
                                                             <div className={`h-full transition-all duration-500 ${isFullyDone ? 'bg-emerald-500' : 'bg-meta-orange'}`}
-                                                                style={{ width: `${(completedIds.length / day.tasks.length) * 100}%` }} />
+                                                                style={{ width: `${(validCompletedIds.length / day.tasks.length) * 100}%` }} />
                                                         </div>
                                                     </div>
                                                 </div>
@@ -266,8 +301,8 @@ export default function ProgressPage() {
                                                 <div className="mt-3 ml-12 space-y-2 animate-fade-in pr-4">
                                                     {day.tasks.map(task => (
                                                         <div key={task.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.01] border border-white/[0.02]">
-                                                            <div className={`w-2 h-2 rounded-full ${completedIds.includes(task.id) ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-gray-800'}`} />
-                                                            <span className={`text-xs font-medium ${completedIds.includes(task.id) ? 'text-gray-400 line-through' : 'text-gray-500'}`}>{task.text}</span>
+                                                            <div className={`w-2 h-2 rounded-full ${validCompletedIds.includes(task.id) ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-gray-800'}`} />
+                                                            <span className={`text-xs font-medium ${validCompletedIds.includes(task.id) ? 'text-gray-400 line-through' : 'text-gray-500'}`}>{task.text}</span>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -358,7 +393,7 @@ export default function ProgressPage() {
                                 </div>
                                 <div className="flex items-baseline gap-2">
                                     <span className="text-5xl font-black text-white italic">
-                                        {journalEntries.reduce((acc, curr) => acc + curr.water_liters, 0).toFixed(1)}
+                                        {safeJournalEntries.reduce((acc, curr) => acc + (curr?.water_liters || 0), 0).toFixed(1)}
                                     </span>
                                     <span className="text-sm font-bold text-gray-700 uppercase">литров</span>
                                 </div>
@@ -370,18 +405,18 @@ export default function ProgressPage() {
                         <div className="glass-card p-8 md:p-12">
                             <div className="flex flex-col md:flex-row justify-between gap-6 mb-12">
                                 <div>
-                                    <h3 className="text-xl font-black text-white italic uppercase tracking-wider mb-2">Графики состояния</h3>
-                                    <p className="text-xs text-gray-500 font-bold uppercase tracking-widest">динамика настроения и энергии за 7 дней</p>
+                                    <h3 className="text-xs font-black text-gray-500 uppercase tracking-[2px] flex items-center gap-2">
+                                        <Activity className="w-4 h-4 text-meta-orange" /> Динамика настроения и энергии
+                                    </h3>
                                 </div>
-
-                                <div className="flex items-center gap-5">
+                                <div className="flex items-center gap-6">
                                     <div className="flex items-center gap-2">
-                                        <div className="w-3 h-3 rounded-full bg-meta-orange" />
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Настроение</span>
+                                        <div className="w-3 h-1 rounded-full bg-gradient-to-r from-[#FF4500] to-[#FFA500]" />
+                                        <span className="text-[10px] font-bold text-gray-600 uppercase tracking-wider">Настроение</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <div className="w-3 h-3 rounded-full bg-meta-orange/30 shadow-[0_0_10px_rgba(255,69,0,0.5)]" />
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Энергия</span>
+                                        <div className="w-3 h-1 rounded-full bg-[#FF4500]/30" />
+                                        <span className="text-[10px] font-bold text-gray-600 uppercase tracking-wider">Энергия</span>
                                     </div>
                                 </div>
                             </div>
@@ -431,7 +466,7 @@ export default function ProgressPage() {
                                                 <g key={i}>
                                                     <circle
                                                         cx={i * step}
-                                                        cy={40 - (entry.mood / 5) * 40}
+                                                        cy={40 - ((entry?.mood || 0) / 5) * 40}
                                                         r="0.8"
                                                         fill="#FF4500"
                                                         className="hover:r-1.5 transition-all cursor-pointer shadow-lg"
@@ -446,7 +481,7 @@ export default function ProgressPage() {
                                         {last7DaysJournal.map((entry, i) => (
                                             <div key={i} className="flex flex-col items-center">
                                                 <span className="text-[10px] font-black text-gray-700 uppercase tracking-widest">
-                                                    {new Date(entry.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '')}
+                                                    {entry?.date ? new Date(entry.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '') : ''}
                                                 </span>
                                             </div>
                                         ))}
@@ -470,14 +505,14 @@ export default function ProgressPage() {
                                 <div className="space-y-6">
                                     {last7DaysJournal.map((entry, i) => (
                                         <div key={i} className="flex items-center gap-6 group">
-                                            <div className="w-12 text-[10px] font-black text-gray-600 uppercase tracking-widest truncate">{new Date(entry.date).toLocaleDateString('ru-RU', { weekday: 'short' })}</div>
+                                            <div className="w-12 text-[10px] font-black text-gray-600 uppercase tracking-widest truncate">{entry?.date ? new Date(entry.date).toLocaleDateString('ru-RU', { weekday: 'short' }) : ''}</div>
                                             <div className="flex-1 h-3 bg-white/[0.03] rounded-full overflow-hidden border border-white/5">
                                                 <div
-                                                    className={`h-full transition-all duration-1000 ${entry.sleep_hours >= 7 ? 'bg-blue-500' : 'bg-orange-500/50'}`}
-                                                    style={{ width: `${(entry.sleep_hours / 10) * 100}%` }}
+                                                    className={`h-full transition-all duration-1000 ${(entry?.sleep_hours || 0) >= 7 ? 'bg-blue-500' : 'bg-orange-500/50'}`}
+                                                    style={{ width: `${((entry?.sleep_hours || 0) / 10) * 100}%` }}
                                                 />
                                             </div>
-                                            <div className="w-10 text-xs font-black text-white italic">{entry.sleep_hours}ч</div>
+                                            <div className="w-10 text-xs font-black text-white italic">{entry?.sleep_hours || 0}ч</div>
                                         </div>
                                     ))}
                                 </div>
@@ -501,31 +536,6 @@ export default function ProgressPage() {
                     </div>
                 )}
             </main>
-
-            <style jsx global>{`
-                @keyframes fade-in {
-                    from { opacity: 0; transform: translateY(10px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-                .animate-fade-in {
-                    animation: fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-                }
-                .no-scrollbar::-webkit-scrollbar { display: none; }
-                .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-                .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-                .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
-                
-                input[type="range"]::-webkit-slider-thumb {
-                    -webkit-appearance: none;
-                    width: 20px;
-                    height: 20px;
-                    background: #FF4500;
-                    border: 3px solid #121212;
-                    border-radius: 50%;
-                    cursor: pointer;
-                    box-shadow: 0 4px 10px rgba(255, 69, 0, 0.4);
-                }
-            `}</style>
         </div>
     )
 }
