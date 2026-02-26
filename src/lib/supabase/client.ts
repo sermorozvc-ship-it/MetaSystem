@@ -7,7 +7,7 @@ let cachedUser: User | null = null
 let userCacheTimestamp = 0
 let nullCacheTimestamp = 0
 const USER_CACHE_TTL = 30000 // 30 секунд для валидного пользователя
-const NULL_CACHE_TTL = 5000  // 5 секунд для null — чтобы не забивать Supabase впустую
+const NULL_CACHE_TTL = 1000  // 1 секунда для null — короткий кеш для быстрых повторных попыток
 
 export function createClient(): SupabaseClient {
     if (client) return client
@@ -68,7 +68,7 @@ export async function safeGetUser(): Promise<User | null> {
         try {
             const sessionPromise = supabase.auth.getSession()
             const timeoutPromise = new Promise<{ data: { session: null }, error: any }>((res) =>
-                setTimeout(() => res({ data: { session: null }, error: new Error('Auth Timeout') }), 3000)
+                setTimeout(() => res({ data: { session: null }, error: new Error('Auth Timeout') }), 8000)
             )
 
             const { data: { session }, error } = await Promise.race([

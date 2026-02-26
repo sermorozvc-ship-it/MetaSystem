@@ -74,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // Пытаемся получить сессию с жестким таймаутом (уменьшили до 2с для большей отзывчивости)
                 const sessionPromise = supabase.auth.getSession()
                 const timeoutPromise = new Promise<{ data: { session: Session | null }, error: any }>((res) =>
-                    setTimeout(() => res({ data: { session: null }, error: new Error('Auth Timeout') }), 2000)
+                    setTimeout(() => res({ data: { session: null }, error: new Error('Auth Timeout') }), 8000)
                 )
 
                 const result = await Promise.race([
