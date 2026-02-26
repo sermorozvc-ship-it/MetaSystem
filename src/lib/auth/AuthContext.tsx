@@ -40,35 +40,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             console.log('[Auth] Validating session...')
             try {
-                // Пытаемся получить сессию с жестким таймаутом (уменьшили до 2с для большей отзывчивости)
-                const sessionPromise = supabase.auth.getSession()
-                const timeoutPromise = new Promise<{ data: { session: Session | null }, error: any }>((res) =>
-                    setTimeout(() => res({ data: { session: null }, error: new Error('Auth Timeout') }), 8000)
-                )
-
-                const result = await Promise.race([
-                    sessionPromise,
-                    timeoutPromise
-                ])
-
-                const { data: { session: currentSession }, error } = result
+                // createBrowserClient из @supabase/ssr обрабатывает сессию через cookies
+                // Не используем таймаут — он ломал работу с @supabase/ssr
+                const { data: { session: currentSession }, error } = await supabase.auth.getSession()
 
                 if (!isMounted) return
 
                 if (error) {
-                    console.warn('[Auth] getSession error/timeout:', error.message)
-                    // Не сбрасываем всё сразу, если это просто таймаут
+                    console.warn('[Auth] getSession error:', error.message)
                     if (error.message.includes('refresh_token_not_found') || error.message.includes('Invalid Refresh Token')) {
                         setSession(null)
                         setUser(null)
                     }
-                    // Если таймаут - считаем, что сессии нет, но не разлогиниваем принудительно, если локально что-то есть
                 } else if (currentSession) {
                     console.log('[Auth] Session valid, user:', currentSession.user.email)
                     setSession(currentSession)
                     setUser(currentSession.user)
                 } else {
-                    // console.log('[Auth] No session found on validation')
                     setSession(null)
                     setUser(null)
                 }
@@ -77,7 +65,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             } finally {
                 isValidating.current = false
                 if (isMounted) {
-                    // Убираем искусственную задержку, сразу открываем интерфейс
                     hasResolved.current = true
                     setIsLoading(false)
                 }
