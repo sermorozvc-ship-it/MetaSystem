@@ -16,46 +16,15 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 /**
- * Синхронно читаем сессию из localStorage.
- * Мы возвращаем данные даже если токен истек, 
- * чтобы SDK Supabase мог использовать refresh_token для обновления.
+ * AuthContext использует createBrowserClient из @supabase/ssr
+ * который хранит сессию в COOKIES (не localStorage).
+ * Поэтому синхронное чтение из localStorage невозможно — 
+ * сессия определяется асинхронно через getSession().
  */
-function getInitialSessionFromStorage(): { user: User | null; session: Session | null } {
-    if (typeof window === 'undefined') return { user: null, session: null }
-
-    try {
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-        if (!supabaseUrl) return { user: null, session: null }
-
-        const projectRef = new URL(supabaseUrl).hostname.split('.')[0]
-        const storageKey = `sb-${projectRef}-auth-token`
-        const stored = localStorage.getItem(storageKey)
-
-        if (!stored) return { user: null, session: null }
-
-        const parsed = JSON.parse(stored)
-
-        if (parsed?.user) {
-            return { user: parsed.user, session: parsed as Session }
-        }
-        return { user: null, session: null }
-    } catch {
-        return { user: null, session: null }
-    }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-    const [initialData] = useState(() => {
-        const data = getInitialSessionFromStorage()
-        if (typeof window !== 'undefined') {
-            console.log('[Auth] Initial data from storage:', data.user ? 'User found' : 'No user')
-        }
-        return data
-    })
-
-    const [user, setUser] = useState<User | null>(initialData.user)
-    const [session, setSession] = useState<Session | null>(initialData.session)
-    const [isLoading, setIsLoading] = useState(true) // Начинаем с true
+    const [user, setUser] = useState<User | null>(null)
+    const [session, setSession] = useState<Session | null>(null)
+    const [isLoading, setIsLoading] = useState(true) // Начинаем с true — ждём getSession()
     const hasResolved = useRef(false)
 
     const [supabase] = useState(() => createClient())
