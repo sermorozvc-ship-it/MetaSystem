@@ -1,4 +1,5 @@
-import { createClient as createSupabaseClient, SupabaseClient, User } from '@supabase/supabase-js'
+import { createBrowserClient } from '@supabase/ssr'
+import type { SupabaseClient, User } from '@supabase/supabase-js'
 
 let client: SupabaseClient | undefined
 
@@ -9,6 +10,10 @@ let nullCacheTimestamp = 0
 const USER_CACHE_TTL = 30000 // 30 секунд для валидного пользователя
 const NULL_CACHE_TTL = 1000  // 1 секунда для null — короткий кеш для быстрых повторных попыток
 
+/**
+ * Создаёт Supabase клиент для браузера через @supabase/ssr
+ * Использует cookies для хранения сессии — синхронизируется с middleware!
+ */
 export function createClient(): SupabaseClient {
     if (client) return client
 
@@ -17,25 +22,16 @@ export function createClient(): SupabaseClient {
 
     if (!supabaseUrl || !supabaseKey) {
         if (typeof window !== 'undefined') {
-            console.error('CRITICAL: Supabase variables are missing! Check .env.local file.')
+            console.error('CRITICAL: Supabase variables are missing! Check .env.local or Vercel env vars.')
         }
+        // Fallback: создаём клиент без SSR если переменные отсутствуют
+        const { createClient: createSupabaseClient } = require('@supabase/supabase-js')
         return createSupabaseClient('https://mock.supabase.co', 'mock-key', { auth: { persistSession: false } })
     }
 
-    client = createSupabaseClient(
-        supabaseUrl,
-        supabaseKey,
-        {
-            auth: {
-                persistSession: true,
-                autoRefreshToken: true,
-                detectSessionInUrl: true,
-                flowType: 'implicit',
-                // @ts-ignore
-                isLockingSupported: false
-            }
-        }
-    )
+    // createBrowserClient из @supabase/ssr работает с cookies
+    // что позволяет middleware обновлять сессию между запросами
+    client = createBrowserClient(supabaseUrl, supabaseKey)
 
     return client
 }
@@ -45,7 +41,6 @@ let getUserPromise: Promise<User | null> | null = null
 
 /**
  * Безопасное получение пользователя с кешированием и защитой от параллелизма.
- * Кеширует и null-результат на 5 секунд, чтобы не забивать Supabase бессмысленными запросами.
  */
 export async function safeGetUser(): Promise<User | null> {
     const now = Date.now()
@@ -79,7 +74,7 @@ export async function safeGetUser(): Promise<User | null> {
             if (error) {
                 console.warn('[safeGetUser] Auth notice:', error.message)
                 nullCacheTimestamp = Date.now()
-                return cachedUser
+                return cachedUser // Возвращаем кеш даже при ошибке
             }
 
             const user = session?.user ?? null
@@ -111,4 +106,6 @@ export function clearUserCache() {
     cachedUser = null
     userCacheTimestamp = 0
     nullCacheTimestamp = 0
+    // Сбрасываем singleton чтобы клиент пересоздался
+    client = undefined
 }
