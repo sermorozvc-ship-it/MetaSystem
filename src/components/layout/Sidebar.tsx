@@ -37,11 +37,15 @@ export default function Sidebar({ activeItem = 'dashboard', onItemClick }: Sideb
 
     useEffect(() => {
         let isMounted = true;
-        const { isAdmin: checkAdminService } = require('@/lib/services/admin');
 
         const checkAdmin = async () => {
+            if (!user) {
+                if (isMounted) setIsAdmin(false);
+                return;
+            }
             try {
-                const admin = await checkAdminService();
+                const { isAdmin: checkAdminService } = await import('@/lib/services/admin');
+                const admin = await checkAdminService(user);
                 if (isMounted) setIsAdmin(admin);
             } catch (e) {
                 console.error('Sidebar admin check failed', e);

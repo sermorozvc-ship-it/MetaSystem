@@ -61,13 +61,8 @@ export default function MessagesPage() {
     const loadMessages = useCallback(async () => {
         setIsLoading(true)
 
-        const safetyTimer = setTimeout(() => {
-            setIsLoading(false)
-        }, 5000)
-
         try {
             if (!user) {
-                // Демо-режим — показываем демо-сообщения
                 const stored = localStorage.getItem('demo_messages')
                 if (stored) {
                     setMessages(JSON.parse(stored))
@@ -84,7 +79,6 @@ export default function MessagesPage() {
             console.error('Messages fetch failed:', e)
             setMessages(demoMessages)
         } finally {
-            clearTimeout(safetyTimer)
             setIsLoading(false)
         }
     }, [user])

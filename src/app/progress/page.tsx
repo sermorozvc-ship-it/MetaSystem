@@ -30,35 +30,22 @@ export default function ProgressPage() {
     const loadData = useCallback(async () => {
         setIsLoading(true)
         try {
-            // Загрузка прогресса курса (с предохранителем)
             const { getUserProgress } = await import('@/lib/services/progress')
 
-            // Если юзера нет, ставим пустой прогресс, чтобы не блокировать UI
             if (!user) {
                 setTaskProgress({})
             } else {
-                // Пытаемся загрузить прогресс, но если виснет дольше 4 сек - скипаем
-                const progressPromise = getUserProgress()
-                const timeoutPromise = new Promise<Record<number, number[]>>((res) =>
-                    setTimeout(() => res({}), 4000)
-                )
-
-                const progress = await Promise.race([progressPromise, timeoutPromise])
+                const progress = await getUserProgress()
                 setTaskProgress(progress || {})
             }
         } catch (e) {
             console.error('Failed to load course progress', e)
-            setTaskProgress({}) // Фоллбэк, чтобы не сломать UI
+            setTaskProgress({})
         }
 
         try {
-            // Загрузка записей дневника
             if (user) {
-                const entriesPromise = getJournalEntries()
-                const timeoutPromise = new Promise<JournalEntry[]>((res) =>
-                    setTimeout(() => res([]), 4000)
-                )
-                const entries = await Promise.race([entriesPromise, timeoutPromise])
+                const entries = await getJournalEntries()
                 setJournalEntries(Array.isArray(entries) ? entries : [])
             } else {
                 const stored = localStorage.getItem('demo_journal')
@@ -77,15 +64,9 @@ export default function ProgressPage() {
     }, [user])
 
     useEffect(() => {
-        let isMounted = true
-
         if (!authLoading) {
-            loadData().finally(() => {
-                if (isMounted) setIsLoading(false)
-            })
+            loadData()
         }
-
-        return () => { isMounted = false }
     }, [authLoading, loadData])
 
     // --- Логика курса ---

@@ -57,11 +57,6 @@ export default function JournalPage() {
         setIsLoading(true)
         setError(null)
 
-        // Предохранительный таймер на 5 секунд
-        const safetyTimer = setTimeout(() => {
-            setIsLoading(false)
-        }, 5000)
-
         try {
             if (!user) {
                 const stored = localStorage.getItem('demo_journal')
@@ -74,9 +69,8 @@ export default function JournalPage() {
             setEntries(data)
         } catch (e: any) {
             console.error('Journal fetch error:', e)
-            setError('Сессия истекла или возникла ошибка сети. Попробуйте обновить страницу.')
+            setError('Ошибка при загрузке дневника. Попробуйте обновить страницу.')
         } finally {
-            clearTimeout(safetyTimer)
             setIsLoading(false)
         }
     }, [user])

@@ -82,17 +82,10 @@ export default function Header({ currentDay = 1, userName: propUserName }: Heade
 
     const handleSignOut = async () => {
         try {
-            // Race between signOut and a 1s timeout
-            await Promise.race([
-                signOut(),
-                new Promise(resolve => setTimeout(resolve, 1000))
-            ])
+            await signOut()
         } catch (error) {
             console.error('Logout error:', error)
         }
-
-        // Force force force redirect
-        window.location.href = '/auth'
     }
 
     return (

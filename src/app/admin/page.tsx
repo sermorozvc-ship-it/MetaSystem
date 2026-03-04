@@ -105,28 +105,20 @@ export default function AdminPage() {
         let mounted = true
         const controller = new AbortController()
 
-        // Safety timeout to prevent infinite loading state
-        const safetyTimer = setTimeout(() => {
-            if (mounted) setIsLoading(false)
-        }, 5000)
-
         const init = async () => {
             if (authLoading) return
 
-            // If we already have users and it's just a background sync, don't show global loader
-            if (users.length === 0) setIsLoading(true)
+            if (!user) {
+                setIsLoading(false)
+                return
+            }
+
+            setIsLoading(true)
             setAccessError(null)
 
             try {
-                // 1. Проверяем что пользователь залогинен
-                if (!user) {
-                    console.warn('[AdminPage] No user found, will show login form')
-                    setIsLoading(false)
-                    return
-                }
-
-                // 2. Check Admin Rights — теперь всегда берёт свежую сессию
-                const adminRights = await isAdmin()
+                // Check Admin Rights
+                const adminRights = await isAdmin(user)
                 if (!mounted) return
 
                 if (!adminRights) {
@@ -161,7 +153,6 @@ export default function AdminPage() {
             } finally {
                 if (mounted) {
                     setIsLoading(false)
-                    clearTimeout(safetyTimer)
                 }
             }
         }
@@ -170,9 +161,30 @@ export default function AdminPage() {
         return () => {
             mounted = false
             controller.abort()
-            clearTimeout(safetyTimer)
         }
     }, [user?.id, authLoading]) // Only depend on user ID, not the whole object
+
+    // Функция обновления данных без перезагрузки страницы
+    const refreshData = async () => {
+        setIsLoading(true)
+        try {
+            const [usersData, statsData, reportsData, messagesData] = await Promise.all([
+                getAllUsers().catch(err => { console.error('Users fetch error:', err); return [] as UserWithProgress[]; }),
+                getAdminStats().catch(err => { console.error('Stats fetch error:', err); return stats; }),
+                getAllReports().catch(err => { console.error('Reports fetch error:', err); return [] as DayReportWithUser[]; }),
+                getAllMessages().catch(err => { console.error('Messages fetch error:', err); return [] as AdminMessage[]; })
+            ])
+            setUsers(usersData)
+            setStats(statsData)
+            setAllReports(reportsData)
+            setAllMessages(messagesData)
+            console.log(`[AdminPage] Refreshed: ${usersData.length} users, ${reportsData.length} reports, ${messagesData.length} messages`)
+        } catch (err) {
+            console.error('Refresh failed:', err)
+        } finally {
+            setIsLoading(false)
+        }
+    }
 
     const scrollMessagesToBottom = () => {
         const container = document.getElementById('admin-chat-container');
@@ -230,7 +242,7 @@ export default function AdminPage() {
             setBlockReason('')
             setShowBlockModal(false)
             setShowUserModal(false)
-            window.location.reload()
+            await refreshData()
         }
     }
 
@@ -239,7 +251,7 @@ export default function AdminPage() {
         const result = await unblockUser(selectedUser.id)
         if (result.success) {
             setShowUserModal(false)
-            window.location.reload()
+            await refreshData()
         }
     }
 
@@ -248,7 +260,7 @@ export default function AdminPage() {
         const result = await deleteReport(reportId)
         if (result.success) {
             setShowReportModal(false)
-            window.location.reload()
+            await refreshData()
         }
     }
 
@@ -257,7 +269,7 @@ export default function AdminPage() {
         const result = await updateReportStatus(selectedReport.id, status, curatorComment || undefined)
         if (result.success) {
             setShowReportModal(false)
-            window.location.reload()
+            await refreshData()
         }
     }
 
@@ -268,9 +280,30 @@ export default function AdminPage() {
         return nameMatch || emailMatch;
     })
 
-    if (accessError || (!isAdminUser && !isLoading && !authLoading)) {
-        // Всегда показываем форму входа при любой проблеме с доступом
-        return <AdminLoginForm />
+    // Если загрузка авторизации ИЛИ первичная проверка прав еще идет — ничего не показываем (или лоадер ниже)
+    if (authLoading || isLoading) {
+        // Пропускаем проверку до завершения загрузки
+    } else if (!user) {
+        // Если не залогинен — тихий редирект на авторизацию
+        router.push('/auth')
+        return null
+    } else if (!isAdminUser || accessError) {
+        // Если залогинен, но нет прав
+        return (
+            <div className="min-h-screen bg-deep-dark flex items-center justify-center p-4">
+                <div className="glass-card max-w-md w-full p-8 text-center">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center mx-auto mb-4">
+                        <Shield className="w-8 h-8 text-white" />
+                    </div>
+                    <h1 className="text-2xl font-bold text-white mb-2">Доступ закрыт</h1>
+                    <p className="text-sm text-gray-400 mb-6">{accessError || "У вас нет прав администратора."}</p>
+                    <div className="flex flex-col gap-3">
+                        <button onClick={() => router.push('/dashboard')} className="glass-button w-full">На главную</button>
+                        <button onClick={() => signOut()} className="glass-button-secondary w-full">Выйти и сменить аккаунт</button>
+                    </div>
+                </div>
+            </div>
+        )
     }
 
     const handleCloseModal = () => {
@@ -313,7 +346,7 @@ export default function AdminPage() {
                             </div>
                         )}
                         <button
-                            onClick={() => window.location.reload()}
+                            onClick={() => refreshData()}
                             disabled={isLoading}
                             className={`glass-button-secondary flex items-center gap-1.5 md:gap-2 px-3 py-2 md:px-4 md:py-2.5 text-sm shrink-0 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
@@ -751,106 +784,3 @@ function StatCard({ icon: Icon, label, value, color }: { icon: any, label: strin
         </div>
     )
 }
-
-function AdminLoginForm() {
-    const [email, setEmail] = useState('')
-    const [password, setPassword] = useState('')
-    const [error, setError] = useState('')
-    const [loading, setLoading] = useState(false)
-
-    const handleLogin = async (e: React.FormEvent) => {
-        e.preventDefault()
-        setError('')
-        setLoading(true)
-
-        try {
-            const supabase = createClient()
-            const { error: authError } = await supabase.auth.signInWithPassword({
-                email,
-                password
-            })
-
-            if (authError) {
-                setError(authError.message === 'Invalid login credentials'
-                    ? 'Неверный email или пароль'
-                    : authError.message)
-                setLoading(false)
-                return
-            }
-
-            // Очищаем кеш и перезагружаем — теперь сессия будет реальной
-            clearUserCache()
-            if (typeof window !== 'undefined') {
-                localStorage.removeItem('dev_admin_email')
-            }
-            window.location.reload()
-        } catch (err: any) {
-            setError('Ошибка подключения к серверу')
-            setLoading(false)
-        }
-    }
-
-    return (
-        <div className="min-h-screen bg-deep-dark flex items-center justify-center p-4">
-            <div className="glass-card max-w-md w-full p-8">
-                <div className="text-center mb-8">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-meta-orange to-orange-600 flex items-center justify-center mx-auto mb-4">
-                        <Shield className="w-8 h-8 text-white" />
-                    </div>
-                    <h1 className="text-2xl font-bold text-white mb-2">Админ-панель</h1>
-                    <p className="text-sm text-gray-400">Войдите с правами администратора</p>
-                </div>
-
-                <form onSubmit={handleLogin} className="space-y-4">
-                    <div>
-                        <label className="block text-xs text-gray-500 uppercase font-bold mb-2">Email</label>
-                        <input
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            placeholder="admin@example.com"
-                            className="glass-input w-full"
-                            required
-                            autoFocus
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs text-gray-500 uppercase font-bold mb-2">Пароль</label>
-                        <input
-                            type="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            placeholder="••••••••"
-                            className="glass-input w-full"
-                        />
-                    </div>
-
-                    {error && (
-                        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-sm text-red-400">
-                            {error}
-                        </div>
-                    )}
-
-                    <button
-                        type="submit"
-                        disabled={loading || !email}
-                        className="glass-button w-full flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                        {loading ? (
-                            <>
-                                <RefreshCw className="w-4 h-4 animate-spin" />
-                                Вход...
-                            </>
-                        ) : (
-                            <>
-                                <Shield className="w-4 h-4" />
-                                Войти
-                            </>
-                        )}
-                    </button>
-                </form>
-            </div>
-        </div>
-    )
-}
-

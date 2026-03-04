@@ -36,14 +36,10 @@ export default function SettingsPage() {
 
     const handleSignOut = async () => {
         try {
-            await Promise.race([
-                signOut(),
-                new Promise(resolve => setTimeout(resolve, 1000))
-            ])
+            await signOut()
         } catch (error) {
             console.error('Logout error:', error)
         }
-        window.location.href = '/auth'
     }
 
     const handleSaveName = async () => {

@@ -45,17 +45,12 @@ export interface DayReportWithUser {
 // --- SERVICES ---
 
 // Check if current user is admin
-export async function isAdmin(): Promise<boolean> {
-    const supabase = createClient()
+// Принимает user параметром чтобы не делать лишний getSession()
+export async function isAdmin(userParam?: { id?: string; email?: string | null; user_metadata?: any } | null): Promise<boolean> {
+    // Используем переданного user — НЕ вызываем safeGetUser если user уже передан
+    let user: { id?: string; email?: string | null; user_metadata?: any } | null = userParam ?? null
 
-    // Получаем СВЕЖУЮ сессию напрямую — без кеша, чтобы не получить null при инициализации
-    let user = null
-    try {
-        const { data: { session } } = await supabase.auth.getSession()
-        user = session?.user ?? null
-    } catch (e: any) {
-        console.warn('[isAdmin] getSession error:', e.message)
-        // Попробуем через кеш как fallback
+    if (!user) {
         user = await safeGetUser()
     }
 
@@ -64,9 +59,9 @@ export async function isAdmin(): Promise<boolean> {
         return false
     }
 
-    // 1. Check Owner Emails (Hardcoded bypass — самый быстрый путь)
+    // 1. Check Owner Emails (Hardcoded bypass — самый быстрый путь, без сетевых запросов)
     const owners = ['dgmukhin@gmail.com']
-    if (owners.includes(user.email || '')) {
+    if (owners.includes(user.email?.toLowerCase() || '')) {
         console.log('[isAdmin] Emergency admin access granted for owner:', user.email)
         return true
     }
@@ -77,10 +72,18 @@ export async function isAdmin(): Promise<boolean> {
         return true
     }
 
-    // 3. Проверяем через RPC (SECURITY DEFINER — надёжно)
+    // 3. Проверяем через RPC с таймаутом (SECURITY DEFINER — надёжно)
+    const supabase = createClient()
     try {
         console.log('[isAdmin] Checking DB via RPC is_admin...')
-        const { data: isRpcAdmin, error: rpcError } = await supabase.rpc('is_admin')
+        const rpcResult = await Promise.race([
+            supabase.rpc('is_admin'),
+            new Promise<{ data: null; error: { code: string; message: string } }>((resolve) =>
+                setTimeout(() => resolve({ data: null, error: { code: 'TIMEOUT', message: 'RPC timeout 5s' } }), 5000)
+            )
+        ])
+
+        const { data: isRpcAdmin, error: rpcError } = rpcResult
 
         if (!rpcError && isRpcAdmin === true) {
             console.log('[isAdmin] RPC check successful: IS ADMIN')
@@ -94,150 +97,107 @@ export async function isAdmin(): Promise<boolean> {
         console.warn('[isAdmin] RPC exception:', e.message)
     }
 
-    // 4. Fallback — прямой запрос к profiles
+    // 4. Fallback — прямой запрос к profiles с таймаутом
+    if (!user.id) return false
     console.log('[isAdmin] Falling back to direct profile query...')
-    const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single()
+    try {
+        const profileResult = await Promise.race([
+            supabase.from('profiles').select('role').eq('id', user.id).single(),
+            new Promise<{ data: null; error: { message: string } }>((resolve) =>
+                setTimeout(() => resolve({ data: null, error: { message: 'Profile query timeout 5s' } }), 5000)
+            )
+        ])
 
-    if (profileError) {
-        console.error('[isAdmin] Profile query failed:', profileError.message)
+        const { data: profile, error: profileError } = profileResult
+
+        if (profileError) {
+            console.error('[isAdmin] Profile query failed:', profileError.message)
+            return false
+        }
+
+        const hasAccess = profile?.role === 'admin' || profile?.role === 'curator'
+        console.log('[isAdmin] Profile role check result:', profile?.role, '-> Access:', hasAccess)
+        return hasAccess
+    } catch (e: any) {
+        console.error('[isAdmin] Profile query exception:', e.message)
         return false
     }
-
-    const hasAccess = profile?.role === 'admin' || profile?.role === 'curator'
-    console.log('[isAdmin] Profile role check result:', profile?.role, '-> Access:', hasAccess)
-
-    return hasAccess
 }
 
-// Helper function to check if error is AbortError
-function isAbortError(error: any): boolean {
-    return error?.name === 'AbortError' ||
-        error?.message?.includes('abort') ||
-        error?.message?.includes('AbortError')
-}
-
-// Get all users with progress stats (Optimized)
+// Get all users with progress stats
 export async function getAllUsers(): Promise<UserWithProgress[]> {
     const supabase = createClient()
-    console.log('[Admin] Fetching all users via secure RPC...')
+    console.log('[Admin] Fetching all users...')
 
     let profiles: any[] | null = null
-    let allProgress: any[] | null = null
-    let allReports: any[] | null = null
-    let lastError: any = null
 
-    // 1. Fetch all profiles using secure RPC to bypass RLS
-    for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-            const result = await supabase.rpc('get_all_users_secure')
+    // 1. Попробовать RPC, если не сработает — прямой запрос к profiles
+    try {
+        const { data, error } = await supabase.rpc('get_all_users_secure')
+        if (!error && data) {
+            profiles = data
+        } else {
+            console.warn('[Admin] RPC failed, trying direct query:', error?.message)
+            const fallback = await supabase
+                .from('profiles')
+                .select('*')
+                .order('created_at', { ascending: false })
 
-            if (result.error) {
-                lastError = result.error
-                if (isAbortError(result.error)) {
-                    console.warn(`Profiles fetch aborted, attempt ${attempt + 1}/3`)
-                    await new Promise(r => setTimeout(r, 150 * (attempt + 1)))
-                    continue
-                }
-                console.warn('[Admin] RPC error (fetching profiles):', result.error.message)
-
-                // Fallback to table query if RPC fails (e.g. if it doesn't exist yet)
-                const fallback = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .order('created_at', { ascending: false })
-
-                if (fallback.error && !isAbortError(fallback.error)) {
-                    console.error('[Admin] Fallback fetch failed:', fallback.error.message)
-                    lastError = fallback.error
-                    break
-                }
-                profiles = fallback.data
-                break
+            if (fallback.error) {
+                throw new Error(fallback.error.message)
             }
-            profiles = result.data
-            break
-        } catch (e: any) {
-            lastError = e
-            if (isAbortError(e)) {
-                console.warn(`Profiles fetch exception aborted, attempt ${attempt + 1}/3`)
-                await new Promise(r => setTimeout(r, 150 * (attempt + 1)))
-                continue
-            }
-            console.error('[Admin] Exception fetching profiles:', e)
-            break
+            profiles = fallback.data
         }
+    } catch (e: any) {
+        console.error('[Admin] Exception fetching profiles:', e)
+        throw new Error(`Ошибка загрузки: ${e.message}`)
     }
 
-    if (profiles === null) {
-        console.error('[Admin] All profile fetch attempts failed. Last error:', lastError)
-        throw new Error(`Ошибка загрузки: ${lastError?.message || 'Неизвестная ошибка базы данных'}`)
-    }
-
-    if (profiles.length === 0) {
-        console.log('[Admin] No profiles found in DB')
+    if (!profiles || profiles.length === 0) {
         return []
     }
 
-    // 2. Fetch all progress for stats (no retry needed, just catch AbortError)
-    try {
-        const result = await supabase
-            .from('user_progress')
-            .select('user_id, completed')
-            .eq('completed', true)
+    // 2. Параллельная загрузка прогресса и отчётов
+    let allProgress: any[] = []
+    let allReports: any[] = []
 
-        if (!result.error) {
-            allProgress = result.data
-        }
-    } catch (e: any) {
-        if (!isAbortError(e)) console.error('Error fetching progress:', e)
+    try {
+        const [progressResult, reportsResult] = await Promise.all([
+            supabase.from('user_progress').select('user_id, completed').eq('completed', true),
+            supabase.from('day_reports').select('user_id, created_at').order('created_at', { ascending: false })
+        ])
+
+        allProgress = progressResult.data || []
+        allReports = reportsResult.data || []
+    } catch (e) {
+        console.warn('[Admin] Progress/reports fetch failed:', e)
     }
 
-    // 3. Fetch all reports for stats
-    try {
-        const result = await supabase
-            .from('day_reports')
-            .select('user_id, created_at')
-            .order('created_at', { ascending: false })
-
-        if (!result.error) {
-            allReports = result.data
-        }
-    } catch (e: any) {
-        if (!isAbortError(e)) console.error('Error fetching reports:', e)
-    }
-
-    // Aggregate data
+    // Aggregate
     const progressMap = new Map<string, number>()
-    allProgress?.forEach((p: any) => {
-        // Here row count = tasks count. If we want days, we would need to check unique day_numbers.
-        // For now, let's keep it as total tasks completed.
+    allProgress.forEach((p: any) => {
         progressMap.set(p.user_id, (progressMap.get(p.user_id) || 0) + 1)
     })
 
     const reportsMap = new Map<string, { count: number, last: string | null }>()
-    allReports?.forEach((r: any) => {
+    allReports.forEach((r: any) => {
         const stats = reportsMap.get(r.user_id) || { count: 0, last: null }
         if (!stats.last) stats.last = r.created_at
         stats.count++
         reportsMap.set(r.user_id, stats)
     })
 
-    // Combine results
     const usersWithProgress = profiles.map((profile: any) => {
         const reportStats = reportsMap.get(profile.id)
         return {
             ...profile,
-            completed_days: progressMap.get(profile.id) || 0, // This is actually tasks count
+            completed_days: progressMap.get(profile.id) || 0,
             total_reports: reportStats?.count || 0,
             last_activity: reportStats?.last || profile.created_at
         }
     })
 
-    console.log(`Fetched ${usersWithProgress.length} users successfully`)
+    console.log(`[Admin] Fetched ${usersWithProgress.length} users`)
     return usersWithProgress
 }
 
@@ -512,7 +472,7 @@ export async function deleteUser(userId: string): Promise<{ success: boolean; er
     return { success: true }
 }
 
-// Get admin stats
+// Get admin stats — все запросы параллельно
 export async function getAdminStats(): Promise<{
     totalUsers: number
     activeUsers: number
@@ -521,60 +481,22 @@ export async function getAdminStats(): Promise<{
     completedToday: number
 }> {
     const supabase = createClient()
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
 
-    // Всегда загружаем реальную статистику
-    let totalUsers = 0
-    let activeUsers = 0
-    let blockedUsers = 0
-    let pendingReports = 0
-    let completedToday = 0
-
-    try {
-        const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true })
-        totalUsers = count || 0
-    } catch (e: any) {
-        if (!isAbortError(e)) console.error('Error fetching totalUsers:', e)
-    }
-
-    try {
-        const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', false)
-        activeUsers = count || 0
-    } catch (e: any) {
-        if (!isAbortError(e)) console.error('Error fetching activeUsers:', e)
-    }
-
-    try {
-        const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', true)
-        blockedUsers = count || 0
-    } catch (e: any) {
-        if (!isAbortError(e)) console.error('Error fetching blockedUsers:', e)
-    }
-
-    try {
-        const { count } = await supabase.from('day_reports').select('*', { count: 'exact', head: true }).eq('status', 'pending')
-        pendingReports = count || 0
-    } catch (e: any) {
-        if (!isAbortError(e)) console.error('Error fetching pendingReports:', e)
-    }
-
-    try {
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
-        const { count } = await supabase
-            .from('user_progress')
-            .select('*', { count: 'exact', head: true })
-            .eq('completed', true)
-            .gte('completed_at', today.toISOString())
-        completedToday = count || 0
-    } catch (e: any) {
-        if (!isAbortError(e)) console.error('Error fetching completedToday:', e)
-    }
+    const [totalR, activeR, blockedR, pendingR, completedR] = await Promise.allSettled([
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', false),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', true),
+        supabase.from('day_reports').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+        supabase.from('user_progress').select('*', { count: 'exact', head: true }).eq('completed', true).gte('completed_at', today.toISOString()),
+    ])
 
     return {
-        totalUsers,
-        activeUsers,
-        blockedUsers,
-        pendingReports,
-        completedToday
+        totalUsers: totalR.status === 'fulfilled' ? (totalR.value.count || 0) : 0,
+        activeUsers: activeR.status === 'fulfilled' ? (activeR.value.count || 0) : 0,
+        blockedUsers: blockedR.status === 'fulfilled' ? (blockedR.value.count || 0) : 0,
+        pendingReports: pendingR.status === 'fulfilled' ? (pendingR.value.count || 0) : 0,
+        completedToday: completedR.status === 'fulfilled' ? (completedR.value.count || 0) : 0,
     }
 }
