@@ -162,10 +162,8 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
     let allReports: any[] = []
 
     try {
-        const [progressResult, reportsResult] = await Promise.all([
-            supabase.from('user_progress').select('user_id, completed').eq('completed', true),
-            supabase.from('day_reports').select('user_id, created_at').order('created_at', { ascending: false })
-        ])
+        const progressResult = await supabase.from('user_progress').select('user_id, completed').eq('completed', true)
+        const reportsResult = await supabase.from('day_reports').select('user_id, created_at').order('created_at', { ascending: false })
 
         allProgress = progressResult.data || []
         allReports = reportsResult.data || []
@@ -484,19 +482,17 @@ export async function getAdminStats(): Promise<{
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    const [totalR, activeR, blockedR, pendingR, completedR] = await Promise.allSettled([
-        supabase.from('profiles').select('*', { count: 'exact', head: true }),
-        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', false),
-        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', true),
-        supabase.from('day_reports').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-        supabase.from('user_progress').select('*', { count: 'exact', head: true }).eq('completed', true).gte('completed_at', today.toISOString()),
-    ])
+    const totalR = await supabase.from('profiles').select('*', { count: 'exact', head: true })
+    const activeR = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', false)
+    const blockedR = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', true)
+    const pendingR = await supabase.from('day_reports').select('*', { count: 'exact', head: true }).eq('status', 'pending')
+    const completedR = await supabase.from('user_progress').select('*', { count: 'exact', head: true }).eq('completed', true).gte('completed_at', today.toISOString())
 
     return {
-        totalUsers: totalR.status === 'fulfilled' ? (totalR.value.count || 0) : 0,
-        activeUsers: activeR.status === 'fulfilled' ? (activeR.value.count || 0) : 0,
-        blockedUsers: blockedR.status === 'fulfilled' ? (blockedR.value.count || 0) : 0,
-        pendingReports: pendingR.status === 'fulfilled' ? (pendingR.value.count || 0) : 0,
-        completedToday: completedR.status === 'fulfilled' ? (completedR.value.count || 0) : 0,
+        totalUsers: totalR.count || 0,
+        activeUsers: activeR.count || 0,
+        blockedUsers: blockedR.count || 0,
+        pendingReports: pendingR.count || 0,
+        completedToday: completedR.count || 0,
     }
 }

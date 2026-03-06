@@ -45,6 +45,7 @@ import {
     AdminMessage
 } from '@/lib/services/admin'
 import { courseData } from '@/lib/data/courseData'
+import { getDetailedUserProgress } from '@/lib/services/progress'
 
 type Tab = 'users' | 'reports' | 'messages'
 
@@ -100,10 +101,16 @@ export default function AdminPage() {
         tooltipTimeoutRef.current = setTimeout(() => setActiveTooltip(null), 2500)
     }
 
+    // Redirect unauthenticated users via useEffect (NOT in render body)
+    useEffect(() => {
+        if (!authLoading && !user) {
+            router.push('/auth')
+        }
+    }, [authLoading, user, router])
+
     // Initialization effect
     useEffect(() => {
         let mounted = true
-        const controller = new AbortController()
 
         const init = async () => {
             if (authLoading) return
@@ -129,25 +136,34 @@ export default function AdminPage() {
                 }
                 setIsAdminUser(true)
 
-                // 3. Load Data Parallel with individual error handling
-                const [usersData, statsData, reportsData, messagesData] = await Promise.all([
-                    getAllUsers().catch(err => { console.error('Users fetch error:', err); return []; }),
-                    getAdminStats().catch(err => { console.error('Stats fetch error:', err); return stats; }),
-                    getAllReports().catch(err => { console.error('Reports fetch error:', err); return []; }),
-                    getAllMessages().catch(err => { console.error('Messages fetch error:', err); return []; })
+                // Load Data IN PARALLEL via Promise.allSettled to prevent cascade hanging
+                const [usersResult, statsResult, reportsResult, messagesResult] = await Promise.allSettled([
+                    getAllUsers(),
+                    getAdminStats(),
+                    getAllReports(),
+                    getAllMessages()
                 ])
 
                 if (mounted) {
-                    setUsers(usersData)  // всегда обновляем, даже если пустой массив
-                    setStats(statsData)
-                    setAllReports(reportsData)
-                    setAllMessages(messagesData)
-                    console.log(`[AdminPage] Loaded: ${usersData.length} users, ${reportsData.length} reports, ${messagesData.length} messages`)
+                    setUsers(usersResult.status === 'fulfilled' ? usersResult.value : [])
+                    setStats(statsResult.status === 'fulfilled' ? statsResult.value : stats)
+                    setAllReports(reportsResult.status === 'fulfilled' ? reportsResult.value : [])
+                    setAllMessages(messagesResult.status === 'fulfilled' ? messagesResult.value : [])
+
+                    // Log errors for failed requests
+                    if (usersResult.status === 'rejected') console.error('Users fetch error:', usersResult.reason)
+                    if (statsResult.status === 'rejected') console.error('Stats fetch error:', statsResult.reason)
+                    if (reportsResult.status === 'rejected') console.error('Reports fetch error:', reportsResult.reason)
+                    if (messagesResult.status === 'rejected') console.error('Messages fetch error:', messagesResult.reason)
+
+                    const usersCount = usersResult.status === 'fulfilled' ? usersResult.value.length : 0
+                    const reportsCount = reportsResult.status === 'fulfilled' ? reportsResult.value.length : 0
+                    const messagesCount = messagesResult.status === 'fulfilled' ? messagesResult.value.length : 0
+                    console.log(`[AdminPage] Loaded: ${usersCount} users, ${reportsCount} reports, ${messagesCount} messages`)
                 }
             } catch (err: any) {
                 console.error('Admin Init failed:', err)
-                // Показываем ошибку только если это не ошибка доступа (она уже обработана выше)
-                if (mounted && !accessError) {
+                if (mounted) {
                     console.warn('[AdminPage] Ошибка загрузки данных:', err.message)
                 }
             } finally {
@@ -160,7 +176,6 @@ export default function AdminPage() {
         init()
         return () => {
             mounted = false
-            controller.abort()
         }
     }, [user?.id, authLoading]) // Only depend on user ID, not the whole object
 
@@ -168,17 +183,21 @@ export default function AdminPage() {
     const refreshData = async () => {
         setIsLoading(true)
         try {
-            const [usersData, statsData, reportsData, messagesData] = await Promise.all([
-                getAllUsers().catch(err => { console.error('Users fetch error:', err); return [] as UserWithProgress[]; }),
-                getAdminStats().catch(err => { console.error('Stats fetch error:', err); return stats; }),
-                getAllReports().catch(err => { console.error('Reports fetch error:', err); return [] as DayReportWithUser[]; }),
-                getAllMessages().catch(err => { console.error('Messages fetch error:', err); return [] as AdminMessage[]; })
+            const [usersResult, statsResult, reportsResult, messagesResult] = await Promise.allSettled([
+                getAllUsers(),
+                getAdminStats(),
+                getAllReports(),
+                getAllMessages()
             ])
-            setUsers(usersData)
-            setStats(statsData)
-            setAllReports(reportsData)
-            setAllMessages(messagesData)
-            console.log(`[AdminPage] Refreshed: ${usersData.length} users, ${reportsData.length} reports, ${messagesData.length} messages`)
+            setUsers(usersResult.status === 'fulfilled' ? usersResult.value : [])
+            setStats(statsResult.status === 'fulfilled' ? statsResult.value : stats)
+            setAllReports(reportsResult.status === 'fulfilled' ? reportsResult.value : [])
+            setAllMessages(messagesResult.status === 'fulfilled' ? messagesResult.value : [])
+
+            const usersCount = usersResult.status === 'fulfilled' ? usersResult.value.length : 0
+            const reportsCount = reportsResult.status === 'fulfilled' ? reportsResult.value.length : 0
+            const messagesCount = messagesResult.status === 'fulfilled' ? messagesResult.value.length : 0
+            console.log(`[AdminPage] Refreshed: ${usersCount} users, ${reportsCount} reports, ${messagesCount} messages`)
         } catch (err) {
             console.error('Refresh failed:', err)
         } finally {
@@ -205,12 +224,9 @@ export default function AdminPage() {
         setShowUserModal(true)
 
         try {
-            const { getDetailedUserProgress } = await import('@/lib/services/progress')
-            const [reports, messages, progress] = await Promise.all([
-                getUserReports(userItem.id),
-                getUserMessages(userItem.id),
-                getDetailedUserProgress(userItem.id)
-            ])
+            const reports = await getUserReports(userItem.id)
+            const messages = await getUserMessages(userItem.id)
+            const progress = await getDetailedUserProgress(userItem.id)
             setSelectedUserReports(reports)
             setSelectedUserMessages(messages)
             setUserProgressDetails(progress)
@@ -280,12 +296,12 @@ export default function AdminPage() {
         return nameMatch || emailMatch;
     })
 
-    // Если загрузка авторизации ИЛИ первичная проверка прав еще идет — ничего не показываем (или лоадер ниже)
+    // Если загрузка авторизации ИЛИ первичная проверка прав еще идет — ничего не показываем
+    // Если не залогинен — редирект происходит через useEffect (НЕ в теле рендера)
     if (authLoading || isLoading) {
         // Пропускаем проверку до завершения загрузки
     } else if (!user) {
-        // Если не залогинен — тихий редирект на авторизацию
-        router.push('/auth')
+        // Редирект происходит через useEffect выше, здесь просто ждём
         return null
     } else if (!isAdminUser || accessError) {
         // Если залогинен, но нет прав
