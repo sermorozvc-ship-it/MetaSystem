@@ -123,7 +123,7 @@ export default function Sidebar({ activeItem = 'dashboard', onItemClick }: Sideb
                     {/* Admin Link */}
                     {isAdmin && (
                         <button
-                            onClick={() => window.open('/admin', '_blank')}
+                            onClick={() => router.push('/admin')}
                             onMouseEnter={() => setHoveredItem('admin')}
                             onMouseLeave={() => setHoveredItem(null)}
                             className={`
@@ -176,7 +176,7 @@ export default function Sidebar({ activeItem = 'dashboard', onItemClick }: Sideb
                             return (
                                 <button
                                     key={item.id}
-                                    onClick={() => window.open('/admin', '_blank')}
+                                    onClick={() => router.push('/admin')}
                                     className={`
                                         flex flex-col items-center gap-1 px-3 py-2 rounded-xl
                                         transition-all duration-200 min-w-[56px]

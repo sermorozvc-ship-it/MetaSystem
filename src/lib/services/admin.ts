@@ -482,11 +482,14 @@ export async function getAdminStats(): Promise<{
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    const totalR = await supabase.from('profiles').select('*', { count: 'exact', head: true })
-    const activeR = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', false)
-    const blockedR = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', true)
-    const pendingR = await supabase.from('day_reports').select('*', { count: 'exact', head: true }).eq('status', 'pending')
-    const completedR = await supabase.from('user_progress').select('*', { count: 'exact', head: true }).eq('completed', true).gte('completed_at', today.toISOString())
+    // Параллельно выполняем все 5 запросов вместо последовательных await
+    const [totalR, activeR, blockedR, pendingR, completedR] = await Promise.all([
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', false),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', true),
+        supabase.from('day_reports').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+        supabase.from('user_progress').select('*', { count: 'exact', head: true }).eq('completed', true).gte('completed_at', today.toISOString())
+    ])
 
     return {
         totalUsers: totalR.count || 0,

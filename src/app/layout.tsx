@@ -1,4 +1,5 @@
-import '@/lib/supabase/disableLocks'
+// disableLocks теперь импортируется в AuthContext.tsx ('use client')
+// В Server Component (layout.tsx) этот импорт НЕ выполняется на клиенте!
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
