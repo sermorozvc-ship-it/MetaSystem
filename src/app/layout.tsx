@@ -1,5 +1,5 @@
-// disableLocks теперь импортируется в AuthContext.tsx ('use client')
-// В Server Component (layout.tsx) этот импорт НЕ выполняется на клиенте!
+// Блокировки Supabase Auth теперь управляются через кастомную lock-функцию
+// в client.ts (auth.lock параметр в createBrowserClient)
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'

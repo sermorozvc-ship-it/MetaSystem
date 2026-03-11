@@ -1,10 +1,5 @@
 'use client'
 
-// КРИТИЧНО: Импорт disableLocks ДОЛЖЕН быть в 'use client' компоненте!
-// В layout.tsx (Server Component) этот импорт НЕ выполняется на клиенте.
-// Без этого полифилла navigator.locks вызывает deadlock при параллельных Supabase-запросах.
-import '@/lib/supabase/disableLocks'
-
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react'
 import { User, Session } from '@supabase/supabase-js'
 import { createClient, clearUserCache, setCachedUser } from '@/lib/supabase/client'

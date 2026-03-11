@@ -9,8 +9,68 @@ let userCacheTimestamp = 0
 const USER_CACHE_TTL = 60000  // 1 минута — кеш актуален долго
 
 /**
+ * Внутри-табовый мьютекс для Supabase Auth.
+ * 
+ * Вместо глобального disableLocks (который убирал ВСЮ блокировку и вызывал
+ * race condition при F5 refresh), используем кастомную lock-функцию, которую 
+ * передаём прямо в Supabase client.
+ * 
+ * Логика:
+ * - Сериализует запросы ВНУТРИ одной вкладки (предотвращает race condition при refresh)
+ * - НЕ блокирует МЕЖДУ вкладками (предотвращает deadlock при нескольких вкладках)
+ * - Имеет таймаут acquireTimeout для предотвращения бесконечного ожидания
+ */
+const lockQueues = new Map<string, Promise<any>>()
+
+async function inTabLock<R>(
+    name: string,
+    acquireTimeout: number,
+    fn: () => Promise<R>
+): Promise<R> {
+    const startTime = Date.now()
+
+    // Ждём предыдущую операцию с тем же именем (если есть)
+    const prev = lockQueues.get(name)
+    if (prev) {
+        try {
+            // Ждём завершения предыдущей операции, но не больше acquireTimeout
+            await Promise.race([
+                prev,
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error(`Lock acquire timeout: ${name}`)), 
+                        Math.max(acquireTimeout - (Date.now() - startTime), 0))
+                )
+            ])
+        } catch (e: any) {
+            // Если предыдущая операция упала или таймаут — продолжаем
+            if (e?.message?.includes('Lock acquire timeout')) {
+                console.warn(`[inTabLock] Timeout waiting for lock "${name}", proceeding anyway`)
+            }
+        }
+    }
+
+    // Создаём промис для текущей операции и ставим его в очередь
+    let resolveCurrent: () => void
+    const currentPromise = new Promise<void>(r => resolveCurrent = r)
+    lockQueues.set(name, currentPromise)
+
+    try {
+        return await fn()
+    } finally {
+        resolveCurrent!()
+        // Чистим очередь если это последняя операция
+        if (lockQueues.get(name) === currentPromise) {
+            lockQueues.delete(name)
+        }
+    }
+}
+
+/**
  * Создаёт Supabase клиент для браузера через @supabase/ssr.
  * Singleton — один инстанс на всё приложение.
+ * 
+ * Использует кастомную lock-функцию вместо navigator.locks
+ * для предотвращения deadlock И race condition одновременно.
  */
 export function createClient(): SupabaseClient {
     if (client) return client
@@ -26,7 +86,12 @@ export function createClient(): SupabaseClient {
         return createSupabaseClient('https://mock.supabase.co', 'mock-key', { auth: { persistSession: false } })
     }
 
-    client = createBrowserClient(supabaseUrl, supabaseKey)
+    client = createBrowserClient(supabaseUrl, supabaseKey, {
+        auth: {
+            // Кастомная lock-функция: сериализует внутри вкладки, не блокирует между
+            lock: inTabLock,
+        }
+    })
     return client
 }
 
