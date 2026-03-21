@@ -19,7 +19,7 @@ export default function WaitingRoomPage() {
         if (authLoading) return
 
         if (!user) {
-            router.replace('/auth')
+            window.location.href = '/auth'
             return
         }
 
@@ -27,16 +27,16 @@ export default function WaitingRoomPage() {
             try {
                 const payment = await getUserPayment()
                 if (!payment || payment.status !== 'confirmed') {
-                    router.replace('/payment')
+                    window.location.href = '/payment'
                     return
                 }
 
-                // Если когорта активна — на dashboard
                 const start = getNextMondayStart()
                 if (isCohortActive(start)) {
-                    router.replace('/dashboard')
+                    window.location.href = '/dashboard'
                     return
                 }
+                setCohortStart(start)
             } catch (e) {
                 console.error('[WaitingRoom] Error:', e)
             } finally {
@@ -46,20 +46,17 @@ export default function WaitingRoomPage() {
         checkAccess()
     }, [user, authLoading, router])
 
-    // Обновление таймера каждую секунду
+    // Таймер — обновляется каждую секунду
     useEffect(() => {
         const interval = setInterval(() => {
             const newTime = getTimeUntilStart(cohortStart)
             setTimeLeft(newTime)
-
-            // Если курс начался — редирект
             if (isCohortActive(cohortStart)) {
-                router.push('/dashboard')
+                window.location.href = '/dashboard'
             }
         }, 1000)
-
         return () => clearInterval(interval)
-    }, [cohortStart, router])
+    }, [cohortStart])
 
     if (authLoading || isLoading) {
         return (
@@ -70,77 +67,78 @@ export default function WaitingRoomPage() {
     }
 
     return (
-        <div className="min-h-screen bg-deep-dark flex items-center justify-center p-6">
-            {/* Background Gradient */}
+        <div className="min-h-screen bg-deep-dark flex flex-col items-center justify-center p-4 py-10">
+            {/* Background */}
             <div className="fixed inset-0 bg-gradient-to-br from-meta-orange/5 via-transparent to-purple-500/5 pointer-events-none" />
 
-            <div className="relative max-w-2xl w-full text-center">
+            <div className="relative w-full max-w-lg text-center">
                 {/* Logo */}
-                <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-meta-orange to-meta-orange-600 mb-8 shadow-glow-orange">
-                    <Flame className="w-10 h-10 text-white" />
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-meta-orange to-meta-orange-600 mb-6 shadow-glow-orange">
+                    <Flame className="w-8 h-8 text-white" />
                 </div>
 
                 {/* Title */}
-                <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
+                <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-2 leading-tight">
                     Метаболический Запуск
                 </h1>
-                <p className="text-xl text-gray-400 mb-12">
+                <p className="text-base text-gray-400 mb-8">
                     7-дневный курс перезагрузки метаболизма
                 </p>
 
                 {/* Countdown Card */}
-                <div className="glass-card p-8 mb-8">
-                    <div className="flex items-center justify-center gap-2 text-meta-orange mb-6">
-                        <Calendar className="w-5 h-5" />
-                        <span className="text-sm font-medium">Старт когорты</span>
+                <div className="glass-card p-5 sm:p-8 mb-6">
+                    <div className="flex items-center justify-center gap-2 text-meta-orange mb-4">
+                        <Calendar className="w-4 h-4" />
+                        <span className="text-sm font-medium">До старта когорты</span>
                     </div>
 
-                    <p className="text-2xl font-medium text-white mb-8">
+                    <p className="text-lg font-semibold text-white mb-6">
                         {formatDate(cohortStart)}, 07:00
                     </p>
 
-                    {/* Timer */}
-                    <div className="grid grid-cols-4 gap-4 max-w-md mx-auto">
-                        <TimeUnit value={timeLeft.days} label="дней" />
-                        <TimeUnit value={timeLeft.hours} label="часов" />
-                        <TimeUnit value={timeLeft.minutes} label="минут" />
-                        <TimeUnit value={timeLeft.seconds} label="секунд" />
+                    {/* Timer — адаптивный */}
+                    <div className="grid grid-cols-4 gap-2 sm:gap-4">
+                        <TimeUnit value={timeLeft.days} label="дн" />
+                        <TimeUnit value={timeLeft.hours} label="ч" />
+                        <TimeUnit value={timeLeft.minutes} label="мин" />
+                        <TimeUnit value={timeLeft.seconds} label="сек" />
+                    </div>
+
+                    {/* Separator labels on larger screens */}
+                    <div className="hidden sm:grid grid-cols-4 gap-4 mt-1 px-0.5">
+                        {['дней', 'часов', 'минут', 'секунд'].map(l => (
+                            <p key={l} className="text-[10px] text-gray-600 uppercase tracking-wider text-center">{l}</p>
+                        ))}
                     </div>
                 </div>
 
                 {/* Info Cards */}
-                <div className="grid md:grid-cols-2 gap-4 mb-8">
-                    <div className="glass-card p-6 text-left">
-                        <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center mb-4">
-                            <Clock className="w-5 h-5 text-blue-400" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                    <div className="glass-card p-4 text-left">
+                        <div className="w-8 h-8 rounded-xl bg-blue-500/20 flex items-center justify-center mb-3">
+                            <Clock className="w-4 h-4 text-blue-400" />
                         </div>
-                        <h3 className="text-lg font-semibold text-white mb-2">
-                            Почему понедельник?
-                        </h3>
-                        <p className="text-sm text-gray-400">
-                            Когортный формат обеспечивает синхронное прохождение курса всей группой.
-                            Это повышает мотивацию и результаты участников.
+                        <h3 className="text-sm font-semibold text-white mb-1">Почему понедельник?</h3>
+                        <p className="text-xs text-gray-400 leading-relaxed">
+                            Когортный формат — вся группа идёт в едином ритме. Это повышает мотивацию и результат.
                         </p>
                     </div>
 
-                    <div className="glass-card p-6 text-left">
-                        <div className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center mb-4">
-                            <ArrowRight className="w-5 h-5 text-green-400" />
+                    <div className="glass-card p-4 text-left">
+                        <div className="w-8 h-8 rounded-xl bg-green-500/20 flex items-center justify-center mb-3">
+                            <ArrowRight className="w-4 h-4 text-green-400" />
                         </div>
-                        <h3 className="text-lg font-semibold text-white mb-2">
-                            Пока вы ждёте
-                        </h3>
-                        <p className="text-sm text-gray-400">
-                            Подготовьте сантиметровую ленту для измерений.
-                            Очистите холодильник от сладких напитков и полуфабрикатов.
+                        <h3 className="text-sm font-semibold text-white mb-1">Пока вы ждёте</h3>
+                        <p className="text-xs text-gray-400 leading-relaxed">
+                            Подготовьте сантиметровую ленту и очистите холодильник от сладких напитков.
                         </p>
                     </div>
                 </div>
 
-                {/* View onboarding */}
+                {/* Back to onboarding */}
                 <button
-                    onClick={() => router.push('/onboarding')}
-                    className="glass-button-secondary text-sm"
+                    onClick={() => window.location.href = '/onboarding'}
+                    className="glass-button-secondary text-sm w-full"
                 >
                     Посмотреть расписание курса
                 </button>
@@ -151,14 +149,13 @@ export default function WaitingRoomPage() {
 
 function TimeUnit({ value, label }: { value: number; label: string }) {
     return (
-        <div className="glass-card p-4 bg-deep-dark-200/40">
-            <div className="text-3xl md:text-4xl font-bold text-white mb-1">
+        <div className="glass-card py-3 px-1 sm:p-4 bg-deep-dark-200/40 flex flex-col items-center justify-center min-w-0">
+            <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-white tabular-nums leading-none mb-1">
                 {value.toString().padStart(2, '0')}
             </div>
-            <div className="text-xs text-gray-500 uppercase tracking-wide">
+            <div className="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wide">
                 {label}
             </div>
         </div>
     )
 }
-
