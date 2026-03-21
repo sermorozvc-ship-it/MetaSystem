@@ -2,164 +2,165 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 
-// Supabase admin client (server-side, bypasses RLS)
+// Supabase admin client — tries service role key first, fallback to anon
 function getAdminClient() {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    return createSupabaseAdmin(url, serviceKey)
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+        || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    return createSupabaseAdmin(url, key, {
+        auth: { persistSession: false }
+    })
 }
 
 /**
  * YooMoney P2P webhook handler
- * 
- * YooMoney sends POST with form-urlencoded body:
- * - notification_type: p2p-incoming
- * - operation_id: unique operation ID
- * - amount: payment amount
- * - currency: 643 (RUB)
- * - datetime: ISO date string
- * - sender: sender wallet (or empty)
- * - codepro: true/false (code protection)
- * - label: our custom label (user_id)
- * - sha1_hash: signature for verification
- * - unaccepted: true if needs manual accept
+ *
+ * ЮMoney sends POST with application/x-www-form-urlencoded body.
+ * SHA1 format: notification_type&operation_id&amount&currency&datetime&sender&codepro&secret&label
  */
-
 export async function POST(request: NextRequest) {
-    try {
-        const formData = await request.formData()
+    // Log raw request for debugging
+    const rawBody = await request.text()
+    console.log('[YooMoney Webhook] RAW BODY:', rawBody)
 
-        // Extract all fields
-        const notification_type = formData.get('notification_type') as string
-        const operation_id = formData.get('operation_id') as string
-        const amount = formData.get('amount') as string
-        const currency = formData.get('currency') as string
-        const datetime = formData.get('datetime') as string
-        const sender = formData.get('sender') as string || ''
-        const codepro = formData.get('codepro') as string
-        const label = formData.get('label') as string
-        const sha1_hash = formData.get('sha1_hash') as string
+    const params = new URLSearchParams(rawBody)
 
-        console.log('[YooMoney Webhook] Received:', {
-            notification_type,
-            operation_id,
-            amount,
-            label,
-            codepro,
-        })
+    const notification_type = params.get('notification_type') ?? ''
+    const operation_id = params.get('operation_id') ?? ''
+    const amount = params.get('amount') ?? ''
+    const currency = params.get('currency') ?? ''
+    const datetime = params.get('datetime') ?? ''
+    const sender = params.get('sender') ?? ''
+    const codepro = params.get('codepro') ?? ''
+    const label = params.get('label') ?? ''
+    const sha1_hash = params.get('sha1_hash') ?? ''
 
-        // Validate required fields
-        if (!notification_type || !operation_id || !amount || !sha1_hash) {
-            console.error('[YooMoney Webhook] Missing required fields')
-            return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
-        }
+    console.log('[YooMoney Webhook] Parsed fields:', {
+        notification_type,
+        operation_id,
+        amount,
+        currency,
+        label,
+        codepro,
+        sha1_hash: sha1_hash.substring(0, 8) + '...',
+    })
 
-        // Verify SHA1 hash
-        // Format: notification_type&operation_id&amount&currency&datetime&sender&codepro&notification_secret&label
-        const secret = process.env.YOOMONEY_SECRET
-        if (!secret) {
-            console.error('[YooMoney Webhook] YOOMONEY_SECRET not configured')
-            return NextResponse.json({ error: 'Server config error' }, { status: 500 })
-        }
+    // Missing required fields
+    if (!notification_type || !operation_id || !amount || !sha1_hash) {
+        console.error('[YooMoney Webhook] Missing required fields')
+        return new NextResponse('Bad Request', { status: 400 })
+    }
 
-        const hashString = [
-            notification_type,
-            operation_id,
-            amount,
-            currency,
-            datetime,
-            sender,
-            codepro,
-            secret,
-            label,
-        ].join('&')
+    // Verify SHA1
+    const secret = process.env.YOOMONEY_SECRET?.trim()
+    if (!secret) {
+        console.error('[YooMoney Webhook] YOOMONEY_SECRET not set!')
+        return new NextResponse('Config Error', { status: 500 })
+    }
 
-        const computedHash = createHash('sha1').update(hashString).digest('hex')
+    const hashString = [
+        notification_type,
+        operation_id,
+        amount,
+        currency,
+        datetime,
+        sender,
+        codepro,
+        secret,
+        label,
+    ].join('&')
 
-        if (computedHash !== sha1_hash) {
-            console.error('[YooMoney Webhook] Hash mismatch!', {
-                computed: computedHash,
-                received: sha1_hash,
-            })
-            return NextResponse.json({ error: 'Invalid signature' }, { status: 403 })
-        }
+    const computedHash = createHash('sha1').update(hashString).digest('hex')
+    console.log('[YooMoney Webhook] Hash check:', { computedHash, sha1_hash, match: computedHash === sha1_hash })
 
-        console.log('[YooMoney Webhook] Signature verified ✓')
+    if (computedHash !== sha1_hash) {
+        console.error('[YooMoney Webhook] SIGNATURE MISMATCH — возможная атака или неверный секрет!')
+        return new NextResponse('Forbidden', { status: 403 })
+    }
 
-        // label = user_id — find and confirm payment
-        if (!label) {
-            console.warn('[YooMoney Webhook] No label (user_id) in payment')
-            return NextResponse.json({ ok: true, note: 'No label' })
-        }
+    console.log('[YooMoney Webhook] ✓ Signature OK')
 
-        // Don't process code-protected payments
-        if (codepro === 'true') {
-            console.warn('[YooMoney Webhook] Code-protected payment, skipping auto-confirm')
-            return NextResponse.json({ ok: true, note: 'Code protected' })
-        }
+    // Skip code-protected
+    if (codepro === 'true') {
+        console.warn('[YooMoney Webhook] Code-protected payment — skipping')
+        return new NextResponse('OK', { status: 200 })
+    }
 
-        const supabase = getAdminClient()
+    // No label = no user to match
+    if (!label) {
+        console.warn('[YooMoney Webhook] No label — cannot match user')
+        return new NextResponse('OK', { status: 200 })
+    }
 
-        // Find pending payment for this user
-        const { data: pendingPayment, error: findError } = await supabase
-            .from('payments')
-            .select('*')
-            .eq('user_id', label)
-            .eq('status', 'pending')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single()
+    const supabase = getAdminClient()
+    console.log('[YooMoney Webhook] Supabase client ready, service_role =', !!process.env.SUPABASE_SERVICE_ROLE_KEY)
 
-        if (findError || !pendingPayment) {
-            // No pending payment — create a new confirmed one
-            console.log('[YooMoney Webhook] No pending payment found, creating confirmed record for user:', label)
+    // Try to find + update pending payment
+    const { data: pending, error: findErr } = await supabase
+        .from('payments')
+        .select('id')
+        .eq('user_id', label)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
 
-            const { error: insertError } = await supabase
-                .from('payments')
-                .insert({
-                    user_id: label,
-                    amount: parseFloat(amount),
-                    currency: 'RUB',
-                    status: 'confirmed',
-                    payment_method: 'yoomoney',
-                    confirmed_at: new Date().toISOString(),
-                    confirmed_by: 'yoomoney-webhook',
-                })
+    if (findErr) {
+        console.error('[YooMoney Webhook] DB find error:', findErr)
+    }
 
-            if (insertError) {
-                console.error('[YooMoney Webhook] Insert error:', insertError)
-                return NextResponse.json({ error: 'DB insert error' }, { status: 500 })
-            }
-
-            console.log('[YooMoney Webhook] Created confirmed payment for user:', label)
-            return NextResponse.json({ ok: true, action: 'created_confirmed' })
-        }
-
-        // Update existing pending payment → confirmed
-        const { error: updateError } = await supabase
+    if (pending) {
+        const { error: updErr } = await supabase
             .from('payments')
             .update({
                 status: 'confirmed',
                 confirmed_at: new Date().toISOString(),
-                confirmed_by: 'yoomoney-webhook',
+                confirmed_by: null, // UUID column — null для автоподтверждения
             })
-            .eq('id', pendingPayment.id)
+            .eq('id', pending.id)
 
-        if (updateError) {
-            console.error('[YooMoney Webhook] Update error:', updateError)
-            return NextResponse.json({ error: 'DB update error' }, { status: 500 })
+        if (updErr) {
+            console.error('[YooMoney Webhook] DB update error:', updErr)
+            return new NextResponse('DB Error', { status: 500 })
         }
 
-        console.log('[YooMoney Webhook] Payment confirmed for user:', label, 'amount:', amount)
-        return NextResponse.json({ ok: true, action: 'confirmed' })
+        console.log('[YooMoney Webhook] ✓ Payment CONFIRMED for user:', label, 'amount:', amount)
+    } else {
+        // Create confirmed payment from scratch
+        console.log('[YooMoney Webhook] No pending found — inserting confirmed payment for user:', label)
 
-    } catch (error: any) {
-        console.error('[YooMoney Webhook] Exception:', error.message)
-        return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+        const { error: insErr } = await supabase
+            .from('payments')
+            .insert({
+                user_id: label,
+                amount: parseFloat(amount),
+                currency: 'RUB',
+                status: 'confirmed',
+                payment_method: 'yoomoney',
+                confirmed_at: new Date().toISOString(),
+                confirmed_by: null, // UUID column — null для автоподтверждения
+            })
+
+        if (insErr) {
+            console.error('[YooMoney Webhook] DB insert error:', insErr)
+            return new NextResponse('DB Error', { status: 500 })
+        }
+
+        console.log('[YooMoney Webhook] ✓ Created confirmed payment for user:', label)
     }
+
+    // YooMoney requires plain 200 OK (not JSON!)
+    return new NextResponse('OK', { status: 200 })
 }
 
-// YooMoney may also send GET to check endpoint availability
+// For manual endpoint health check
 export async function GET() {
-    return NextResponse.json({ status: 'ok', service: 'yoomoney-webhook' })
+    const hasSecret = !!process.env.YOOMONEY_SECRET
+    const hasWallet = !!process.env.YOOMONEY_WALLET
+    const hasServiceKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY
+    return NextResponse.json({
+        status: 'ok',
+        service: 'yoomoney-webhook',
+        config: { hasSecret, hasWallet, hasServiceKey }
+    })
 }

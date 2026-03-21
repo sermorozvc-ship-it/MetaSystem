@@ -68,24 +68,29 @@ export default function PaymentPage() {
         loadPayment()
     }, [user, router])
 
-    // Polling для автоматического подтверждения (каждые 5 сек после оплаты)
+    // Polling — запускается всегда когда статус pending (даже после перезагрузки страницы)
     useEffect(() => {
-        if (!isPolling || !user) return
+        if (!user) return
+        if (isLoading) return // ждём пока загрузится начальный статус
+        if (payment?.status !== 'pending') return // только если pending
+
+        setIsPolling(true)
 
         const interval = setInterval(async () => {
             try {
                 const current = await getUserPayment()
                 if (current?.status === 'confirmed') {
+                    clearInterval(interval)
                     setIsPolling(false)
                     router.replace('/onboarding')
                 }
             } catch (e) {
                 console.error('[Payment] Polling error:', e)
             }
-        }, 5000)
+        }, 3000)
 
         return () => clearInterval(interval)
-    }, [isPolling, user, router])
+    }, [user, isLoading, payment?.status, router])
 
     // Создать pending запись и открыть ЮMoney
     const handleYooMoneyPay = async () => {
