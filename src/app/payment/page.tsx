@@ -98,6 +98,9 @@ export default function PaymentPage() {
         setError('')
         setIsSubmitting(true)
 
+        // ⚡ Открываем окно СИНХРОННО (до async) — иначе браузер заблокирует popup!
+        const yooWindow = window.open('about:blank', '_blank')
+
         try {
             // Создаём pending payment если ещё нет
             if (!payment || payment.status !== 'pending') {
@@ -106,31 +109,39 @@ export default function PaymentPage() {
 
                 if (paymentError) {
                     setError(paymentError)
+                    yooWindow?.close()
                     return
                 }
                 setPayment(newPayment)
             }
 
-            // Открываем ЮMoney в новом окне
+            // Направляем pre-opened окно на ЮMoney
             const yooUrl = buildYooMoneyUrl(user.id, PRICE)
-            window.open(yooUrl, '_blank')
+            if (yooWindow && !yooWindow.closed) {
+                yooWindow.location.href = yooUrl
+            } else {
+                // Popup заблокирован — открываем в том же окне как fallback
+                window.location.href = yooUrl
+            }
 
             // Начинаем polling для автоподтверждения через webhook
             setIsPolling(true)
 
         } catch (e) {
             setError('Произошла ошибка. Попробуйте позже.')
+            yooWindow?.close()
         } finally {
             setIsSubmitting(false)
         }
     }
+
 
     const handleCheckStatus = async () => {
         setIsLoading(true)
         try {
             const current = await getUserPayment()
             if (current?.status === 'confirmed') {
-                router.replace('/onboarding')
+                window.location.href = '/onboarding'
                 return
             }
             setPayment(current)
@@ -141,13 +152,15 @@ export default function PaymentPage() {
         }
     }
 
-    if (authLoading || isLoading) {
+    // Пока авторизация ещё грузится — показываем только если реально нет юзера после загрузки
+    if (!authLoading && !user) {
         return (
             <div className="min-h-screen bg-deep-dark flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-meta-orange animate-spin" />
             </div>
         )
     }
+
 
     // Если уже отправил запрос — показать статус ожидания
     if (payment?.status === 'pending') {

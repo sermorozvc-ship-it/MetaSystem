@@ -285,7 +285,9 @@ export default function OnboardingPage() {
                 <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-deep-dark via-deep-dark/95 to-transparent">
                     <div className="max-w-2xl mx-auto">
                         <button
-                            onClick={() => router.push(courseStarted ? '/dashboard' : '/waiting-room')}
+                            onClick={() => {
+                                window.location.href = courseStarted ? '/dashboard' : '/waiting-room'
+                            }}
                             className="glass-button w-full flex items-center justify-center gap-2 py-4 text-lg"
                         >
                             {courseStarted ? 'Начать курс' : 'Перейти в зал ожидания'}

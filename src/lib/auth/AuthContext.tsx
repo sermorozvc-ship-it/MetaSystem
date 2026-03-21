@@ -32,16 +32,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let isMounted = true
 
         // 1. Сначала мгновенно читаем сессию из localStorage (синхронно)
-        //    Это устраняет "мигание" и не нужен F5
+        //    Снимаем isLoading сразу — страницы рендерятся без задержки
         supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-            if (!isMounted || hasResolved.current) return
+            if (!isMounted) return
             if (initialSession?.user) {
                 setSession(initialSession)
                 setUser(initialSession.user)
                 setCachedUser(initialSession.user)
+                // Снимаем лоадер немедленно — данные из localStorage уже достаточно надёжны
+                if (!hasResolved.current) {
+                    hasResolved.current = true
+                    setIsLoading(false)
+                }
             }
-            // Не снимаем isLoading здесь — ждём onAuthStateChange для точности
+            // Если сессии нет — ждём onAuthStateChange (он сработает быстро)
         })
+
 
         // 2. Подписка на изменения состояния (главный источник правды)
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
