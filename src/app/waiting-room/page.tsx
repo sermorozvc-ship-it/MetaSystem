@@ -2,13 +2,49 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Flame, Calendar, Clock, ArrowRight } from 'lucide-react'
-import { getNextMondayStart, getTimeUntilStart, formatDate, isCohortActive } from '@/lib/utils/cohort'
+import { Flame, Calendar, Clock, ArrowRight, Loader2 } from 'lucide-react'
+import { getNextFutureMondayStart, getTimeUntilStart, formatDate, isCohortActive, getNextMondayStart } from '@/lib/utils/cohort'
+import { useAuth } from '@/lib/auth'
+import { getUserPayment } from '@/lib/services/payment'
 
 export default function WaitingRoomPage() {
     const router = useRouter()
-    const [cohortStart] = useState(() => getNextMondayStart())
+    const { user, isLoading: authLoading } = useAuth()
+    const [cohortStart, setCohortStart] = useState(() => getNextFutureMondayStart())
     const [timeLeft, setTimeLeft] = useState(getTimeUntilStart(cohortStart))
+    const [isLoading, setIsLoading] = useState(true)
+
+    // Проверка авторизации и оплаты
+    useEffect(() => {
+        if (authLoading) return
+
+        if (!user) {
+            router.replace('/auth')
+            return
+        }
+
+        const checkAccess = async () => {
+            try {
+                const payment = await getUserPayment()
+                if (!payment || payment.status !== 'confirmed') {
+                    router.replace('/payment')
+                    return
+                }
+
+                // Если когорта активна — на dashboard
+                const start = getNextMondayStart()
+                if (isCohortActive(start)) {
+                    router.replace('/dashboard')
+                    return
+                }
+            } catch (e) {
+                console.error('[WaitingRoom] Error:', e)
+            } finally {
+                setIsLoading(false)
+            }
+        }
+        checkAccess()
+    }, [user, authLoading, router])
 
     // Обновление таймера каждую секунду
     useEffect(() => {
@@ -25,7 +61,13 @@ export default function WaitingRoomPage() {
         return () => clearInterval(interval)
     }, [cohortStart, router])
 
-    const formatNumber = (n: number) => n.toString().padStart(2, '0')
+    if (authLoading || isLoading) {
+        return (
+            <div className="min-h-screen bg-deep-dark flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-meta-orange animate-spin" />
+            </div>
+        )
+    }
 
     return (
         <div className="min-h-screen bg-deep-dark flex items-center justify-center p-6">
@@ -54,7 +96,7 @@ export default function WaitingRoomPage() {
                     </div>
 
                     <p className="text-2xl font-medium text-white mb-8">
-                        {formatDate(cohortStart)}
+                        {formatDate(cohortStart)}, 07:00
                     </p>
 
                     {/* Timer */}
@@ -95,12 +137,12 @@ export default function WaitingRoomPage() {
                     </div>
                 </div>
 
-                {/* Demo Button (для тестирования) */}
+                {/* View onboarding */}
                 <button
-                    onClick={() => router.push('/dashboard')}
+                    onClick={() => router.push('/onboarding')}
                     className="glass-button-secondary text-sm"
                 >
-                    Демо-режим (пропустить ожидание)
+                    Посмотреть расписание курса
                 </button>
             </div>
         </div>
@@ -119,3 +161,4 @@ function TimeUnit({ value, label }: { value: number; label: string }) {
         </div>
     )
 }
+

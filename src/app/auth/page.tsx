@@ -1,14 +1,28 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Flame, Mail, Lock, User, Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 
 type AuthMode = 'login' | 'register'
 
 export default function AuthPage() {
-    const [mode, setMode] = useState<AuthMode>('login')
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen bg-deep-dark flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-meta-orange animate-spin" />
+            </div>
+        }>
+            <AuthContent />
+        </Suspense>
+    )
+}
+
+function AuthContent() {
+    const searchParams = useSearchParams()
+    const initialMode = searchParams.get('mode') === 'register' ? 'register' : 'login'
+    const [mode, setMode] = useState<AuthMode>(initialMode)
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [fullName, setFullName] = useState('')
@@ -22,7 +36,7 @@ export default function AuthPage() {
 
     useEffect(() => {
         if (!authLoading && user) {
-            router.replace('/dashboard')
+            router.replace('/payment')
         }
     }, [user, authLoading, router])
 
@@ -38,7 +52,7 @@ export default function AuthPage() {
                 if (error) {
                     setError(getErrorMessage(error.message))
                 } else {
-                    router.push('/dashboard')
+                    router.push('/payment')
                 }
             } else {
                 if (password.length < 6) {
@@ -210,13 +224,13 @@ export default function AuthPage() {
                         </button>
                     </form>
 
-                    {/* Demo Mode */}
+                    {/* Back to landing */}
                     <div className="mt-6 pt-6 border-t border-white/10">
                         <button
-                            onClick={() => router.push('/dashboard')}
+                            onClick={() => router.push('/')}
                             className="glass-button-secondary w-full text-sm"
                         >
-                            Демо-режим (без регистрации)
+                            ← На главную
                         </button>
                     </div>
                 </div>

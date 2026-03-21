@@ -3,12 +3,13 @@
  */
 
 /**
- * Получить дату старта когорты (ближайший понедельник).
- * Если сегодня понедельник и до 00:00, возвращает сегодня.
+ * Получить дату старта когорты (ближайший понедельник в 07:00).
+ * Если сегодня понедельник и ещё до 07:00, возвращает сегодня 07:00.
+ * Если понедельник и уже после 07:00, когорта уже началась — возвращает сегодня 07:00.
  */
 export function getNextMondayStart(): Date {
-    const today = new Date()
-    const dayOfWeek = today.getDay() // 0 = воскресенье, 1 = понедельник
+    const now = new Date()
+    const dayOfWeek = now.getDay() // 0 = воскресенье, 1 = понедельник
 
     let daysUntilMonday: number
 
@@ -16,16 +17,44 @@ export function getNextMondayStart(): Date {
         // Воскресенье -> следующий понедельник через 1 день
         daysUntilMonday = 1
     } else if (dayOfWeek === 1) {
-        // Понедельник -> сегодня
+        // Понедельник -> сегодня (когорта стартует/стартовала в 07:00)
         daysUntilMonday = 0
     } else {
         // Вторник-суббота -> до следующего понедельника
         daysUntilMonday = 8 - dayOfWeek
     }
 
-    const nextMonday = new Date(today)
-    nextMonday.setDate(today.getDate() + daysUntilMonday)
-    nextMonday.setHours(0, 0, 0, 0)
+    const nextMonday = new Date(now)
+    nextMonday.setDate(now.getDate() + daysUntilMonday)
+    nextMonday.setHours(7, 0, 0, 0) // Старт в 07:00 по местному времени
+
+    return nextMonday
+}
+
+/**
+ * Получить дату старта СЛЕДУЮЩЕЙ когорты (всегда будущий понедельник 07:00).
+ * Используется для таймера ожидания — всегда показывает будущую дату.
+ */
+export function getNextFutureMondayStart(): Date {
+    const now = new Date()
+    const dayOfWeek = now.getDay()
+
+    let daysUntilMonday: number
+
+    if (dayOfWeek === 0) {
+        daysUntilMonday = 1
+    } else if (dayOfWeek === 1) {
+        // Если понедельник и уже после 07:00, следующий понедельник через 7 дней
+        const todayAt7 = new Date(now)
+        todayAt7.setHours(7, 0, 0, 0)
+        daysUntilMonday = now >= todayAt7 ? 7 : 0
+    } else {
+        daysUntilMonday = 8 - dayOfWeek
+    }
+
+    const nextMonday = new Date(now)
+    nextMonday.setDate(now.getDate() + daysUntilMonday)
+    nextMonday.setHours(7, 0, 0, 0)
 
     return nextMonday
 }

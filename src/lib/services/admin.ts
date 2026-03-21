@@ -42,6 +42,19 @@ export interface DayReportWithUser {
     user?: { full_name: string; email: string }
 }
 
+export interface AdminPayment {
+    id: string
+    user_id: string
+    amount: number
+    currency: string
+    status: 'pending' | 'confirmed' | 'refunded'
+    payment_method: string
+    created_at: string
+    confirmed_at: string | null
+    cohort_start: string | null
+    user?: { full_name: string; email: string }
+}
+
 // --- SERVICES ---
 
 // Check if current user is admin
@@ -477,18 +490,22 @@ export async function getAdminStats(): Promise<{
     blockedUsers: number
     pendingReports: number
     completedToday: number
+    pendingPayments: number
+    confirmedPayments: number
 }> {
     const supabase = createClient()
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    // Параллельно выполняем все 5 запросов вместо последовательных await
-    const [totalR, activeR, blockedR, pendingR, completedR] = await Promise.all([
+    // Параллельно выполняем все запросы
+    const [totalR, activeR, blockedR, pendingR, completedR, pendingPayR, confirmedPayR] = await Promise.all([
         supabase.from('profiles').select('*', { count: 'exact', head: true }),
         supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', false),
         supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', true),
         supabase.from('day_reports').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-        supabase.from('user_progress').select('*', { count: 'exact', head: true }).eq('completed', true).gte('completed_at', today.toISOString())
+        supabase.from('user_progress').select('*', { count: 'exact', head: true }).eq('completed', true).gte('completed_at', today.toISOString()),
+        supabase.from('payments').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+        supabase.from('payments').select('*', { count: 'exact', head: true }).eq('status', 'confirmed'),
     ])
 
     return {
@@ -497,5 +514,90 @@ export async function getAdminStats(): Promise<{
         blockedUsers: blockedR.count || 0,
         pendingReports: pendingR.count || 0,
         completedToday: completedR.count || 0,
+        pendingPayments: pendingPayR.count || 0,
+        confirmedPayments: confirmedPayR.count || 0,
     }
+}
+
+// --- PAYMENT MANAGEMENT ---
+
+// Get all pending payments
+export async function getPendingPayments(): Promise<AdminPayment[]> {
+    const supabase = createClient()
+
+    const { data, error } = await supabase
+        .from('payments')
+        .select('*, user:profiles(full_name, email)')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+
+    if (error) {
+        console.error('[Admin] Error fetching pending payments:', error)
+        return []
+    }
+
+    return (data || []).map((p: any) => ({
+        ...p,
+        user: p.user
+    }))
+}
+
+// Get all payments
+export async function getAllPayments(): Promise<AdminPayment[]> {
+    const supabase = createClient()
+
+    const { data, error } = await supabase
+        .from('payments')
+        .select('*, user:profiles(full_name, email)')
+        .order('created_at', { ascending: false })
+
+    if (error) {
+        console.error('[Admin] Error fetching all payments:', error)
+        return []
+    }
+
+    return (data || []).map((p: any) => ({
+        ...p,
+        user: p.user
+    }))
+}
+
+// Confirm a payment
+export async function confirmPayment(paymentId: string): Promise<{ success: boolean; error?: string }> {
+    const supabase = createClient()
+    const user = await safeGetUser()
+
+    if (!user) return { success: false, error: 'Не авторизован' }
+
+    const { error } = await supabase
+        .from('payments')
+        .update({
+            status: 'confirmed',
+            confirmed_by: user.id,
+            confirmed_at: new Date().toISOString(),
+        })
+        .eq('id', paymentId)
+
+    if (error) {
+        console.error('[Admin] Error confirming payment:', error)
+        return { success: false, error: error.message }
+    }
+
+    return { success: true }
+}
+
+// Refund a payment
+export async function refundPayment(paymentId: string): Promise<{ success: boolean; error?: string }> {
+    const supabase = createClient()
+
+    const { error } = await supabase
+        .from('payments')
+        .update({ status: 'refunded' })
+        .eq('id', paymentId)
+
+    if (error) {
+        return { success: false, error: error.message }
+    }
+
+    return { success: true }
 }

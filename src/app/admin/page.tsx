@@ -23,7 +23,9 @@ import {
     Flame,
     ArrowLeft,
     RefreshCw,
-    Mail
+    Mail,
+    CreditCard,
+    DollarSign
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { createClient, clearUserCache } from '@/lib/supabase/client'
@@ -40,14 +42,19 @@ import {
     updateReportStatus,
     deleteReport,
     getAdminStats,
+    getPendingPayments,
+    getAllPayments,
+    confirmPayment,
+    refundPayment,
     UserWithProgress,
     DayReportWithUser,
-    AdminMessage
+    AdminMessage,
+    AdminPayment
 } from '@/lib/services/admin'
 import { courseData } from '@/lib/data/courseData'
 import { getDetailedUserProgress } from '@/lib/services/progress'
 
-type Tab = 'users' | 'reports' | 'messages'
+type Tab = 'users' | 'reports' | 'messages' | 'payments'
 
 export default function AdminPage() {
     const { user, signOut, isLoading: authLoading } = useAuth()
@@ -62,13 +69,16 @@ export default function AdminPage() {
     const [users, setUsers] = useState<UserWithProgress[]>([])
     const [allReports, setAllReports] = useState<DayReportWithUser[]>([])
     const [allMessages, setAllMessages] = useState<AdminMessage[]>([])
+    const [payments, setPayments] = useState<AdminPayment[]>([])
     const [userProgressDetails, setUserProgressDetails] = useState<any[]>([])
     const [stats, setStats] = useState({
         totalUsers: 0,
         activeUsers: 0,
         blockedUsers: 0,
         pendingReports: 0,
-        completedToday: 0
+        completedToday: 0,
+        pendingPayments: 0,
+        confirmedPayments: 0
     })
 
     // Selected user states
@@ -137,11 +147,12 @@ export default function AdminPage() {
                 setIsAdminUser(true)
 
                 // Load Data IN PARALLEL via Promise.allSettled to prevent cascade hanging
-                const [usersResult, statsResult, reportsResult, messagesResult] = await Promise.allSettled([
+                const [usersResult, statsResult, reportsResult, messagesResult, paymentsResult] = await Promise.allSettled([
                     getAllUsers(),
                     getAdminStats(),
                     getAllReports(),
-                    getAllMessages()
+                    getAllMessages(),
+                    getAllPayments()
                 ])
 
                 if (mounted) {
@@ -149,12 +160,14 @@ export default function AdminPage() {
                     setStats(statsResult.status === 'fulfilled' ? statsResult.value : stats)
                     setAllReports(reportsResult.status === 'fulfilled' ? reportsResult.value : [])
                     setAllMessages(messagesResult.status === 'fulfilled' ? messagesResult.value : [])
+                    setPayments(paymentsResult.status === 'fulfilled' ? paymentsResult.value : [])
 
                     // Log errors for failed requests
                     if (usersResult.status === 'rejected') console.error('Users fetch error:', usersResult.reason)
                     if (statsResult.status === 'rejected') console.error('Stats fetch error:', statsResult.reason)
                     if (reportsResult.status === 'rejected') console.error('Reports fetch error:', reportsResult.reason)
                     if (messagesResult.status === 'rejected') console.error('Messages fetch error:', messagesResult.reason)
+                    if (paymentsResult.status === 'rejected') console.error('Payments fetch error:', paymentsResult.reason)
 
                     const usersCount = usersResult.status === 'fulfilled' ? usersResult.value.length : 0
                     const reportsCount = reportsResult.status === 'fulfilled' ? reportsResult.value.length : 0
@@ -183,16 +196,18 @@ export default function AdminPage() {
     const refreshData = async () => {
         setIsLoading(true)
         try {
-            const [usersResult, statsResult, reportsResult, messagesResult] = await Promise.allSettled([
+            const [usersResult, statsResult, reportsResult, messagesResult, paymentsResult] = await Promise.allSettled([
                 getAllUsers(),
                 getAdminStats(),
                 getAllReports(),
-                getAllMessages()
+                getAllMessages(),
+                getAllPayments()
             ])
             setUsers(usersResult.status === 'fulfilled' ? usersResult.value : [])
             setStats(statsResult.status === 'fulfilled' ? statsResult.value : stats)
             setAllReports(reportsResult.status === 'fulfilled' ? reportsResult.value : [])
             setAllMessages(messagesResult.status === 'fulfilled' ? messagesResult.value : [])
+            setPayments(paymentsResult.status === 'fulfilled' ? paymentsResult.value : [])
 
             const usersCount = usersResult.status === 'fulfilled' ? usersResult.value.length : 0
             const reportsCount = reportsResult.status === 'fulfilled' ? reportsResult.value.length : 0
@@ -381,17 +396,22 @@ export default function AdminPage() {
             ) : (
                 <>
                     <div className="p-4 md:p-8">
-                        <div className="flex md:grid md:grid-cols-5 gap-3 md:gap-4 mb-6 md:mb-8 overflow-x-auto pb-2 md:pb-0 -mx-4 px-4 md:mx-0 md:px-0 snap-x snap-mandatory">
+                        <div className="flex md:grid md:grid-cols-5 gap-3 md:gap-4 mb-4 overflow-x-auto pb-2 md:pb-0 -mx-4 px-4 md:mx-0 md:px-0 snap-x snap-mandatory">
                             <StatCard icon={Users} label="Всего" value={stats.totalUsers} color="blue" />
                             <StatCard icon={TrendingUp} label="Активных" value={stats.activeUsers} color="green" />
                             <StatCard icon={Ban} label="Заблокиров." value={stats.blockedUsers} color="red" />
                             <StatCard icon={FileCheck} label="Ожидают" value={stats.pendingReports} color="orange" />
                             <StatCard icon={CheckCircle} label="Завершили" value={stats.completedToday} color="purple" />
                         </div>
+                        <div className="flex md:grid md:grid-cols-2 gap-3 md:gap-4 mb-6 md:mb-8 overflow-x-auto pb-2 md:pb-0 -mx-4 px-4 md:mx-0 md:px-0 snap-x snap-mandatory">
+                            <StatCard icon={CreditCard} label="Ожидают оплаты" value={stats.pendingPayments} color="orange" />
+                            <StatCard icon={DollarSign} label="Оплачено" value={stats.confirmedPayments} color="green" />
+                        </div>
 
                         <div className="flex gap-2 mb-4 md:mb-6 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0 no-scrollbar">
                             {[
                                 { id: 'users', label: 'Пользователи', shortLabel: 'Пользов.', icon: Users },
+                                { id: 'payments', label: 'Оплаты', shortLabel: 'Оплаты', icon: CreditCard },
                                 { id: 'reports', label: 'Отчёты', shortLabel: 'Отчёты', icon: FileCheck },
                                 { id: 'messages', label: 'Сообщения', shortLabel: 'Сообщ.', icon: MessageSquare }
                             ].map(tab => (
@@ -517,6 +537,81 @@ export default function AdminPage() {
                                         <p className="text-xs text-gray-400 line-clamp-2 italic">{report.comment || 'Без комментария'}</p>
                                     </div>
                                 ))}
+                            </div>
+                        )}
+
+                        {activeTab === 'payments' && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 animate-fade-in">
+                                {payments.filter(p =>
+                                    !searchQuery ||
+                                    p.user?.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    p.user?.email?.toLowerCase().includes(searchQuery.toLowerCase())
+                                ).map(payment => (
+                                    <div key={payment.id} className="glass-card p-5">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${
+                                                payment.status === 'pending' ? 'bg-yellow-500/10 text-yellow-400' :
+                                                payment.status === 'confirmed' ? 'bg-green-500/10 text-green-400' :
+                                                'bg-red-500/10 text-red-400'
+                                            }`}>
+                                                {payment.status === 'pending' ? 'Ожидание' : payment.status === 'confirmed' ? 'Подтверждена' : 'Возврат'}
+                                            </span>
+                                            <span className="text-[10px] text-gray-500 font-bold">
+                                                {new Date(payment.created_at).toLocaleDateString('ru-RU')}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-meta-orange to-meta-orange-600 flex items-center justify-center text-white text-sm font-bold">
+                                                {(payment.user?.full_name || payment.user?.email || 'U').charAt(0).toUpperCase()}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-bold text-white truncate">{payment.user?.full_name || 'Без имени'}</p>
+                                                <p className="text-xs text-gray-500 truncate">{payment.user?.email}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center justify-between mb-4">
+                                            <span className="text-2xl font-bold text-white">{payment.amount} <span className="text-sm text-gray-400">{payment.currency}</span></span>
+                                            <span className="text-xs text-gray-500">{payment.payment_method}</span>
+                                        </div>
+                                        {payment.status === 'pending' && (
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={async () => {
+                                                        const result = await confirmPayment(payment.id)
+                                                        if (result.success) await refreshData()
+                                                        else alert(result.error || 'Ошибка')
+                                                    }}
+                                                    className="flex-1 bg-green-500 text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 hover:bg-green-600 transition-colors"
+                                                >
+                                                    <CheckCircle className="w-4 h-4" />
+                                                    Подтвердить
+                                                </button>
+                                                <button
+                                                    onClick={async () => {
+                                                        if (!confirm('Выполнить возврат оплаты?')) return
+                                                        const result = await refundPayment(payment.id)
+                                                        if (result.success) await refreshData()
+                                                        else alert(result.error || 'Ошибка')
+                                                    }}
+                                                    className="bg-red-500/10 text-red-400 py-2.5 px-4 rounded-xl font-bold text-sm hover:bg-red-500/20 transition-colors"
+                                                >
+                                                    <XCircle className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        )}
+                                        {payment.status === 'confirmed' && payment.confirmed_at && (
+                                            <p className="text-xs text-gray-500">
+                                                Подтверждена {new Date(payment.confirmed_at).toLocaleString('ru-RU')}
+                                            </p>
+                                        )}
+                                    </div>
+                                ))}
+                                {payments.length === 0 && (
+                                    <div className="col-span-full text-center py-12">
+                                        <CreditCard className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+                                        <p className="text-gray-500">Оплат пока нет</p>
+                                    </div>
+                                )}
                             </div>
                         )}
 
