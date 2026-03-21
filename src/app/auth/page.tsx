@@ -99,8 +99,15 @@ function AuthContent() {
         if (message.includes('Invalid login credentials')) return 'Неверный email или пароль'
         if (message.includes('Email not confirmed')) return 'Email не подтверждён. Проверьте почту.'
         if (message.includes('User already registered')) return 'Пользователь с таким email уже зарегистрирован'
+        if (message.includes('email rate limit exceeded') || message.includes('rate limit')) {
+            return 'Слишком много попыток. Подождите несколько минут и попробуйте снова.'
+        }
+        if (message.includes('Password should be at least')) return 'Пароль должен содержать минимум 6 символов'
+        if (message.includes('Unable to validate email address')) return 'Некорректный email адрес'
+        if (message.includes('signup_disabled')) return 'Регистрация временно отключена'
         return message
     }
+
 
     // ── ЭКРАН ПЕРЕХОДА ──────────────────────────────────────────────────
     if (isRedirecting) {
