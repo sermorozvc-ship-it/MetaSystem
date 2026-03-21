@@ -31,7 +31,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         let isMounted = true
 
-        // 1. Подписка на изменения состояния
+        // 1. Сначала мгновенно читаем сессию из localStorage (синхронно)
+        //    Это устраняет "мигание" и не нужен F5
+        supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+            if (!isMounted || hasResolved.current) return
+            if (initialSession?.user) {
+                setSession(initialSession)
+                setUser(initialSession.user)
+                setCachedUser(initialSession.user)
+            }
+            // Не снимаем isLoading здесь — ждём onAuthStateChange для точности
+        })
+
+        // 2. Подписка на изменения состояния (главный источник правды)
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (event, newSession) => {
                 if (!isMounted || isLoggingOut.current) return
@@ -81,11 +93,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
         )
 
+        // 3. Таймаут-страховка: если onAuthStateChange не сработал за 3с — снимаем лоадер
+        const timeout = setTimeout(() => {
+            if (!hasResolved.current && isMounted) {
+                console.warn('[Auth] Timeout — forcing isLoading=false')
+                hasResolved.current = true
+                setIsLoading(false)
+            }
+        }, 3000)
+
         return () => {
             isMounted = false
             subscription.unsubscribe()
+            clearTimeout(timeout)
         }
     }, [supabase])
+
 
 
     const signUp = async (email: string, password: string, fullName?: string) => {
