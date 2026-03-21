@@ -27,6 +27,8 @@ function AuthContent() {
     const [password, setPassword] = useState('')
     const [fullName, setFullName] = useState('')
     const [showPassword, setShowPassword] = useState(false)
+    const [confirmPassword, setConfirmPassword] = useState('')
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false)
     const [error, setError] = useState('')
     const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -66,6 +68,11 @@ function AuthContent() {
             } else {
                 if (password.length < 6) {
                     setError('Пароль должен содержать минимум 6 символов')
+                    setIsSubmitting(false)
+                    return
+                }
+                if (password !== confirmPassword) {
+                    setError('Пароли не совпадают')
                     setIsSubmitting(false)
                     return
                 }
@@ -249,6 +256,45 @@ function AuthContent() {
                                 </button>
                             </div>
                         </div>
+
+                        {/* Confirm Password (Register only) */}
+                        {mode === 'register' && (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-400 mb-2">
+                                    Повторите пароль
+                                </label>
+                                <div className="relative">
+                                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+                                    <input
+                                        type={showConfirmPassword ? 'text' : 'password'}
+                                        value={confirmPassword}
+                                        onChange={(e) => setConfirmPassword(e.target.value)}
+                                        placeholder="••••••••"
+                                        className={`glass-input w-full pl-12 pr-12 ${
+                                            confirmPassword && confirmPassword !== password
+                                                ? 'border-red-500/60 focus:border-red-500'
+                                                : confirmPassword && confirmPassword === password
+                                                ? 'border-green-500/60'
+                                                : ''
+                                        }`}
+                                        required
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+                                    >
+                                        {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                    </button>
+                                </div>
+                                {confirmPassword && confirmPassword !== password && (
+                                    <p className="text-xs text-red-400 mt-1.5 ml-1">Пароли не совпадают</p>
+                                )}
+                                {confirmPassword && confirmPassword === password && (
+                                    <p className="text-xs text-green-400 mt-1.5 ml-1">✓ Пароли совпадают</p>
+                                )}
+                            </div>
+                        )}
 
                         {/* Submit */}
                         <button
