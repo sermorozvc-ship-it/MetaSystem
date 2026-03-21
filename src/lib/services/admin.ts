@@ -546,21 +546,40 @@ export async function getPendingPayments(): Promise<AdminPayment[]> {
 export async function getAllPayments(): Promise<AdminPayment[]> {
     const supabase = createClient()
 
-    const { data, error } = await supabase
+    // Шаг 1: Получаем все платежи
+    const { data: payments, error } = await supabase
         .from('payments')
-        .select('*, user:profiles(full_name, email)')
+        .select('*')
         .order('created_at', { ascending: false })
 
     if (error) {
-        console.error('[Admin] Error fetching all payments:', error)
+        console.error('[Admin] Error fetching payments:', error)
         return []
     }
 
-    return (data || []).map((p: any) => ({
+    if (!payments || payments.length === 0) return []
+
+    // Шаг 2: Получаем профили отдельным запросом по user_id
+    const userIds = [...new Set(payments.map((p: any) => p.user_id))]
+
+    const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .in('id', userIds)
+
+    if (profilesError) {
+        console.error('[Admin] Error fetching profiles for payments:', profilesError)
+    }
+
+    // Шаг 3: Объединяем payment + profile
+    const profilesMap = new Map((profiles || []).map((p: any) => [p.id, p]))
+
+    return payments.map((p: any) => ({
         ...p,
-        user: p.user
+        user: profilesMap.get(p.user_id) || null
     }))
 }
+
 
 // Confirm a payment
 export async function confirmPayment(paymentId: string): Promise<{ success: boolean; error?: string }> {
