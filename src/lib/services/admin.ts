@@ -16,6 +16,9 @@ export interface UserWithProgress extends UserProfile {
     completed_days: number
     total_reports: number
     last_activity: string | null
+    cohort_start: string | null
+    payment_status: 'none' | 'pending' | 'confirmed' | 'refunded'
+    payment_created_at: string | null
 }
 
 export interface AdminMessage {
@@ -170,18 +173,23 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
         return []
     }
 
-    // 2. Параллельная загрузка прогресса и отчётов
+    // 2. Параллельная загрузка прогресса, отчётов и платежей
     let allProgress: any[] = []
     let allReports: any[] = []
+    let allPayments: any[] = []
 
     try {
-        const progressResult = await supabase.from('user_progress').select('user_id, completed').eq('completed', true)
-        const reportsResult = await supabase.from('day_reports').select('user_id, created_at').order('created_at', { ascending: false })
+        const [progressResult, reportsResult, paymentsResult] = await Promise.all([
+            supabase.from('user_progress').select('user_id, completed').eq('completed', true),
+            supabase.from('day_reports').select('user_id, created_at').order('created_at', { ascending: false }),
+            supabase.from('payments').select('user_id, status, cohort_start, created_at').order('created_at', { ascending: false })
+        ])
 
         allProgress = progressResult.data || []
         allReports = reportsResult.data || []
+        allPayments = paymentsResult.data || []
     } catch (e) {
-        console.warn('[Admin] Progress/reports fetch failed:', e)
+        console.warn('[Admin] Progress/reports/payments fetch failed:', e)
     }
 
     // Aggregate
@@ -198,13 +206,29 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
         reportsMap.set(r.user_id, stats)
     })
 
+    // Берём последний (свежий) платёж каждого пользователя
+    const paymentsMap = new Map<string, { status: string, cohort_start: string | null, created_at: string }>()
+    allPayments.forEach((p: any) => {
+        if (!paymentsMap.has(p.user_id)) {
+            paymentsMap.set(p.user_id, {
+                status: p.status,
+                cohort_start: p.cohort_start,
+                created_at: p.created_at
+            })
+        }
+    })
+
     const usersWithProgress = profiles.map((profile: any) => {
         const reportStats = reportsMap.get(profile.id)
+        const paymentInfo = paymentsMap.get(profile.id)
         return {
             ...profile,
             completed_days: progressMap.get(profile.id) || 0,
             total_reports: reportStats?.count || 0,
-            last_activity: reportStats?.last || profile.created_at
+            last_activity: reportStats?.last || profile.created_at,
+            cohort_start: paymentInfo?.cohort_start || null,
+            payment_status: paymentInfo?.status || 'none',
+            payment_created_at: paymentInfo?.created_at || null
         }
     })
 

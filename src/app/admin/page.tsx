@@ -25,7 +25,9 @@ import {
     RefreshCw,
     Mail,
     CreditCard,
-    DollarSign
+    DollarSign,
+    Calendar,
+    CalendarCheck
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { createClient, clearUserCache } from '@/lib/supabase/client'
@@ -484,6 +486,48 @@ export default function AdminPage() {
                                                 </div>
                                             </div>
                                         </div>
+
+                                        {/* Блок оплаты и старта — показываем если есть платёж */}
+                                        {(userItem.payment_status === 'confirmed' || userItem.payment_status === 'pending') && (
+                                            <div className={`mt-3 rounded-xl p-3 border ${
+                                                userItem.payment_status === 'confirmed'
+                                                    ? 'bg-green-500/5 border-green-500/20'
+                                                    : 'bg-yellow-500/5 border-yellow-500/20'
+                                            }`}>
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <CreditCard className={`w-3 h-3 ${
+                                                            userItem.payment_status === 'confirmed' ? 'text-green-400' : 'text-yellow-400'
+                                                        }`} />
+                                                        <span className={`text-[10px] font-black uppercase ${
+                                                            userItem.payment_status === 'confirmed' ? 'text-green-400' : 'text-yellow-400'
+                                                        }`}>
+                                                            {userItem.payment_status === 'confirmed' ? 'Оплачено' : 'Ожидает оплаты'}
+                                                        </span>
+                                                    </div>
+                                                    {userItem.payment_created_at && (
+                                                        <span className="text-[10px] text-gray-500">
+                                                            {new Date(userItem.payment_created_at).toLocaleDateString('ru-RU')}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {userItem.cohort_start && (
+                                                    <div className="flex items-center gap-1.5 mt-2">
+                                                        <CalendarCheck className="w-3 h-3 text-meta-orange" />
+                                                        <span className="text-[10px] text-gray-300">
+                                                            Старт программы:{' '}
+                                                            <span className="font-bold text-meta-orange">
+                                                                {new Date(userItem.cohort_start + 'T00:00:00').toLocaleDateString('ru-RU', {
+                                                                    day: 'numeric',
+                                                                    month: 'long',
+                                                                    year: 'numeric'
+                                                                })}
+                                                            </span>
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -599,10 +643,26 @@ export default function AdminPage() {
                                                 </button>
                                             </div>
                                         )}
-                                        {payment.status === 'confirmed' && payment.confirmed_at && (
-                                            <p className="text-xs text-gray-500">
-                                                Подтверждена {new Date(payment.confirmed_at).toLocaleString('ru-RU')}
-                                            </p>
+                                        {payment.status === 'confirmed' && (
+                                            <div className="space-y-1.5">
+                                                {payment.confirmed_at && (
+                                                    <p className="text-xs text-gray-500">
+                                                        Подтверждена {new Date(payment.confirmed_at).toLocaleString('ru-RU')}
+                                                    </p>
+                                                )}
+                                                {payment.cohort_start && (
+                                                    <div className="flex items-center gap-1.5">
+                                                        <CalendarCheck className="w-3.5 h-3.5 text-meta-orange" />
+                                                        <span className="text-xs font-bold text-meta-orange">
+                                                            Старт: {new Date(payment.cohort_start + 'T00:00:00').toLocaleDateString('ru-RU', {
+                                                                day: 'numeric',
+                                                                month: 'long',
+                                                                year: 'numeric'
+                                                            })}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                 ))}
