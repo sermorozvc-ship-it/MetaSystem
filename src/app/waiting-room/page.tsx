@@ -1,20 +1,22 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Flame, Calendar, Clock, ArrowRight, Loader2 } from 'lucide-react'
-import { getNextFutureMondayStart, getTimeUntilStart, formatDate, isCohortActive, getNextMondayStart } from '@/lib/utils/cohort'
+import { getTimeUntilStart, formatDate, isCohortActive } from '@/lib/utils/cohort'
 import { useAuth } from '@/lib/auth'
 import { getUserPayment } from '@/lib/services/payment'
 
 export default function WaitingRoomPage() {
     const router = useRouter()
     const { user, isLoading: authLoading } = useAuth()
-    const [cohortStart, setCohortStart] = useState(() => getNextFutureMondayStart())
-    const [timeLeft, setTimeLeft] = useState(getTimeUntilStart(cohortStart))
+    // cohortStart будет установлен из платежа; до загрузки — null
+    const [cohortStart, setCohortStart] = useState<Date | null>(null)
+    const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0, totalSeconds: 0 })
     const [isLoading, setIsLoading] = useState(true)
+    const redirectedRef = useRef(false)
 
-    // Проверка авторизации и оплаты
+    // Проверка авторизации, оплаты и получение точной даты старта из платежа
     useEffect(() => {
         if (authLoading) return
 
@@ -26,17 +28,44 @@ export default function WaitingRoomPage() {
         const checkAccess = async () => {
             try {
                 const payment = await getUserPayment()
+
+                // Нет оплаты или не подтверждена — на страницу оплаты
                 if (!payment || payment.status !== 'confirmed') {
                     window.location.href = '/payment'
                     return
                 }
 
-                const start = getNextMondayStart()
-                if (isCohortActive(start)) {
-                    window.location.href = '/dashboard'
+                // Определяем дату старта: приоритет — cohort_start из платежа
+                let startDate: Date
+
+                if (payment.cohort_start) {
+                    // cohort_start хранится как "YYYY-MM-DD" (дата без времени)
+                    // Добавляем 07:00 UTC+3 (время старта когорты)
+                    startDate = new Date(payment.cohort_start + 'T07:00:00+03:00')
+                } else {
+                    // Fallback: вычисляем ближайший понедельник 07:00
+                    const now = new Date()
+                    const dayOfWeek = now.getDay()
+                    let daysUntilMonday = dayOfWeek === 0 ? 1 : dayOfWeek === 1 ? 0 : 8 - dayOfWeek
+                    startDate = new Date(now)
+                    startDate.setDate(now.getDate() + daysUntilMonday)
+                    startDate.setHours(7, 0, 0, 0)
+                }
+
+                console.log('[WaitingRoom] Cohort start date:', startDate.toISOString())
+
+                // Если дата старта уже наступила — немедленный редирект
+                if (isCohortActive(startDate)) {
+                    console.log('[WaitingRoom] Cohort is already active → redirecting to dashboard')
+                    if (!redirectedRef.current) {
+                        redirectedRef.current = true
+                        window.location.href = '/dashboard'
+                    }
                     return
                 }
-                setCohortStart(start)
+
+                setCohortStart(startDate)
+                setTimeLeft(getTimeUntilStart(startDate))
             } catch (e) {
                 console.error('[WaitingRoom] Error:', e)
             } finally {
@@ -44,17 +73,26 @@ export default function WaitingRoomPage() {
             }
         }
         checkAccess()
-    }, [user, authLoading, router])
+    }, [user, authLoading])
 
-    // Таймер — обновляется каждую секунду
+    // Таймер — обновляется каждую секунду, делает редирект когда дата наступила
     useEffect(() => {
+        if (!cohortStart) return
+
         const interval = setInterval(() => {
-            const newTime = getTimeUntilStart(cohortStart)
-            setTimeLeft(newTime)
+            if (redirectedRef.current) return
+
             if (isCohortActive(cohortStart)) {
+                console.log('[WaitingRoom] Timer reached zero → redirecting to dashboard')
+                redirectedRef.current = true
+                clearInterval(interval)
                 window.location.href = '/dashboard'
+                return
             }
+
+            setTimeLeft(getTimeUntilStart(cohortStart))
         }, 1000)
+
         return () => clearInterval(interval)
     }, [cohortStart])
 
@@ -93,7 +131,7 @@ export default function WaitingRoomPage() {
                     </div>
 
                     <p className="text-lg font-semibold text-white mb-6">
-                        {formatDate(cohortStart)}, 07:00
+                        {cohortStart ? formatDate(cohortStart) : '...'}, 07:00
                     </p>
 
                     {/* Timer — адаптивный */}
