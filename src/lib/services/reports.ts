@@ -130,14 +130,15 @@ export async function uploadReportFiles(
 export async function submitDayReport(
     dayNumber: number,
     files: ReportFile[],
-    comment?: string
+    comment?: string,
+    explicitUserId?: string
 ): Promise<{ success: boolean; error?: string }> {
     const supabase = createClient()
 
-    // Get current user safely
-    const user = await safeGetUser()
+    // Используем явно переданный userId или пытаемся получить текущего пользователя
+    const userId = explicitUserId || (await safeGetUser())?.id
 
-    if (!user) {
+    if (!userId) {
         console.log('No user found, saving to demo mode')
         // For demo mode without auth, save to localStorage
         const demoReports = JSON.parse(localStorage.getItem('demo_reports') || '[]')
@@ -152,13 +153,13 @@ export async function submitDayReport(
         return { success: true }
     }
 
-    console.log('Submitting report to Supabase:', { dayNumber, filesCount: files.length, userId: user.id })
+    console.log('Submitting report to Supabase:', { dayNumber, filesCount: files.length, userId })
 
     try {
         const { data, error } = await supabase
             .from('day_reports')
             .insert({
-                user_id: user.id,
+                user_id: userId,
                 day_number: dayNumber,
                 files,
                 comment,

@@ -58,7 +58,7 @@ export default function DayReportModal({ isOpen, onClose, dayNumber }: DayReport
             }
 
             // Submit the report
-            const result = await submitDayReport(dayNumber, reportFiles, comment || undefined)
+            const result = await submitDayReport(dayNumber, reportFiles, comment || undefined, user?.id)
 
             if (result.success) {
                 setSubmitStatus('success')
