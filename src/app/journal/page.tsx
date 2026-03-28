@@ -35,6 +35,8 @@ export default function JournalPage() {
     const [retryCount, setRetryCount] = useState(0)
     const [uploading, setUploading] = useState<Record<string, boolean>>({})
     const [loadingTooLong, setLoadingTooLong] = useState(false)
+    // Флаг: authLoading завис, игнорируем его при проверке
+    const [authTimedOut, setAuthTimedOut] = useState(false)
 
     const today = new Date().toISOString().split('T')[0]
 
@@ -77,24 +79,29 @@ export default function JournalPage() {
     }, [user])
 
     useEffect(() => {
-        // Если authLoading завис — форсируем загрузку через 5 секунд
-        if (authLoading) {
+        // Если authLoading завис — через 5 сек принудительно загружаем дневник
+        // и выставляем authTimedOut чтобы снять блокировку лоадера
+        if (authLoading && !authTimedOut) {
             const fallback = setTimeout(() => {
-                console.warn('[Journal] authLoading timeout — forcing loadEntries')
+                console.warn('[Journal] authLoading timeout — forcing load')
+                setAuthTimedOut(true)
                 loadEntries()
             }, 5000)
             return () => clearTimeout(fallback)
         }
-        loadEntries()
-    }, [authLoading, loadEntries, retryCount])
+        if (!authLoading) {
+            loadEntries()
+        }
+    }, [authLoading, authTimedOut, loadEntries, retryCount])
 
     // UI таймаут: если загрузка висит > 8 сек — предлагаем обновить страницу
     useEffect(() => {
         setLoadingTooLong(false)
-        if (!authLoading && !isLoading) return
+        const stillLoading = (authLoading && !authTimedOut) || isLoading
+        if (!stillLoading) return
         const timer = setTimeout(() => setLoadingTooLong(true), 8000)
         return () => clearTimeout(timer)
-    }, [authLoading, isLoading, retryCount])
+    }, [authLoading, authTimedOut, isLoading, retryCount])
 
     const handleEdit = (entry: JournalEntry) => {
         setForm({ ...entry })
@@ -203,7 +210,10 @@ export default function JournalPage() {
 
     const getMoodInfo = (mood: number) => moodIcons.find(m => m.value === mood) || moodIcons[2]
 
-    if (authLoading || isLoading) {
+    // Ключевое условие: authLoading учитываем только если он НЕ завис
+    const effectivelyLoading = (authLoading && !authTimedOut) || isLoading
+
+    if (effectivelyLoading) {
         return (
             <div className="min-h-screen bg-deep-dark flex items-center justify-center">
                 <div className="flex flex-col items-center gap-6">
