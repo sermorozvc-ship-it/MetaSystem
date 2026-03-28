@@ -57,7 +57,7 @@ export default function DayReportModal({ isOpen, onClose, dayNumber }: DayReport
                 }))
             }
 
-            // Submit the report
+            // Submit the report — передаём user.id явно через параметр чтобы избежать проблемы с кешем
             const result = await submitDayReport(dayNumber, reportFiles, comment || undefined, user?.id)
 
             if (result.success) {

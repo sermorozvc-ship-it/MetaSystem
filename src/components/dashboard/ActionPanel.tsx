@@ -404,9 +404,7 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: A
                             <div
                                 key={task.id}
                                 onClick={() => {
-                                    if ((task.type === 'tool' || task.type === 'measurement') && selectedDay.hasTool) {
-                                        onOpenTool?.(selectedDay.hasTool)
-                                    } else if (taskDetail) {
+                                    if (taskDetail) {
                                         openModal(
                                             taskDetail.title,
                                             taskDetail.content,

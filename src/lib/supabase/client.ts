@@ -6,7 +6,7 @@ let client: SupabaseClient | undefined
 // Кеш для пользователя — заполняется из AuthContext через setCachedUser()
 let cachedUser: User | null = null
 let userCacheTimestamp = 0
-const USER_CACHE_TTL = 60000  // 1 минута — кеш актуален долго
+const USER_CACHE_TTL = 10000  // 10 секунд — быстрая инвалидация при смене аккаунта
 
 /**
  * Внутри-табовый мьютекс для Supabase Auth.

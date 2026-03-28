@@ -88,7 +88,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                             await supabase.from('profiles').insert({
                                 id: newSession.user.id,
                                 email: newSession.user.email,
-                                role: 'client',
+                                full_name: newSession.user.user_metadata?.full_name || null,
+                                role: 'user',  // 'user' | 'admin' | 'curator' — 'client' не существует в check constraint!
                                 is_blocked: false
                             })
                         }

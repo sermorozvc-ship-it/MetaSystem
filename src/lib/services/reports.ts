@@ -8,57 +8,39 @@ async function compressImage(file: File, maxWidth = 1200, quality = 0.7): Promis
 
     return new Promise((resolve) => {
         const reader = new FileReader()
-        
-        reader.onerror = () => {
-            console.warn('FileReader error, returning original file')
-            resolve(file)
-        }
-        
         reader.readAsDataURL(file)
         reader.onload = (event) => {
             const img = new Image()
-            
-            img.onerror = () => {
-                console.warn('Image load error, returning original file')
-                resolve(file)
-            }
-            
-            img.onload = () => {
-                try {
-                    const canvas = document.createElement('canvas')
-                    let width = img.width
-                    let height = img.height
-
-                    // Ресайз
-                    if (width > maxWidth) {
-                        height = (maxWidth / width) * height
-                        width = maxWidth
-                    }
-
-                    canvas.width = width
-                    canvas.height = height
-
-                    const ctx = canvas.getContext('2d')
-                    ctx?.drawImage(img, 0, 0, width, height)
-
-                    canvas.toBlob(
-                        (blob) => {
-                            if (blob) {
-                                resolve(new File([blob], file.name, { type: 'image/jpeg' }))
-                            } else {
-                                resolve(file)
-                            }
-                        },
-                        'image/jpeg',
-                        quality
-                    )
-                } catch (err) {
-                    console.warn('Canvas processing error, returning original file', err)
-                    resolve(file)
-                }
-            }
-            
             img.src = event.target?.result as string
+            img.onload = () => {
+                const canvas = document.createElement('canvas')
+                let width = img.width
+                let height = img.height
+
+                // Ресайз
+                if (width > maxWidth) {
+                    height = (maxWidth / width) * height
+                    width = maxWidth
+                }
+
+                canvas.width = width
+                canvas.height = height
+
+                const ctx = canvas.getContext('2d')
+                ctx?.drawImage(img, 0, 0, width, height)
+
+                canvas.toBlob(
+                    (blob) => {
+                        if (blob) {
+                            resolve(new File([blob], file.name, { type: 'image/jpeg' }))
+                        } else {
+                            resolve(file)
+                        }
+                    },
+                    'image/jpeg',
+                    quality
+                )
+            }
         }
     })
 }
@@ -131,14 +113,21 @@ export async function submitDayReport(
     dayNumber: number,
     files: ReportFile[],
     comment?: string,
-    explicitUserId?: string
+    userId?: string
 ): Promise<{ success: boolean; error?: string }> {
     const supabase = createClient()
 
-    // Используем явно переданный userId или пытаемся получить текущего пользователя
-    const userId = explicitUserId || (await safeGetUser())?.id
+    // Используем userId если передан явно (из useAuth), иначе через safeGetUser
+    let effectiveUserId = userId
 
-    if (!userId) {
+    if (!effectiveUserId) {
+        const user = await safeGetUser()
+        if (user) {
+            effectiveUserId = user.id
+        }
+    }
+
+    if (!effectiveUserId) {
         console.log('No user found, saving to demo mode')
         // For demo mode without auth, save to localStorage
         const demoReports = JSON.parse(localStorage.getItem('demo_reports') || '[]')
@@ -153,13 +142,13 @@ export async function submitDayReport(
         return { success: true }
     }
 
-    console.log('Submitting report to Supabase:', { dayNumber, filesCount: files.length, userId })
+    console.log('Submitting report to Supabase:', { dayNumber, filesCount: files.length, userId: effectiveUserId })
 
     try {
         const { data, error } = await supabase
             .from('day_reports')
             .insert({
-                user_id: userId,
+                user_id: effectiveUserId,
                 day_number: dayNumber,
                 files,
                 comment,
