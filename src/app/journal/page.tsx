@@ -34,6 +34,7 @@ export default function JournalPage() {
     const [error, setError] = useState<string | null>(null)
     const [retryCount, setRetryCount] = useState(0)
     const [uploading, setUploading] = useState<Record<string, boolean>>({})
+    const [loadingTooLong, setLoadingTooLong] = useState(false)
 
     const today = new Date().toISOString().split('T')[0]
 
@@ -76,9 +77,24 @@ export default function JournalPage() {
     }, [user])
 
     useEffect(() => {
-        if (authLoading) return
+        // Если authLoading завис — форсируем загрузку через 5 секунд
+        if (authLoading) {
+            const fallback = setTimeout(() => {
+                console.warn('[Journal] authLoading timeout — forcing loadEntries')
+                loadEntries()
+            }, 5000)
+            return () => clearTimeout(fallback)
+        }
         loadEntries()
     }, [authLoading, loadEntries, retryCount])
+
+    // UI таймаут: если загрузка висит > 8 сек — предлагаем обновить страницу
+    useEffect(() => {
+        setLoadingTooLong(false)
+        if (!authLoading && !isLoading) return
+        const timer = setTimeout(() => setLoadingTooLong(true), 8000)
+        return () => clearTimeout(timer)
+    }, [authLoading, isLoading, retryCount])
 
     const handleEdit = (entry: JournalEntry) => {
         setForm({ ...entry })
@@ -190,12 +206,23 @@ export default function JournalPage() {
     if (authLoading || isLoading) {
         return (
             <div className="min-h-screen bg-deep-dark flex items-center justify-center">
-                <div className="flex flex-col items-center gap-4">
+                <div className="flex flex-col items-center gap-6">
                     <div className="relative">
                         <div className="w-12 h-12 border-4 border-meta-orange/20 rounded-full" />
                         <div className="absolute inset-0 w-12 h-12 border-4 border-meta-orange border-t-transparent rounded-full animate-spin" />
                     </div>
                     <p className="text-gray-500 font-bold text-sm uppercase tracking-widest animate-pulse">Загрузка...</p>
+                    {loadingTooLong && (
+                        <div className="flex flex-col items-center gap-3 animate-fade-in">
+                            <p className="text-gray-600 text-xs text-center">Что-то пошло не так...</p>
+                            <button
+                                onClick={() => window.location.reload()}
+                                className="px-6 py-3 rounded-2xl bg-meta-orange text-white font-black text-xs uppercase tracking-[2px] hover:bg-meta-orange-hover transition-all active:scale-95"
+                            >
+                                Обновить страницу
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
         )
@@ -256,10 +283,10 @@ export default function JournalPage() {
                 {showForm && (
                     <div className="modal-overlay z-[100] backdrop-blur-xl" onClick={() => setShowForm(false)}>
                         <div
-                            className="bg-deep-dark-100/95 border border-white/10 p-6 md:p-10 w-full max-w-2xl max-h-[92vh] overflow-y-auto animate-fade-in mx-4 rounded-[2.5rem] shadow-2xl relative custom-scrollbar"
+                            className="bg-[#181818]/98 border border-white/10 px-6 md:px-10 pb-6 md:pb-10 w-full max-w-2xl max-h-[92vh] overflow-y-auto animate-fade-in mx-4 rounded-[2.5rem] shadow-2xl relative custom-scrollbar"
                             onClick={e => e.stopPropagation()}
                         >
-                            <div className="flex items-center justify-between mb-10 sticky top-0 bg-[#181818] border-b border-white/5 py-3 -mx-6 px-6 md:-mx-10 md:px-10 z-10">
+                            <div className="flex items-center justify-between mb-10 sticky top-0 bg-[#181818] border-b border-white/5 pt-6 md:pt-10 pb-5 -mx-6 px-6 md:-mx-10 md:px-10 z-[110]">
                                 <div>
                                     <h2 className="text-2xl md:text-3xl font-black text-white italic">
                                         {form.id ? 'ИЗМЕНИТЬ' : 'НОВАЯ ЗАПИСЬ'}
