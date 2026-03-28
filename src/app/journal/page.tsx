@@ -259,7 +259,7 @@ export default function JournalPage() {
                             className="bg-deep-dark-100/95 border border-white/10 p-6 md:p-10 w-full max-w-2xl max-h-[92vh] overflow-y-auto animate-fade-in mx-4 rounded-[2.5rem] shadow-2xl relative custom-scrollbar"
                             onClick={e => e.stopPropagation()}
                         >
-                            <div className="flex items-center justify-between mb-10 sticky top-0 bg-deep-dark-100/10 backdrop-blur-md py-2 z-10">
+                            <div className="flex items-center justify-between mb-10 sticky top-0 bg-[#181818] border-b border-white/5 py-3 -mx-6 px-6 md:-mx-10 md:px-10 z-10">
                                 <div>
                                     <h2 className="text-2xl md:text-3xl font-black text-white italic">
                                         {form.id ? 'ИЗМЕНИТЬ' : 'НОВАЯ ЗАПИСЬ'}
@@ -414,7 +414,7 @@ export default function JournalPage() {
                                             placeholder="8"
                                             value={form.sleep_hours || ''}
                                             onChange={e => handleNumberFieldChange('sleep_hours', e.target.value)}
-                                            className="w-full bg-transparent text-5xl font-black text-white focus:outline-none placeholder:text-gray-800"
+                                            className="w-full bg-transparent text-5xl font-black text-white focus:outline-none placeholder:text-gray-600"
                                         />
                                     </div>
                                     <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 focus-within:border-cyan-500/30 transition-all">
@@ -430,7 +430,7 @@ export default function JournalPage() {
                                             placeholder="1.5"
                                             value={form.water_liters || ''}
                                             onChange={e => handleNumberFieldChange('water_liters', e.target.value)}
-                                            className="w-full bg-transparent text-5xl font-black text-white focus:outline-none placeholder:text-gray-800"
+                                            className="w-full bg-transparent text-5xl font-black text-white focus:outline-none placeholder:text-gray-600"
                                         />
                                     </div>
                                 </div>
@@ -441,7 +441,7 @@ export default function JournalPage() {
                                     className={`w-full group relative overflow-hidden flex items-center gap-5 p-6 rounded-[2rem] border-2 transition-all duration-500
                                         ${form.workout_done
                                             ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-2xl shadow-emerald-500/10'
-                                            : 'bg-white/5 border-transparent text-gray-600 opacity-60 grayscale hover:grayscale-0 hover:border-white/10'
+                                            : 'bg-white/5 border-white/10 text-gray-400 hover:border-white/20 hover:text-gray-300'
                                         }`}
                                 >
                                     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-500 shadow-inner ${form.workout_done ? 'bg-emerald-500/20 rotate-12' : 'bg-white/5'}`}>
@@ -463,14 +463,14 @@ export default function JournalPage() {
                                         onChange={e => setForm({ ...form, nutrition_notes: e.target.value })}
                                         placeholder="ПИТАНИЕ ЗА СЕГОДНЯ..."
                                         rows={2}
-                                        className="w-full bg-white/5 border-2 border-transparent focus:border-meta-orange/20 rounded-[2rem] p-6 text-white placeholder:text-gray-700 focus:outline-none transition-all resize-none font-bold italic"
+                                        className="w-full bg-white/5 border-2 border-white/5 focus:border-meta-orange/30 rounded-[2rem] p-6 text-white placeholder:text-gray-500 focus:outline-none transition-all resize-none font-bold italic"
                                     />
                                     <textarea
                                         value={form.reflection}
                                         onChange={e => setForm({ ...form, reflection: e.target.value })}
                                         placeholder="КАКИЕ МЫСЛИ И ЧУВСТВА СЕГОДНЯ?"
                                         rows={4}
-                                        className="w-full bg-white/5 border-2 border-transparent focus:border-red-400/20 rounded-[2.5rem] p-6 md:p-8 text-white placeholder:text-gray-700 focus:outline-none transition-all resize-none font-bold italic leading-relaxed"
+                                        className="w-full bg-white/5 border-2 border-white/5 focus:border-meta-orange/30 rounded-[2.5rem] p-6 md:p-8 text-white placeholder:text-gray-500 focus:outline-none transition-all resize-none font-bold italic leading-relaxed"
                                     />
                                 </div>
 
