@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { getUserPayment, createPaymentRequest, type Payment } from '@/lib/services/payment'
-import { getNextFutureMondayStart } from '@/lib/utils/cohort'
+import { getNextFutureMondayStart, isCohortActive } from '@/lib/utils/cohort'
 
 const YOOMONEY_WALLET = process.env.NEXT_PUBLIC_YOOMONEY_WALLET || '410014990008683'
 const PRICE = 10
@@ -55,7 +55,18 @@ export default function PaymentPage() {
             try {
                 const existing = await getUserPayment()
                 if (existing?.status === 'confirmed') {
-                    router.replace('/onboarding')
+                    // Если когорта уже началась — сразу на dashboard
+                    // Если ещё не началась — на onboarding (зал ожидания)
+                    if (existing.cohort_start) {
+                        const cohortStartDate = new Date(existing.cohort_start + 'T07:00:00')
+                        if (isCohortActive(cohortStartDate)) {
+                            router.replace('/dashboard')
+                        } else {
+                            router.replace('/onboarding')
+                        }
+                    } else {
+                        router.replace('/onboarding')
+                    }
                     return
                 }
                 setPayment(existing)
@@ -82,7 +93,12 @@ export default function PaymentPage() {
                 if (current?.status === 'confirmed') {
                     clearInterval(interval)
                     setIsPolling(false)
-                    router.replace('/onboarding')
+                    if (current.cohort_start) {
+                        const cohortStartDate = new Date(current.cohort_start + 'T07:00:00')
+                        router.replace(isCohortActive(cohortStartDate) ? '/dashboard' : '/onboarding')
+                    } else {
+                        router.replace('/onboarding')
+                    }
                 }
             } catch (e) {
                 console.error('[Payment] Polling error:', e)
@@ -141,7 +157,12 @@ export default function PaymentPage() {
         try {
             const current = await getUserPayment()
             if (current?.status === 'confirmed') {
-                window.location.href = '/onboarding'
+                if (current.cohort_start) {
+                    const cohortStartDate = new Date(current.cohort_start + 'T07:00:00')
+                    window.location.href = isCohortActive(cohortStartDate) ? '/dashboard' : '/onboarding'
+                } else {
+                    window.location.href = '/onboarding'
+                }
                 return
             }
             setPayment(current)

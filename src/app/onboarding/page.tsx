@@ -109,11 +109,22 @@ export default function OnboardingPage() {
                     return
                 }
 
-                // Если когорта уже активна — на dashboard
-                const start = getNextMondayStart()
-                if (isCohortActive(start)) {
-                    setCohortStart(start)
+                // Используем cohort_start из payment (реальная дата пользователя)
+                // а не вычисленный getNextMondayStart() который может быть неверным
+                let start: Date
+                if (payment.cohort_start) {
+                    start = new Date(payment.cohort_start + 'T07:00:00')
+                } else {
+                    start = getNextMondayStart()
                 }
+
+                // Если когорта уже активна — сразу на dashboard
+                if (isCohortActive(start)) {
+                    router.replace('/dashboard')
+                    return
+                }
+
+                setCohortStart(start)
             } catch (e) {
                 console.error('[Onboarding] Error:', e)
             } finally {
