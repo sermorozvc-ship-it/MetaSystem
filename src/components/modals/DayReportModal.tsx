@@ -105,7 +105,6 @@ export default function DayReportModal({ isOpen, onClose, dayNumber }: DayReport
             'Фото после тренировки на мобильность'
         ],
         6: [
-            'Скриншот времени отхода ко сну',
             'Фото прогулки на свежем воздухе'
         ],
         7: [

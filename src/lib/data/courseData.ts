@@ -15,11 +15,11 @@ export const courseData: DayData[] = [
         hasAudio: true,
         hasTool: 'visceral_calculator',
         tasks: [
-            { id: 1, text: 'Посмотреть видео «Правила игры»', type: 'video' },
-            { id: 2, text: 'Измерить рост/талию/бёдра', type: 'measurement' },
-            { id: 3, text: 'Использовать калькулятор висцерального жира', type: 'tool' },
-            { id: 4, text: 'Чистка холодильника (Анти-Водный протокол)', type: 'action' },
-            { id: 5, text: 'Прослушать подкаст «Взлом»', type: 'audio' }
+            { id: 1, text: 'Посмотри видео «Правила игры» (2 мин)', type: 'video' },
+            { id: 2, text: 'Узнай свой Индекс Висцерального Жира', type: 'measurement' },
+            { id: 3, text: 'Настрой инструмент', type: 'tool' },
+            { id: 4, text: 'Заполни холодильник', type: 'action' },
+            { id: 5, text: 'Прослушать аудио-подкаст про "Ломку"', type: 'audio' }
         ]
     },
     {
@@ -29,13 +29,14 @@ export const courseData: DayData[] = [
         context: 'Переключаем тело с сахара на жир. Строгий режим питания без перекусов — это ключ к активации жиросжигания.',
         hasWorkout: true,
         hasVideo: true,
-        hasAudio: false,
+        hasAudio: true,
         hasTool: null,
         tasks: [
             { id: 1, text: 'Тренировка #1 (15 мин)', type: 'workout' },
-            { id: 2, text: 'Посмотреть урок «Инсулин»', type: 'video' },
-            { id: 3, text: 'Выполнить норму белка', type: 'nutrition' },
-            { id: 4, text: 'БЕЗ перекусов (строго 3 приёма пищи)', type: 'action' }
+            { id: 2, text: 'Утренний подкаст', type: 'audio' },
+            { id: 3, text: 'Посмотреть урок «Инсулин»', type: 'video' },
+            { id: 4, text: 'Выполнить норму белка', type: 'nutrition' },
+            { id: 5, text: 'БЕЗ перекусов (строго 3 приёма пищи)', type: 'action' }
         ]
     },
     {
@@ -59,13 +60,13 @@ export const courseData: DayData[] = [
         subtitle: 'HIIT и EPOC',
         context: 'HIIT vs обычное кардио. Эффект дожигания калорий (EPOC) — сжигаем жир даже после тренировки.',
         hasWorkout: true,
-        hasVideo: false,
-        hasAudio: true,
+        hasVideo: true,
+        hasAudio: false,
         hasTool: null,
         tasks: [
-            { id: 1, text: 'Прослушать подкаст «EPOC-эффект»', type: 'audio' },
-            { id: 2, text: 'HIIT-тренировка (20 мин)', type: 'workout' },
-            { id: 3, text: 'Сложные углеводы на обед', type: 'nutrition' }
+            { id: 1, text: 'Тренировка №2 (HIIT)', type: 'workout' },
+            { id: 2, text: 'Углеводная загрузка (в обед)', type: 'nutrition' },
+            { id: 3, text: 'Следить за гидратацией', type: 'action' }
         ]
     },
     {
@@ -74,29 +75,30 @@ export const courseData: DayData[] = [
         subtitle: 'Стресс и алкоголь',
         context: 'Влияние алкоголя на метаболизм и тестостерон. Управление стрессом — профилактика срывов.',
         hasWorkout: true,
-        hasVideo: false,
+        hasVideo: true,
         hasAudio: true,
         hasTool: null,
         tasks: [
-            { id: 1, text: 'Прослушать «Алкоголь и Тестостерон»', type: 'audio' },
-            { id: 2, text: 'Тренировка #3 «Мобильность/Релакс»', type: 'workout' },
-            { id: 3, text: 'Ужин: только белок + овощи', type: 'nutrition' }
+            { id: 1, text: 'Подкаст: Алкоголь и Тестостерон', type: 'audio' },
+            { id: 2, text: 'Тренировка №3 «Мобильность»', type: 'workout' },
+            { id: 3, text: 'Ужин Стратега', type: 'nutrition' }
         ]
     },
     {
         dayNumber: 6,
-        title: 'Биохимия Сна',
-        subtitle: 'Гормон роста',
-        context: 'Гормон роста активен с 23:00 до 02:00. Оптимизация сна для максимального восстановления и жиросжигания.',
+        title: 'Ментальная перезагрузка',
+        subtitle: 'Сон и Жиры',
+        context: 'Гормон роста активен с 23:00 до 02:00. Разбор психологии срывов, оптимизация сна для максимального жиросжигания.',
         hasWorkout: false,
-        hasVideo: false,
-        hasAudio: false,
+        hasVideo: true,
+        hasAudio: true,
         hasTool: null,
         tasks: [
-            { id: 1, text: 'Сегодня без тренировки', type: 'rest' },
-            { id: 2, text: 'Прогулка на свежем воздухе', type: 'action' },
-            { id: 3, text: 'Заполнить дневник (обязательно)', type: 'journal' },
-            { id: 4, text: 'Лечь спать до 23:00', type: 'action' }
+            { id: 1, text: 'Лекция: «Невидимые тормоза»', type: 'video' },
+            { id: 2, text: 'Подкаст: «Сон и Жиры»', type: 'audio' },
+            { id: 3, text: 'Активность: «Прогулка фермера» (60 мин)', type: 'action' },
+            { id: 4, text: 'Меню: «Жировая загрузка»', type: 'nutrition' },
+            { id: 5, text: 'Бортовой журнал: Инсайт дня', type: 'journal' }
         ]
     },
     {
@@ -105,13 +107,11 @@ export const courseData: DayData[] = [
         subtitle: 'Итоги',
         context: 'Косметический ремонт vs Капитальный ремонт. Анализ результатов и планирование следующих шагов.',
         hasWorkout: false,
-        hasVideo: true,
-        hasAudio: false,
+        hasVideo: false,
+        hasAudio: true,
         hasTool: 'body_measurements',
         tasks: [
-            { id: 1, text: 'Финальные измерения тела', type: 'measurement' },
-            { id: 2, text: 'Заполнить дневник', type: 'journal' },
-            { id: 3, text: 'Посмотреть видео «Следующие шаги»', type: 'video' }
+            { id: 1, text: 'Утренний подкаст', type: 'audio' }
         ]
     }
 ]
