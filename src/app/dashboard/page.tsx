@@ -158,11 +158,7 @@ export default function DashboardPage() {
     const handleDaySelect = (dayNumber: number) => {
         setSelectedDayNumber(dayNumber)
         
-        // Если выбран 7-й день и он уже выполнен — открываем премиум-модалку
-        const day7Data = courseData.find(d => d.dayNumber === 7)
-        const isDay7Completed = day7Data && (taskProgress[7]?.length === day7Data.tasks.length)
-
-        if (dayNumber === 7 && (completedDays.includes(7) || isDay7Completed)) {
+        if (dayNumber === 7) {
             setIsCompletionOpen(true)
         }
 

@@ -1029,7 +1029,7 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool, onO
                 </div>
 
                 {/* Итоги тест-драйва для 7-го дня */}
-                {selectedDay?.dayNumber === 7 && selectedDay?.tasks?.every(t => t.completed) && (
+                {selectedDay?.dayNumber === 7 && (
                     <button
                         onClick={() => onOpenPremiumOffer?.()}
                         className="w-full mt-4 glass-button-secondary py-4 flex items-center justify-center gap-2 bg-gradient-to-r from-meta-orange to-orange-600 border-none text-white hover:brightness-110 shadow-glow-orange"
