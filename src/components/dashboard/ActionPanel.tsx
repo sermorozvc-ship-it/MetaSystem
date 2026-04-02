@@ -29,6 +29,7 @@ interface ActionPanelProps {
     selectedDay: DayData | null
     onTaskToggle?: (dayNumber: number, taskId: number) => void
     onOpenTool?: (toolName: string) => void
+    onOpenPremiumOffer?: () => void
 }
 
 // Day 1 specific content
@@ -516,13 +517,40 @@ const day6Content = {
 const day7Content = {
     morningBrief: {
         title: '🚀 ДЕНЬ 7. ФИНАЛ',
-        message: 'Скоро здесь появится утренний бриф для Дня 7.',
+        message: `Доброе утро! Это Дмитрий.
+
+Сегодня День 7. Финал нашего тест-драйва «Метаболический Запуск».
+
+Эта неделя показала главное: ваша физиология работает. Стоило только снизить инсулин, убрать «невидимые тормоза» и дать правильную нагрузку, тело сразу начало отдавать лишнее. Вы уже чувствуете, как ушла отечность, живот стал мягче, а энергии прибавилось.
+
+Ваша задача на сегодня:
+
+1️⃣ ЗАФИКСИРОВАТЬ ПОБЕДУ
+Сделайте утреннее взвешивание, замеры и фото «После». Сравните с тем, что было в первый день. Цифры упрямая вещь, они покажут, что вы на правильном пути. Обязательно запишите данные в форму ниже.
+
+2️⃣ ПОСМОТРЕТЬ ГЛАВНОЕ ВИДЕО: «ДОРОЖНАЯ КАРТА»
+Я приготовил для вас финальный урок. Мы поговорим начистоту. То, что вы делали эти 7 дней - это отличный старт. Но чтобы сделать тело, которое останется с вами навсегда, универсальных схем недостаточно. Сегодня я покажу вам «бизнес-класс» в мире фитнеса.
+
+Сегодня день принятия решения. Выбирайте: откатиться назад к старым привычкам или зайти в Личное Менторство и закрыть вопрос со здоровьем и лишним весом раз и навсегда.
+
+Сделайте замеры и ждите главное видео. Погнали!`,
         icon: Sparkles
     },
     eveningBrief: {
-        title: 'Вечерний бриф Дня 7',
-        preview: 'Итоги',
-        message: 'Скоро здесь появится информация.',
+        title: '🏁 ИТОГИ ТЕСТ-ДРАЙВА',
+        preview: 'Твоя дорожная карта',
+        message: `Поздравляю с завершением Недели Метаболического Запуска! 
+
+Вы сделали огромный шаг: 
+✅ Снизили уровень воспаления и убрали отеки.
+✅ Почувствовали, что такое настоящая энергия без сахарных качелей.
+✅ Увидели первые изменения в зеркале и на весах.
+
+Это была демо-версия того, на что способно ваше тело. Теперь у вас есть два пути:
+1. Оставить всё как есть и постепенно вернуться к старым привычкам.
+2. Использовать этот импульс, чтобы построить тело своей мечты под моим личным контролем.
+
+Если вы готовы к настоящей трансформации — жду вас в основном проекте. Метаболизм запущен, не дайте ему остановиться!`,
         icon: ArrowRight
     },
     taskDetails: {
@@ -531,6 +559,43 @@ const day7Content = {
             duration: '3 минуты',
             content: 'Слушай подкаст про финальный день.',
             audioUrl: '/audio/day7.mp3'
+        },
+        2: {
+            title: '📐 Финальные замеры',
+            duration: '5-10 минут',
+            content: `Пора зафиксировать твой результат! Эти цифры — фундамент твоей новой формы.
+
+📝 Как делать замеры:
+1. Строго натощак (сразу после пробуждения и туалета).
+2. Вес: встань на весы без лишней одежды.
+3. Талия: замеряй в самом узком месте (обычно на 2 см выше пупка).
+4. Живот: замеряй по линии пупка.
+5. Бёдра: замеряй в самом широком месте.
+
+💡 Лайфхак: делай замеры перед зеркалом, чтобы лента шла строго горизонтально.
+
+Нажми кнопку ниже, чтобы открыть форму и сохранить свои данные.`,
+            appUrl: 'body_measurements'
+        },
+        3: {
+            title: '📸 Фото «После»',
+            duration: '5 минут',
+            content: `Твои глаза могут замылиться, но камера не врет! Сделай финальные фото, чтобы увидеть прогресс.
+
+📸 Что нужно сделать:
+Сделай 3 фотографии в полный рост (в той же одежде и при том же освещении, что и в 1-й день):
+1. Спереди (руки расслаблены).
+2. Сбоку (профиль).
+3. Сзади (со спины).
+
+Загрузи эти фото в Дневник (Бортовой журнал), чтобы сохранить их в своей истории трансформации.`,
+            appUrl: '/journal'
+        },
+        4: {
+            title: 'Видео «Дорожная карта»',
+            duration: '15 минут',
+            content: 'Разбор твоих результатов и план дальнейшего развития. Узнай, как закрепить успех и двигаться дальше.',
+            videoUrl: 'https://youtu.be/4R9Tq053v1Q'
         }
     }
 }
@@ -593,7 +658,11 @@ function ContentModal({
     type,
     videoUrl,
     appUrl,
-    audioUrl
+    audioUrl,
+    onOpenTool,
+    onTaskToggle,
+    dayNumber,
+    taskId
 }: {
     isOpen: boolean
     onClose: () => void
@@ -603,7 +672,11 @@ function ContentModal({
     type?: 'morning' | 'evening' | 'task',
     videoUrl?: string,
     appUrl?: string,
-    audioUrl?: string
+    audioUrl?: string,
+    onOpenTool?: (toolName: string) => void,
+    onTaskToggle?: (dayNumber: number, taskId: number) => void,
+    dayNumber?: number,
+    taskId?: number
 }) {
     if (!isOpen) return null
 
@@ -653,15 +726,31 @@ function ContentModal({
                         )}
 
                         {appUrl && (
-                            <a
-                                href={appUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                            <button
+                                onClick={() => {
+                                    if (appUrl.startsWith('http')) {
+                                        window.open(appUrl, '_blank')
+                                    } else if (appUrl === '/journal') {
+                                        onClose()
+                                        // Можно добавить навигацию, если нужно, но пока просто закроем или вызовем хук
+                                        window.location.href = appUrl
+                                    } else {
+                                        onClose()
+                                        if (onOpenTool) {
+                                            onOpenTool(appUrl)
+                                        }
+                                    }
+                                }}
                                 className="glass-button-secondary w-full py-4 flex items-center justify-center gap-2 bg-gradient-to-r from-meta-orange to-orange-600 border-none text-white hover:brightness-110 shadow-glow-orange"
                             >
                                 <Sparkles className="w-5 h-5" />
-                                {appUrl === '/journal' ? 'Открыть дневник' : 'Открыть приложение'}
-                            </a>
+                                {appUrl === '/journal' 
+                                    ? 'Открыть дневник' 
+                                    : appUrl === 'body_measurements' 
+                                        ? 'Открыть замеры'
+                                        : 'Открыть приложение'
+                                }
+                            </button>
                         )}
 
                         {audioUrl && (
@@ -690,7 +779,7 @@ function ContentModal({
     )
 }
 
-export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: ActionPanelProps) {
+export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool, onOpenPremiumOffer }: ActionPanelProps) {
     const [modalState, setModalState] = useState<{
         isOpen: boolean
         title: string
@@ -699,14 +788,16 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: A
         type?: 'morning' | 'evening' | 'task',
         videoUrl?: string,
         appUrl?: string,
-        audioUrl?: string
+        audioUrl?: string,
+        taskId?: number
     }>({
         isOpen: false,
         title: '',
         content: '',
         videoUrl: '',
         appUrl: '',
-        audioUrl: ''
+        audioUrl: '',
+        taskId: undefined
     })
     const [isReportOpen, setIsReportOpen] = useState(false)
     const [reportStatus, setReportStatus] = useState<DayReport | null>(null)
@@ -719,9 +810,10 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: A
         type?: 'morning' | 'evening' | 'task', 
         videoUrl?: string, 
         appUrl?: string,
-        audioUrl?: string
+        audioUrl?: string,
+        taskId?: number
     ) => {
-        setModalState({ isOpen: true, title, content, duration, type, videoUrl, appUrl, audioUrl })
+        setModalState({ isOpen: true, title, content, duration, type, videoUrl, appUrl, audioUrl, taskId })
     }
 
     const closeModal = () => {
@@ -816,7 +908,8 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: A
                        selectedDay.dayNumber === 3 ? day3Content :
                        selectedDay.dayNumber === 4 ? day4Content :
                        selectedDay.dayNumber === 5 ? day5Content : 
-                       selectedDay.dayNumber === 6 ? day6Content : null
+                       selectedDay.dayNumber === 6 ? day6Content : 
+                       selectedDay.dayNumber === 7 ? day7Content : null
 
     return (
         <>
@@ -884,7 +977,8 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: A
                                             'task',
                                             taskDetail.videoUrl,
                                             taskDetail.appUrl,
-                                            taskDetail.audioUrl
+                                            taskDetail.audioUrl,
+                                            task.id
                                         )
                                     } else {
                                         onTaskToggle?.(selectedDay.dayNumber, task.id)
@@ -934,15 +1028,32 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: A
                     })}
                 </div>
 
-                {/* Evening Brief Block (Day 1) */}
-                {dayContent && (
+                {/* Итоги тест-драйва для 7-го дня */}
+                {selectedDay?.dayNumber === 7 && selectedDay?.tasks?.every(t => t.completed) && (
+                    <button
+                        onClick={() => onOpenPremiumOffer?.()}
+                        className="w-full mt-4 glass-button-secondary py-4 flex items-center justify-center gap-2 bg-gradient-to-r from-meta-orange to-orange-600 border-none text-white hover:brightness-110 shadow-glow-orange"
+                    >
+                        <Sparkles className="w-5 h-5" />
+                        ИТОГИ ТЕСТ-ДРАЙВА
+                    </button>
+                )}
+
+                {/* Evening Brief Block (Day 1-6) */}
+                {dayContent && selectedDay.dayNumber !== 7 && (
                     <div
-                        onClick={() => openModal(
-                            dayContent.eveningBrief.title,
-                            dayContent.eveningBrief.message,
-                            undefined,
-                            'evening'
-                        )}
+                        onClick={() => {
+                            if (selectedDay.dayNumber === 7 && onOpenPremiumOffer) {
+                                onOpenPremiumOffer()
+                            } else {
+                                openModal(
+                                    dayContent.eveningBrief.title,
+                                    dayContent.eveningBrief.message,
+                                    undefined,
+                                    'evening'
+                                )
+                            }
+                        }}
                         className="glass-card p-4 mt-4 bg-gradient-to-r from-indigo-500/20 to-purple-500/10 
                                    border-indigo-500/30 cursor-pointer hover:border-indigo-500/50 transition-all"
                     >
@@ -1077,6 +1188,10 @@ export default function ActionPanel({ selectedDay, onTaskToggle, onOpenTool }: A
                 videoUrl={modalState.videoUrl}
                 appUrl={modalState.appUrl}
                 audioUrl={modalState.audioUrl}
+                onOpenTool={onOpenTool}
+                onTaskToggle={onTaskToggle}
+                dayNumber={selectedDay.dayNumber}
+                taskId={modalState.taskId}
             />
 
             {/* Day Report Modal */}

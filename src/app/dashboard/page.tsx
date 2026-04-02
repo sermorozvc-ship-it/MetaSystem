@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { DashboardLayout } from '@/components/layout'
 import { WeekGrid, ActionPanel, DayData } from '@/components/dashboard'
-import { VisceralCalculator, BodyMeasurements, CourseConclusionModal } from '@/components/modals'
+import { VisceralCalculator, BodyMeasurements, PremiumOfferModal } from '@/components/modals'
 import { courseData } from '@/lib/data/courseData'
 import { getCurrentCourseDay, getNextMondayStart, isCohortActive } from '@/lib/utils/cohort'
 import { useRouter } from 'next/navigation'
@@ -157,11 +157,21 @@ export default function DashboardPage() {
     // Выбор дня — открывает шторку на мобильных
     const handleDaySelect = (dayNumber: number) => {
         setSelectedDayNumber(dayNumber)
+        
+        // Если выбран 7-й день и он уже выполнен — открываем премиум-модалку
+        const day7Data = courseData.find(d => d.dayNumber === 7)
+        const isDay7Completed = day7Data && (taskProgress[7]?.length === day7Data.tasks.length)
+
+        if (dayNumber === 7 && (completedDays.includes(7) || isDay7Completed)) {
+            setIsCompletionOpen(true)
+        }
+
         // Открываем шторку только на мобильных (< lg = 1024px)
-        if (window.innerWidth < 1024) {
+        if (typeof window !== 'undefined' && window.innerWidth < 1024) {
             setShowMobileSheet(true)
         }
     }
+
 
     const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Атлет'
 
@@ -177,6 +187,7 @@ export default function DashboardPage() {
                         selectedDay={getSelectedDayWithProgress()}
                         onTaskToggle={handleTaskToggle}
                         onOpenTool={handleOpenTool}
+                        onOpenPremiumOffer={() => setIsCompletionOpen(true)}
                     />
                 }
             >
@@ -208,11 +219,12 @@ export default function DashboardPage() {
                 onSave={(data) => {
                     console.log('Measurements saved:', data)
                     if (selectedDayNumber === 7) {
-                        handleTaskToggle(7, 1) // Task ID 1 = финальные измерения
+                        handleTaskToggle(7, 2) // Task ID 2 = финальные измерения
                     }
                 }}
             />
-            <CourseConclusionModal
+
+            <PremiumOfferModal
                 isOpen={isCompletionOpen}
                 onClose={() => setIsCompletionOpen(false)}
                 userName={userName}

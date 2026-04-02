@@ -107,11 +107,14 @@ export const courseData: DayData[] = [
         subtitle: 'Итоги',
         context: 'Косметический ремонт vs Капитальный ремонт. Анализ результатов и планирование следующих шагов.',
         hasWorkout: false,
-        hasVideo: false,
+        hasVideo: true,
         hasAudio: true,
         hasTool: 'body_measurements',
         tasks: [
-            { id: 1, text: 'Утренний подкаст', type: 'audio' }
+            { id: 1, text: 'Утренний подкаст', type: 'audio' },
+            { id: 2, text: 'Финальные замеры', type: 'measurement' },
+            { id: 3, text: 'Фото «После»', type: 'journal' },
+            { id: 4, text: 'Видео: «Дорожная карта»', type: 'video' }
         ]
     }
 ]

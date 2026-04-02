@@ -206,7 +206,7 @@ export default function DayReportModal({ isOpen, onClose, dayNumber }: DayReport
                         <textarea
                             value={comment}
                             onChange={(e) => setComment(e.target.value)}
-                            placeholder="Как прошёл день? Какие ощущения?"
+                            placeholder={dayNumber === 7 ? "Как прошли эти 7 дней? Какие ощущения?" : "Как прошёл день? Какие ощущения?"}
                             className="glass-input w-full h-20 sm:h-24 resize-none text-sm"
                         />
                     </div>
