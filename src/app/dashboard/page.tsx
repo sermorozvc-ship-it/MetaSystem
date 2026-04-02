@@ -157,10 +157,6 @@ export default function DashboardPage() {
     // Выбор дня — открывает шторку на мобильных
     const handleDaySelect = (dayNumber: number) => {
         setSelectedDayNumber(dayNumber)
-        
-        if (dayNumber === 7) {
-            setIsCompletionOpen(true)
-        }
 
         // Открываем шторку только на мобильных (< lg = 1024px)
         if (typeof window !== 'undefined' && window.innerWidth < 1024) {
