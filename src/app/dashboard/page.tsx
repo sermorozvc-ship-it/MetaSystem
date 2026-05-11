@@ -1,226 +1,287 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { DashboardLayout } from '@/components/layout'
-import { WeekGrid, ActionPanel, DayData } from '@/components/dashboard'
-import { VisceralCalculator, BodyMeasurements, PremiumOfferModal } from '@/components/modals'
-import { courseData } from '@/lib/data/courseData'
-import { getCurrentCourseDay, getNextMondayStart, isCohortActive } from '@/lib/utils/cohort'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import {
+    Dumbbell, TrendingUp, Calendar, MessageCircle, Settings,
+    ChevronRight, Loader2, CheckCircle2, Clock, Target, Zap
+} from 'lucide-react'
 import { useAuth } from '@/lib/auth'
+import { getCurrentProgram, type TrainingProgram } from '@/lib/services/training'
+import { getLatestMetric, type ClientMetric } from '@/lib/services/metrics'
 
 export default function DashboardPage() {
-    const { user } = useAuth()
+    const { user, isLoading: authLoading } = useAuth()
     const router = useRouter()
 
-    // Для демо: курс уже активен (день 1)
-    // В реальном приложении используйте: const cohortStart = getNextMondayStart()
-    const [cohortStart] = useState(() => {
-        // Для демо устанавливаем старт на сегодня
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
-        return today
-    })
+    const [currentProgram, setCurrentProgram] = useState<TrainingProgram | null>(null)
+    const [latestMetric, setLatestMetric] = useState<ClientMetric | null>(null)
+    const [isLoading, setIsLoading] = useState(true)
+    const [subscriptionDaysLeft, setSubscriptionDaysLeft] = useState<number | null>(null)
 
-    const [currentDay, setCurrentDay] = useState(1)
-    const [selectedDayNumber, setSelectedDayNumber] = useState<number | null>(1)
-    const [completedDays, setCompletedDays] = useState<number[]>([])
-    const [taskProgress, setTaskProgress] = useState<Record<number, number[]>>({})
-
-    // Mobile bottom sheet
-    const [showMobileSheet, setShowMobileSheet] = useState(false)
-
-    // Модальные окна
-    const [isVisceralOpen, setIsVisceralOpen] = useState(false)
-    const [isMeasurementsOpen, setIsMeasurementsOpen] = useState(false)
-    const [isCompletionOpen, setIsCompletionOpen] = useState(false)
-    const [hasShownCompletion, setHasShownCompletion] = useState(false)
-
-    // Проверка когорты при загрузке (закомментировано для демо)
     useEffect(() => {
-        // const active = isCohortActive(cohortStart)
-        // if (!active) {
-        //   router.push('/waiting-room')
-        // }
-        setCurrentDay(getCurrentCourseDay(cohortStart))
-    }, [cohortStart, router])
-
-    // Получить данные выбранного дня с прогрессом
-    const getSelectedDayWithProgress = useCallback((): DayData | null => {
-        if (!selectedDayNumber) return null
-
-        const dayData = courseData.find(d => d.dayNumber === selectedDayNumber)
-        if (!dayData) return null
-
-        const completedTaskIds = taskProgress[selectedDayNumber] || []
-
-        return {
-            ...dayData,
-            tasks: dayData.tasks.map(task => ({
-                ...task,
-                completed: completedTaskIds.includes(task.id)
-            }))
+        if (!authLoading && !user) {
+            router.replace('/auth')
         }
-    }, [selectedDayNumber, taskProgress])
+    }, [user, authLoading, router])
 
-    // Загрузка прогресса из БД
     useEffect(() => {
-        const loadProgress = async () => {
+        if (!user) return
+
+        const loadDashboardData = async () => {
             try {
-                const { getUserProgress } = await import('@/lib/services/progress')
-                const progress = await getUserProgress()
-                setTaskProgress(progress)
+                const [program, metric] = await Promise.all([
+                    getCurrentProgram(),
+                    getLatestMetric(),
+                ])
+
+                setCurrentProgram(program)
+                setLatestMetric(metric)
+
+                // Calculate subscription days left
+                // This would come from user profile in real implementation
+                // For now, mock it
+                setSubscriptionDaysLeft(45)
             } catch (e) {
-                console.error('Failed to load progress', e)
+                console.error('Error loading dashboard:', e)
+            } finally {
+                setIsLoading(false)
             }
         }
-        loadProgress()
-    }, [cohortStart])
 
-    // Переключение статуса задания
-    const handleTaskToggle = async (dayNumber: number, taskId: number) => {
-        // Оптимистичное обновление UI
-        setTaskProgress(prev => {
-            const dayTasks = prev[dayNumber] || []
-            const isCompleted = dayTasks.includes(taskId)
+        loadDashboardData()
+    }, [user])
 
-            const newDayTasks = isCompleted
-                ? dayTasks.filter(id => id !== taskId)
-                : [...dayTasks, taskId]
-
-            return {
-                ...prev,
-                [dayNumber]: newDayTasks
-            }
-        })
-
-        // Сохранение в БД
-        try {
-            const { toggleTaskProgress } = await import('@/lib/services/progress')
-            const currentDayProgress = taskProgress[dayNumber] || []
-            const isCompleted = !currentDayProgress.includes(taskId) // Обратное состояние, т.к. стейт мог еще не обновиться в замыкании, но лучше вычислить явно
-
-            // Но мы уже обновили стейт, поэтому reliable way is just to pass explicit toggle intention
-            // Для простоты передадим "новое" состояние, которое мы ожидаем.
-            // Но здесь в замыкании handleTaskToggle мы не видим "будущего" стейта. 
-            // Поэтому вычислим isNextStateCompleted исходя из prev стейта (как в setTaskProgress выше).
-
-            // Внимание: taskProgress в замыкании - это "старый" стейт.
-            const isCurrentlyCompleted = (taskProgress[dayNumber] || []).includes(taskId)
-            await toggleTaskProgress(dayNumber, taskId, !isCurrentlyCompleted)
-        } catch (e) {
-            console.error('Failed to save progress', e)
-            // Здесь можно добавить откат стейта в случае ошибки, но для простоты пропустим
-        }
+    if (!authLoading && !user) {
+        return (
+            <div className="min-h-screen bg-bg-main flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-accent animate-spin" />
+            </div>
+        )
     }
 
-    // Проверка и отметка завершённого дня
-    useEffect(() => {
-        Object.entries(taskProgress).forEach(([dayStr, completedIds]) => {
-            const dayNumber = parseInt(dayStr)
-            const dayData = courseData.find(d => d.dayNumber === dayNumber)
-
-            if (dayData && completedIds.length === dayData.tasks.length) {
-                if (!completedDays.includes(dayNumber)) {
-                    setCompletedDays(prev => {
-                        const newDays = [...prev, dayNumber]
-                        // Если завершили Day 7 и еще не показывали модалку
-                        if (dayNumber === 7 && !hasShownCompletion) {
-                            setIsCompletionOpen(true)
-                            setHasShownCompletion(true)
-                        }
-                        return newDays
-                    })
-                }
-            }
-        })
-    }, [taskProgress, completedDays, hasShownCompletion])
-
-    // Открытие инструмента
-    const handleOpenTool = (toolName: string) => {
-        if (toolName === 'visceral_calculator') {
-            setIsVisceralOpen(true)
-        } else if (toolName === 'body_measurements') {
-            setIsMeasurementsOpen(true)
-        }
+    if (isLoading) {
+        return (
+            <div className="min-h-screen bg-bg-main flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-accent animate-spin" />
+            </div>
+        )
     }
-
-    // Получить данные всех дней с прогрессом
-    const daysWithProgress = courseData.map(day => ({
-        ...day,
-        tasks: day.tasks.map(task => ({
-            ...task,
-            completed: (taskProgress[day.dayNumber] || []).includes(task.id)
-        }))
-    }))
-
-    // Выбор дня — открывает шторку на мобильных
-    const handleDaySelect = (dayNumber: number) => {
-        setSelectedDayNumber(dayNumber)
-
-        // Открываем шторку только на мобильных (< lg = 1024px)
-        if (typeof window !== 'undefined' && window.innerWidth < 1024) {
-            setShowMobileSheet(true)
-        }
-    }
-
 
     const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Атлет'
 
     return (
-        <>
-            <DashboardLayout
-                userName={userName}
-                currentDay={currentDay}
-                showMobileSheet={showMobileSheet}
-                onCloseMobileSheet={() => setShowMobileSheet(false)}
-                rightPanel={
-                    <ActionPanel
-                        selectedDay={getSelectedDayWithProgress()}
-                        onTaskToggle={handleTaskToggle}
-                        onOpenTool={handleOpenTool}
-                        onOpenPremiumOffer={() => setIsCompletionOpen(true)}
-                    />
-                }
-            >
-                <WeekGrid
-                    days={daysWithProgress}
-                    currentDay={currentDay}
-                    selectedDayNumber={selectedDayNumber}
-                    onDaySelect={handleDaySelect}
-                    completedDays={completedDays}
-                />
-            </DashboardLayout>
+        <div className="min-h-screen bg-bg-main p-4 py-12">
+            <div className="max-w-6xl mx-auto">
+                {/* Header */}
+                <div className="mb-8">
+                    <h1 className="text-3xl font-display font-bold text-white mb-2">
+                        Привет, {userName}! 👋
+                    </h1>
+                    <p className="text-text-secondary">Добро пожаловать в MetaSystem</p>
+                </div>
 
-            {/* Модальные окна */}
-            <VisceralCalculator
-                isOpen={isVisceralOpen}
-                onClose={() => setIsVisceralOpen(false)}
-                onSave={(data) => {
-                    console.log('Visceral data saved:', data)
-                    // Автоматически отмечаем задание как выполненное
-                    if (selectedDayNumber === 1) {
-                        handleTaskToggle(1, 3) // Task ID 3 = калькулятор
-                    }
-                }}
-            />
+                {/* Quick Stats */}
+                <div className="grid md:grid-cols-3 gap-4 mb-8">
+                    <div className="glass-card p-6">
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 rounded-xl bg-accent/20 flex items-center justify-center">
+                                <Calendar className="w-5 h-5 text-accent" />
+                            </div>
+                            <div>
+                                <p className="text-sm text-text-muted">Подписка</p>
+                                <p className="text-xl font-display font-bold text-white">
+                                    {subscriptionDaysLeft ? `${subscriptionDaysLeft} дней` : 'Неактивна'}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
 
-            <BodyMeasurements
-                isOpen={isMeasurementsOpen}
-                onClose={() => setIsMeasurementsOpen(false)}
-                onSave={(data) => {
-                    console.log('Measurements saved:', data)
-                    if (selectedDayNumber === 7) {
-                        handleTaskToggle(7, 2) // Task ID 2 = финальные измерения
-                    }
-                }}
-            />
+                    <div className="glass-card p-6">
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 rounded-xl bg-success/20 flex items-center justify-center">
+                                <TrendingUp className="w-5 h-5 text-success" />
+                            </div>
+                            <div>
+                                <p className="text-sm text-text-muted">Вес</p>
+                                <p className="text-xl font-display font-bold text-white">
+                                    {latestMetric?.weight_kg ? `${latestMetric.weight_kg} кг` : '—'}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
 
-            <PremiumOfferModal
-                isOpen={isCompletionOpen}
-                onClose={() => setIsCompletionOpen(false)}
-                userName={userName}
-            />
-        </>
+                    <div className="glass-card p-6">
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 rounded-xl bg-info/20 flex items-center justify-center">
+                                <Dumbbell className="w-5 h-5 text-info" />
+                            </div>
+                            <div>
+                                <p className="text-sm text-text-muted">Программа</p>
+                                <p className="text-xl font-display font-bold text-white">
+                                    {currentProgram ? `Неделя ${currentProgram.week_number}` : 'Нет'}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Current Program */}
+                {currentProgram ? (
+                    <div className="glass-card p-6 mb-8 border-accent shadow-glow-accent-sm">
+                        <div className="flex items-start justify-between mb-4">
+                            <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Zap className="w-5 h-5 text-accent" />
+                                    <span className="text-sm font-semibold text-accent">Текущая программа</span>
+                                </div>
+                                <h2 className="text-2xl font-display font-bold text-white mb-1">
+                                    Неделя {currentProgram.week_number}
+                                </h2>
+                                <p className="text-sm text-text-secondary">
+                                    {new Date(currentProgram.start_date).toLocaleDateString('ru-RU')} —{' '}
+                                    {new Date(currentProgram.end_date).toLocaleDateString('ru-RU')}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => router.push(`/programs/${currentProgram.id}`)}
+                                className="glass-button flex items-center gap-2"
+                            >
+                                Открыть
+                                <ChevronRight className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <p className="text-text-secondary">
+                            {currentProgram.training_days_count} тренировочных дней в неделю
+                        </p>
+                    </div>
+                ) : (
+                    <div className="glass-card p-12 text-center mb-8">
+                        <Dumbbell className="w-16 h-16 text-text-muted mx-auto mb-4" />
+                        <h3 className="text-xl font-display font-bold text-white mb-2">
+                            Программа еще не загружена
+                        </h3>
+                        <p className="text-text-secondary">
+                            Ваш тренер скоро загрузит первую программу тренировок
+                        </p>
+                    </div>
+                )}
+
+                {/* Quick Actions */}
+                <div className="grid md:grid-cols-2 gap-4 mb-8">
+                    <button
+                        onClick={() => router.push('/programs')}
+                        className="glass-card p-6 text-left hover:border-accent transition-all"
+                    >
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center">
+                                    <Dumbbell className="w-6 h-6 text-accent" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-display font-bold text-white mb-1">
+                                        Тренировочные программы
+                                    </h3>
+                                    <p className="text-sm text-text-secondary">Просмотр и заполнение программ</p>
+                                </div>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-text-muted" />
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => router.push('/metrics')}
+                        className="glass-card p-6 text-left hover:border-accent transition-all"
+                    >
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-xl bg-success/20 flex items-center justify-center">
+                                    <TrendingUp className="w-6 h-6 text-success" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-display font-bold text-white mb-1">Метрики</h3>
+                                    <p className="text-sm text-text-secondary">Отслеживание прогресса</p>
+                                </div>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-text-muted" />
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => router.push('/messages')}
+                        className="glass-card p-6 text-left hover:border-accent transition-all"
+                    >
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-xl bg-info/20 flex items-center justify-center">
+                                    <MessageCircle className="w-6 h-6 text-info" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-display font-bold text-white mb-1">Сообщения</h3>
+                                    <p className="text-sm text-text-secondary">Чат с тренером</p>
+                                </div>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-text-muted" />
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => router.push('/settings')}
+                        className="glass-card p-6 text-left hover:border-accent transition-all"
+                    >
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-xl bg-warning/20 flex items-center justify-center">
+                                    <Settings className="w-6 h-6 text-warning" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-display font-bold text-white mb-1">Настройки</h3>
+                                    <p className="text-sm text-text-secondary">Профиль и настройки</p>
+                                </div>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-text-muted" />
+                        </div>
+                    </button>
+                </div>
+
+                {/* Latest Metric */}
+                {latestMetric && (
+                    <div className="glass-card p-6">
+                        <div className="flex items-center gap-2 mb-4">
+                            <TrendingUp className="w-5 h-5 text-accent" />
+                            <h2 className="text-xl font-display font-bold text-white">Последний замер</h2>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                            <div>
+                                <p className="text-sm text-text-muted mb-1">Вес</p>
+                                <p className="text-lg font-semibold text-white">{latestMetric.weight_kg} кг</p>
+                            </div>
+                            {latestMetric.waist_cm && (
+                                <div>
+                                    <p className="text-sm text-text-muted mb-1">Талия</p>
+                                    <p className="text-lg font-semibold text-white">{latestMetric.waist_cm} см</p>
+                                </div>
+                            )}
+                            {latestMetric.body_fat_pct && (
+                                <div className="col-span-2 sm:col-span-1">
+                                    <p className="text-sm text-text-muted mb-1">% жира</p>
+                                    <p className="text-lg font-semibold text-white">{latestMetric.body_fat_pct}%</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <p className="text-xs text-text-muted mt-4">
+                            {new Date(latestMetric.measured_at).toLocaleDateString('ru-RU', {
+                                day: 'numeric',
+                                month: 'long',
+                                year: 'numeric',
+                            })}
+                        </p>
+                    </div>
+                )}
+            </div>
+        </div>
     )
 }

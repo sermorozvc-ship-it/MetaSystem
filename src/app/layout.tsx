@@ -1,23 +1,23 @@
-// Блокировки Supabase Auth теперь управляются через кастомную lock-функцию
-// в client.ts (auth.lock параметр в createBrowserClient)
+// MetaSystem v2 — Root Layout
+// Шрифты: Unbounded (заголовки) + Golos Text (тело)
+// Дизайн-система: Dark Lime (#c8f542)
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
 import './globals.css'
 import { AuthProvider } from '@/lib/auth'
 import { ErrorSuppressor } from '@/components/ErrorSuppressor'
-
-const inter = Inter({ subsets: ['latin', 'cyrillic'] })
+import Navigation from '@/components/Navigation'
+import NextTopLoader from 'nextjs-toploader'
 
 export const viewport = {
-    themeColor: '#FF6B00',
+    themeColor: '#0d0d0d',
     width: 'device-width',
     initialScale: 1,
 }
 
 export const metadata: Metadata = {
-    title: 'Метаболический Запуск | 7-дневный курс',
-    description: 'Премиум 7-дневный фитнес курс для перезагрузки метаболизма. Научный подход к похудению без голодовок.',
-    keywords: ['фитнес', 'метаболизм', 'похудение', 'здоровье', 'тренировки'],
+    title: 'MetaSystem | Онлайн-ведение тренировок',
+    description: 'Персональная платформа онлайн-ведения. Индивидуальные тренировочные программы, отслеживание прогресса, метрики и аналитика.',
+    keywords: ['фитнес', 'тренер', 'онлайн ведение', 'тренировки', 'персональный тренер', 'программа тренировок'],
     manifest: '/manifest.json',
     appleWebApp: {
         capable: true,
@@ -26,8 +26,6 @@ export const metadata: Metadata = {
     },
 }
 
-import NextTopLoader from 'nextjs-toploader'
-
 export default function RootLayout({
     children,
 }: {
@@ -35,9 +33,15 @@ export default function RootLayout({
 }) {
     return (
         <html lang="ru" suppressHydrationWarning>
-            <body className={`${inter.className} bg-deep-dark min-h-screen`} suppressHydrationWarning>
+            <head>
+                <link
+                    href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;700;900&family=Golos+Text:wght@400;500;600&display=swap"
+                    rel="stylesheet"
+                />
+            </head>
+            <body className="bg-bg-main min-h-screen font-body" suppressHydrationWarning>
                 <NextTopLoader
-                    color="#FF6B00"
+                    color="#c8f542"
                     initialPosition={0.08}
                     crawlSpeed={200}
                     height={3}
@@ -45,11 +49,14 @@ export default function RootLayout({
                     showSpinner={false}
                     easing="ease"
                     speed={200}
-                    shadow="0 0 10px #FF6B00,0 0 5px #FF6B00"
+                    shadow="0 0 10px rgba(200,245,66,0.5),0 0 5px rgba(200,245,66,0.3)"
                 />
                 <AuthProvider>
                     <ErrorSuppressor />
-                    {children}
+                    <Navigation />
+                    <div className="pt-20">
+                        {children}
+                    </div>
                 </AuthProvider>
                 <script
                     dangerouslySetInnerHTML={{

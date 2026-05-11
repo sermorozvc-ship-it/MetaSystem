@@ -4,21 +4,23 @@ export interface UserProfile {
     id: string
     email: string
     full_name: string | null
-    role: 'user' | 'admin' | 'curator'
+    role: 'client' | 'admin' | 'trainer'
     is_blocked: boolean
     blocked_at: string | null
     blocked_reason: string | null
     created_at: string
-    cohort_start_date: string | null
+    subscription_status?: 'inactive' | 'active' | 'paused' | 'expired'
+    subscription_end_date?: string | null
+    has_nutrition_plan?: boolean
 }
 
 export interface UserWithProgress extends UserProfile {
     completed_days: number
     total_reports: number
     last_activity: string | null
-    cohort_start: string | null
     payment_status: 'none' | 'pending' | 'confirmed' | 'refunded'
     payment_created_at: string | null
+    plan_type?: '1_month' | '3_months' | '6_months'
 }
 
 export interface AdminMessage {
@@ -54,7 +56,9 @@ export interface AdminPayment {
     payment_method: string
     created_at: string
     confirmed_at: string | null
-    cohort_start: string | null
+    plan_type?: '1_month' | '3_months' | '6_months'
+    plan_months?: number
+    includes_nutrition?: boolean
     user?: { full_name: string; email: string }
 }
 
@@ -182,7 +186,7 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
         const [progressResult, reportsResult, paymentsResult] = await Promise.all([
             supabase.from('user_progress').select('user_id, completed').eq('completed', true),
             supabase.from('day_reports').select('user_id, created_at').order('created_at', { ascending: false }),
-            supabase.from('payments').select('user_id, status, cohort_start, created_at').order('created_at', { ascending: false })
+            supabase.from('payments').select('user_id, status, plan_type, created_at').order('created_at', { ascending: false })
         ])
 
         allProgress = progressResult.data || []
@@ -207,12 +211,12 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
     })
 
     // Берём последний (свежий) платёж каждого пользователя
-    const paymentsMap = new Map<string, { status: string, cohort_start: string | null, created_at: string }>()
+    const paymentsMap = new Map<string, { status: string, plan_type: string | null, created_at: string }>()
     allPayments.forEach((p: any) => {
         if (!paymentsMap.has(p.user_id)) {
             paymentsMap.set(p.user_id, {
                 status: p.status,
-                cohort_start: p.cohort_start,
+                plan_type: p.plan_type,
                 created_at: p.created_at
             })
         }
@@ -226,9 +230,9 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
             completed_days: progressMap.get(profile.id) || 0,
             total_reports: reportStats?.count || 0,
             last_activity: reportStats?.last || profile.created_at,
-            cohort_start: paymentInfo?.cohort_start || null,
             payment_status: paymentInfo?.status || 'none',
-            payment_created_at: paymentInfo?.created_at || null
+            payment_created_at: paymentInfo?.created_at || null,
+            plan_type: paymentInfo?.plan_type || null
         }
     })
 
@@ -612,6 +616,18 @@ export async function confirmPayment(paymentId: string): Promise<{ success: bool
 
     if (!user) return { success: false, error: 'Не авторизован' }
 
+    // Получаем информацию о платеже
+    const { data: payment, error: fetchError } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('id', paymentId)
+        .single()
+
+    if (fetchError || !payment) {
+        return { success: false, error: 'Платёж не найден' }
+    }
+
+    // Обновляем статус платежа
     const { error } = await supabase
         .from('payments')
         .update({
@@ -625,6 +641,19 @@ export async function confirmPayment(paymentId: string): Promise<{ success: bool
         console.error('[Admin] Error confirming payment:', error)
         return { success: false, error: error.message }
     }
+
+    // Обновляем подписку пользователя
+    const subscriptionEndDate = new Date()
+    subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + (payment.plan_months || 1))
+
+    await supabase
+        .from('profiles')
+        .update({
+            subscription_status: 'active',
+            subscription_end_date: subscriptionEndDate.toISOString().split('T')[0],
+            has_nutrition_plan: payment.includes_nutrition || false,
+        })
+        .eq('id', payment.user_id)
 
     return { success: true }
 }

@@ -1,94 +1,54 @@
 /**
- * Утилиты для работы с когортной системой (понедельничный старт)
+ * Cohort utilities for managing program start dates and timers
  */
 
 /**
- * Получить дату старта когорты (ближайший понедельник в 07:00).
- * Если сегодня понедельник и ещё до 07:00, возвращает сегодня 07:00.
- * Если понедельник и уже после 07:00, когорта уже началась — возвращает сегодня 07:00.
+ * Get the next Monday at 00:00 UTC
  */
 export function getNextMondayStart(): Date {
     const now = new Date()
-    const dayOfWeek = now.getDay() // 0 = воскресенье, 1 = понедельник
-
-    let daysUntilMonday: number
-
-    if (dayOfWeek === 0) {
-        // Воскресенье -> следующий понедельник через 1 день
-        daysUntilMonday = 1
-    } else if (dayOfWeek === 1) {
-        // Понедельник -> сегодня (когорта стартует/стартовала в 07:00)
-        daysUntilMonday = 0
-    } else {
-        // Вторник-суббота -> до следующего понедельника
-        daysUntilMonday = 8 - dayOfWeek
-    }
-
+    const dayOfWeek = now.getUTCDay()
+    
+    // Calculate days until next Monday (1 = Monday)
+    const daysUntilMonday = dayOfWeek === 1 ? 7 : (1 - dayOfWeek + 7) % 7
+    
     const nextMonday = new Date(now)
-    nextMonday.setDate(now.getDate() + daysUntilMonday)
-    nextMonday.setHours(7, 0, 0, 0) // Старт в 07:00 по местному времени
-
+    nextMonday.setUTCDate(nextMonday.getUTCDate() + daysUntilMonday)
+    nextMonday.setUTCHours(0, 0, 0, 0)
+    
     return nextMonday
 }
 
 /**
- * Получить дату старта СЛЕДУЮЩЕЙ когорты (всегда будущий понедельник 07:00).
- * Используется для таймера ожидания — всегда показывает будущую дату.
+ * Get the next future Monday (not today if today is Monday)
  */
 export function getNextFutureMondayStart(): Date {
     const now = new Date()
-    const dayOfWeek = now.getDay()
-
-    let daysUntilMonday: number
-
-    if (dayOfWeek === 0) {
-        daysUntilMonday = 1
-    } else if (dayOfWeek === 1) {
-        // Если понедельник и уже после 07:00, следующий понедельник через 7 дней
-        const todayAt7 = new Date(now)
-        todayAt7.setHours(7, 0, 0, 0)
-        daysUntilMonday = now >= todayAt7 ? 7 : 0
-    } else {
-        daysUntilMonday = 8 - dayOfWeek
-    }
-
+    const dayOfWeek = now.getUTCDay()
+    
+    // Always get the next Monday, even if today is Monday
+    const daysUntilMonday = dayOfWeek === 1 ? 7 : (1 - dayOfWeek + 7) % 7
+    
     const nextMonday = new Date(now)
-    nextMonday.setDate(now.getDate() + daysUntilMonday)
-    nextMonday.setHours(7, 0, 0, 0)
-
+    nextMonday.setUTCDate(nextMonday.getUTCDate() + daysUntilMonday)
+    nextMonday.setUTCHours(0, 0, 0, 0)
+    
     return nextMonday
 }
 
 /**
- * Проверить, активна ли когорта (начался ли курс)
+ * Check if a cohort is currently active
+ * A cohort is active if the current time is >= cohort start time
  */
-export function isCohortActive(startDate: Date): boolean {
+export function isCohortActive(cohortStart: Date): boolean {
     const now = new Date()
-    return now >= startDate
+    return now >= cohortStart
 }
 
 /**
- * Получить текущий день курса (1-7)
- * Возвращает 0, если курс ещё не начался
+ * Get time remaining until cohort starts
  */
-export function getCurrentCourseDay(startDate: Date): number {
-    const now = new Date()
-
-    if (now < startDate) {
-        return 0 // Курс ещё не начался
-    }
-
-    const diffTime = now.getTime() - startDate.getTime()
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
-
-    // День курса от 1 до 7
-    return Math.min(Math.max(diffDays + 1, 1), 7)
-}
-
-/**
- * Получить оставшееся время до старта когорты
- */
-export function getTimeUntilStart(startDate: Date): {
+export function getTimeUntilStart(cohortStart: Date): {
     days: number
     hours: number
     minutes: number
@@ -96,37 +56,68 @@ export function getTimeUntilStart(startDate: Date): {
     totalSeconds: number
 } {
     const now = new Date()
-    const diff = startDate.getTime() - now.getTime()
-
+    const diff = cohortStart.getTime() - now.getTime()
+    
     if (diff <= 0) {
         return { days: 0, hours: 0, minutes: 0, seconds: 0, totalSeconds: 0 }
     }
-
+    
     const totalSeconds = Math.floor(diff / 1000)
     const days = Math.floor(totalSeconds / (24 * 60 * 60))
     const hours = Math.floor((totalSeconds % (24 * 60 * 60)) / (60 * 60))
     const minutes = Math.floor((totalSeconds % (60 * 60)) / 60)
     const seconds = totalSeconds % 60
-
+    
     return { days, hours, minutes, seconds, totalSeconds }
 }
 
 /**
- * Форматировать дату для отображения
+ * Format a date for display
  */
 export function formatDate(date: Date): string {
-    return date.toLocaleDateString('ru-RU', {
+    const options: Intl.DateTimeFormatOptions = {
         weekday: 'long',
+        year: 'numeric',
+        month: 'long',
         day: 'numeric',
-        month: 'long'
-    })
+        timeZone: 'UTC'
+    }
+    
+    return new Intl.DateTimeFormat('ru-RU', options).format(date)
 }
 
 /**
- * Получить дату конкретного дня курса
+ * Get the start of the current week (Monday)
  */
-export function getCourseDayDate(startDate: Date, dayNumber: number): Date {
-    const date = new Date(startDate)
-    date.setDate(date.getDate() + (dayNumber - 1))
-    return date
+export function getWeekStart(date: Date = new Date()): Date {
+    const d = new Date(date)
+    const day = d.getUTCDay()
+    const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1)
+    
+    const weekStart = new Date(d.setUTCDate(diff))
+    weekStart.setUTCHours(0, 0, 0, 0)
+    
+    return weekStart
+}
+
+/**
+ * Get the end of the current week (Sunday)
+ */
+export function getWeekEnd(date: Date = new Date()): Date {
+    const weekStart = getWeekStart(date)
+    const weekEnd = new Date(weekStart)
+    weekEnd.setUTCDate(weekEnd.getUTCDate() + 6)
+    weekEnd.setUTCHours(23, 59, 59, 999)
+    
+    return weekEnd
+}
+
+/**
+ * Check if a date is within a cohort week
+ */
+export function isDateInCohortWeek(date: Date, cohortStart: Date): boolean {
+    const weekStart = getWeekStart(cohortStart)
+    const weekEnd = getWeekEnd(cohortStart)
+    
+    return date >= weekStart && date <= weekEnd
 }

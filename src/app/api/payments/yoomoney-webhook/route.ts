@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
+import { notifyPaymentConfirmed } from '@/lib/services/notifications'
 
 // Supabase admin client — tries service role key first, fallback to anon
 function getAdminClient() {
@@ -110,18 +111,53 @@ export async function POST(request: NextRequest) {
     }
 
     if (pending) {
+        // Получаем полную информацию о платеже
+        const { data: paymentData, error: paymentErr } = await supabase
+            .from('payments')
+            .select('*')
+            .eq('id', pending.id)
+            .single()
+
+        if (paymentErr) {
+            console.error('[YooMoney Webhook] Error fetching payment:', paymentErr)
+            return new NextResponse('DB Error', { status: 500 })
+        }
+
+        // Обновляем статус платежа
         const { error: updErr } = await supabase
             .from('payments')
             .update({
                 status: 'confirmed',
                 confirmed_at: new Date().toISOString(),
-                confirmed_by: null, // UUID column — null для автоподтверждения
+                confirmed_by: null,
             })
             .eq('id', pending.id)
 
         if (updErr) {
             console.error('[YooMoney Webhook] DB update error:', updErr)
             return new NextResponse('DB Error', { status: 500 })
+        }
+
+        // Активируем подписку пользователя
+        const subscriptionEndDate = new Date()
+        subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + (paymentData.plan_months || 1))
+
+        const { error: profileErr } = await supabase
+            .from('profiles')
+            .update({
+                subscription_status: 'active',
+                subscription_end_date: subscriptionEndDate.toISOString().split('T')[0],
+                has_nutrition_plan: paymentData.includes_nutrition || false,
+            })
+            .eq('id', label)
+
+        if (profileErr) {
+            console.error('[YooMoney Webhook] Error updating profile:', profileErr)
+        } else {
+            console.log('[YooMoney Webhook] ✓ Subscription activated for user:', label)
+            
+            // Отправить уведомление о подтверждении оплаты
+            await notifyPaymentConfirmed(label, parseFloat(amount))
         }
 
         console.log('[YooMoney Webhook] ✓ Payment CONFIRMED for user:', label, 'amount:', amount)

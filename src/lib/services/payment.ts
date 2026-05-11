@@ -9,7 +9,14 @@ export interface Payment {
     payment_method: 'manual' | 'stripe' | 'yookassa'
     confirmed_by: string | null
     confirmed_at: string | null
-    cohort_start: string | null
+    // MetaSystem v2: новые поля для тарифов
+    plan_type?: '1_month' | '3_months' | '6_months'
+    plan_months?: number
+    includes_nutrition?: boolean
+    base_amount?: number
+    nutrition_amount?: number
+    // Дата начала когорты (ISO 8601 format)
+    cohort_start?: string
     created_at: string
     updated_at: string
 }
@@ -56,9 +63,12 @@ export async function hasPendingPayment(): Promise<boolean> {
 }
 
 /**
- * Создать запрос на оплату (ручной перевод)
+ * Создать запрос на оплату
  */
-export async function createPaymentRequest(cohortStart?: Date): Promise<{ payment: Payment | null; error: string | null }> {
+export async function createPaymentRequest(
+    planType: '1_month' | '3_months' | '6_months',
+    includesNutrition: boolean
+): Promise<{ payment: Payment | null; error: string | null }> {
     const supabase = createClient()
 
     const { data: { user } } = await supabase.auth.getUser()
@@ -73,15 +83,32 @@ export async function createPaymentRequest(cohortStart?: Date): Promise<{ paymen
         return { payment: existing, error: null }
     }
 
+    // Рассчитываем стоимость
+    const prices = {
+        '1_month': 14900,
+        '3_months': 35900,
+        '6_months': 59900,
+    }
+    
+    const baseAmount = prices[planType]
+    const nutritionAmount = planType === '6_months' ? 0 : (includesNutrition ? 3000 : 0)
+    const totalAmount = baseAmount + nutritionAmount
+    
+    const planMonths = planType === '1_month' ? 1 : planType === '3_months' ? 3 : 6
+
     const { data, error } = await supabase
         .from('payments')
         .insert({
             user_id: user.id,
-            amount: 10.00,
+            amount: totalAmount,
             currency: 'RUB',
             status: 'pending',
-            payment_method: 'manual',
-            cohort_start: cohortStart ? cohortStart.toISOString().split('T')[0] : null,
+            payment_method: 'yookassa',
+            plan_type: planType,
+            plan_months: planMonths,
+            includes_nutrition: planType === '6_months' ? true : includesNutrition,
+            base_amount: baseAmount,
+            nutrition_amount: nutritionAmount,
         })
         .select()
         .single()

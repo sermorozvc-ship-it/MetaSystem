@@ -1,2 +1,5 @@
 export * from './reports'
 export * from './admin'
+export * from './questionnaire'
+export * from './training'
+export * from './metrics'
