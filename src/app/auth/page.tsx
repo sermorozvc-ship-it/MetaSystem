@@ -145,10 +145,14 @@ function AuthContent() {
                     setIsSubmitting(false)
                 } else {
                     setIsRedirecting(true)
-                    setRedirectMessage(`Аккаунт создан! Переходим...`)
+                    setRedirectMessage(`Аккаунт создан! Переходим к оплате...`)
                     const { createClient } = await import('@/lib/supabase/client')
                     const { data: { user: loggedUser } } = await createClient().auth.getUser()
-                    const target = loggedUser ? await getRedirectTarget(loggedUser) : returnTo
+                    let target = loggedUser ? await getRedirectTarget(loggedUser) : returnTo
+                    // Если возвращаемся на страницу оплаты — добавляем флаг чтобы показать приветствие
+                    if (target.includes('/payment')) {
+                        target += (target.includes('?') ? '&' : '?') + 'registered=true'
+                    }
                     setTimeout(() => { window.location.href = target }, 1500)
                 }
             }

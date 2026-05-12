@@ -51,6 +51,10 @@ export default function PaymentPage() {
     const [error, setError] = useState('')
     const [isPolling, setIsPolling] = useState(false)
 
+    // Флаг — пользователь только что зарегистрировался и вернулся сюда
+    const isJustRegistered = searchParams.get('registered') === 'true'
+    const [showWelcomeBanner, setShowWelcomeBanner] = useState(isJustRegistered)
+
     // Расчет итоговой суммы
     const baseAmount = PLANS[selectedPlan].price
     const nutritionAmount = selectedPlan === '6_months' ? 0 : (includeNutrition ? NUTRITION_PRICE : 0)
@@ -370,6 +374,29 @@ export default function PaymentPage() {
                     <h1 className="text-4xl font-display font-bold text-white mb-2">Выберите тариф</h1>
                     <p className="text-text-secondary">Индивидуальное онлайн-ведение с персональным тренером</p>
                 </div>
+
+                {/* Баннер после регистрации */}
+                {showWelcomeBanner && (
+                    <div className="mb-8 rounded-2xl border border-accent/40 bg-accent/10 p-5 flex items-start gap-4">
+                        <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-accent flex items-center justify-center">
+                            <CheckCircle2 className="w-5 h-5 text-bg-main" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-white font-semibold mb-1">Аккаунт создан — вы вернулись на страницу оплаты</p>
+                            <p className="text-text-secondary text-sm">
+                                Всё в порядке. Выберите тариф и нажмите «Оплатить» — вас перенаправит на ЮMoney.
+                                После оплаты вы сразу попадёте в личный кабинет.
+                            </p>
+                        </div>
+                        <button
+                            onClick={() => setShowWelcomeBanner(false)}
+                            className="flex-shrink-0 text-text-muted hover:text-white transition-colors text-lg leading-none"
+                            aria-label="Закрыть"
+                        >
+                            ×
+                        </button>
+                    </div>
+                )}
 
                 {/* Тарифные карточки */}
                 <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-8">
