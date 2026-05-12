@@ -161,7 +161,7 @@ export default function NewClientPage() {
                                     value={fullName}
                                     onChange={e => setFullName(e.target.value)}
                                     placeholder="Иван Иванов"
-                                    className="glass-input w-full pl-10"
+                                    className="glass-input glass-input-icon w-full"
                                     required
                                     autoFocus
                                 />
@@ -177,7 +177,7 @@ export default function NewClientPage() {
                                     value={email}
                                     onChange={e => setEmail(e.target.value)}
                                     placeholder="client@example.com"
-                                    className="glass-input w-full pl-10"
+                                    className="glass-input glass-input-icon w-full"
                                     required
                                 />
                             </div>
@@ -194,7 +194,7 @@ export default function NewClientPage() {
                                     value={password}
                                     onChange={e => setPassword(e.target.value)}
                                     placeholder="Минимум 6 символов"
-                                    className="glass-input w-full pl-10"
+                                    className="glass-input glass-input-icon w-full"
                                     required
                                     minLength={6}
                                 />
@@ -222,7 +222,7 @@ export default function NewClientPage() {
                                         onChange={e => setAmount(e.target.value)}
                                         placeholder="0"
                                         min="0"
-                                        className="glass-input w-full pl-10"
+                                        className="glass-input glass-input-icon w-full"
                                     />
                                 </div>
                                 <p className="text-xs text-text-muted mt-1">0 — если не нужно фиксировать</p>
@@ -235,7 +235,7 @@ export default function NewClientPage() {
                                     <select
                                         value={planMonths}
                                         onChange={e => setPlanMonths(e.target.value)}
-                                        className="glass-input w-full pl-10 appearance-none"
+                                        className="glass-input glass-input-icon w-full appearance-none"
                                     >
                                         {[1, 2, 3, 4, 5, 6, 9, 12].map(m => (
                                             <option key={m} value={m}>{m} {m === 1 ? 'месяц' : m < 5 ? 'месяца' : 'месяцев'}</option>

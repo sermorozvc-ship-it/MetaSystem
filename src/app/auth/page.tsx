@@ -333,8 +333,7 @@ function AuthContent() {
                                         value={fullName}
                                         onChange={(e) => setFullName(e.target.value)}
                                         placeholder="Как к вам обращаться?"
-                                        style={{ paddingLeft: '44px' }}
-                                        className="glass-input w-full"
+                                        className="glass-input glass-input-icon w-full"
                                         required={mode === 'register'}
                                         autoFocus
                                     />
@@ -354,8 +353,7 @@ function AuthContent() {
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     placeholder="your@email.com"
-                                    style={{ paddingLeft: '44px' }}
-                                    className="glass-input w-full"
+                                    className="glass-input glass-input-icon w-full"
                                     required
                                     autoFocus={mode === 'login'}
                                 />
@@ -374,8 +372,8 @@ function AuthContent() {
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     placeholder={mode === 'register' ? 'Минимум 6 символов' : '••••••••'}
-                                    style={{ paddingLeft: '44px', paddingRight: '44px' }}
-                                    className="glass-input w-full"
+                                    style={{ paddingRight: '44px' }}
+                                    className="glass-input glass-input-icon w-full"
                                     required
                                 />
                                 <button
@@ -401,8 +399,8 @@ function AuthContent() {
                                         value={confirmPassword}
                                         onChange={(e) => setConfirmPassword(e.target.value)}
                                         placeholder="••••••••"
-                                        style={{ paddingLeft: '44px', paddingRight: '44px' }}
-                                        className={`glass-input w-full ${
+                                        style={{ paddingRight: '44px' }}
+                                        className={`glass-input glass-input-icon w-full ${
                                             confirmPassword && confirmPassword !== password
                                                 ? 'border-red-500/60'
                                                 : confirmPassword && confirmPassword === password

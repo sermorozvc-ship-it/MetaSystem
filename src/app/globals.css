@@ -92,6 +92,10 @@ h1, h2, h3, h4, h5, h6 {
   box-sizing: border-box;
   line-height: 1.5;
 }
+/* Input with left icon — guaranteed padding so icon never overlaps text */
+.glass-input-icon {
+  padding-left: 2.75rem !important; /* 44px — icon(16px) + left(14px) + gap(14px) */
+}
 .glass-input::placeholder {
   color: var(--text-muted);
 }

@@ -140,7 +140,7 @@ export default function AdminPaymentsPage() {
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                             placeholder="Поиск по имени или email..."
-                            className="glass-input w-full pl-9"
+                            className="glass-input glass-input-icon w-full"
                         />
                     </div>
                     <div className="flex gap-2">

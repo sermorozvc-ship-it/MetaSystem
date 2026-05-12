@@ -179,7 +179,7 @@ export default function AdminClientsPage() {
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
                             placeholder="Поиск по имени или email..."
-                            className="glass-input w-full pl-12"
+                            className="glass-input glass-input-icon w-full"
                         />
                     </div>
                 </div>
