@@ -283,17 +283,23 @@ export default function MessagesPage() {
         if (!authLoading && !user) window.location.href = '/auth'
     }, [user, authLoading])
 
-    if (authLoading || !user) {
-        return <div className="min-h-screen bg-bg-main flex items-center justify-center"><Loader2 className="w-8 h-8 text-accent animate-spin" /></div>
+    if (!authLoading && !user) {
+        return null
     }
 
-    const isAdmin = ADMIN_EMAILS.includes(user.email?.toLowerCase() || '')
+    // Пока authLoading — рендерим с user=null, данные подгрузятся
+    const isAdmin = user ? (
+        ADMIN_EMAILS.includes(user.email?.toLowerCase() || '')
         || user.user_metadata?.role === 'admin'
         || user.user_metadata?.role === 'trainer'
+    ) : false
 
     return (
         <div className="bg-bg-main flex flex-col" style={{ height: '100vh', paddingTop: '72px' }}>
-            {isAdmin ? <AdminChat /> : <ClientChat user={user} />}
+            {user
+                ? (isAdmin ? <AdminChat /> : <ClientChat user={user} />)
+                : <div className="flex-1 flex items-center justify-center"><Loader2 className="w-8 h-8 text-accent animate-spin" /></div>
+            }
         </div>
     )
 }

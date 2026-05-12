@@ -53,19 +53,7 @@ export default function DashboardPage() {
     }, [user])
 
     if (!authLoading && !user) {
-        return (
-            <div className="min-h-screen bg-bg-main flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-accent animate-spin" />
-            </div>
-        )
-    }
-
-    if (isLoading) {
-        return (
-            <div className="min-h-screen bg-bg-main flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-accent animate-spin" />
-            </div>
-        )
+        return null
     }
 
     const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Атлет'

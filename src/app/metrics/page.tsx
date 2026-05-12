@@ -158,11 +158,7 @@ export default function MetricsPage() {
         .reverse()
 
     if (!authLoading && !user) {
-        return (
-            <div className="min-h-screen bg-bg-main flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-accent animate-spin" />
-            </div>
-        )
+        return null
     }
 
     if (isLoading) {
