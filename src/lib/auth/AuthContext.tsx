@@ -20,10 +20,39 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
  * Использует getUser() вместо getSession() — надёжнее с createBrowserClient.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
-    const [user, setUser] = useState<User | null>(null)
+    // Читаем сессию синхронно из localStorage при инициализации —
+    // это позволяет страницам начать загрузку данных без ожидания async getSession()
+    const [user, setUser] = useState<User | null>(() => {
+        if (typeof window === 'undefined') return null
+        try {
+            // Supabase хранит сессию под ключом sb-<ref>-auth-token
+            const keys = Object.keys(localStorage).filter(k => k.startsWith('sb-') && k.endsWith('-auth-token'))
+            for (const key of keys) {
+                const raw = localStorage.getItem(key)
+                if (!raw) continue
+                const parsed = JSON.parse(raw)
+                const u = parsed?.user ?? parsed?.session?.user ?? null
+                if (u?.id) return u as User
+            }
+        } catch {}
+        return null
+    })
     const [session, setSession] = useState<Session | null>(null)
-    const [isLoading, setIsLoading] = useState(true)
-    const hasResolved = useRef(false)
+    // Если user уже прочитан из localStorage — isLoading сразу false
+    const [isLoading, setIsLoading] = useState(() => {
+        if (typeof window === 'undefined') return true
+        try {
+            const keys = Object.keys(localStorage).filter(k => k.startsWith('sb-') && k.endsWith('-auth-token'))
+            for (const key of keys) {
+                const raw = localStorage.getItem(key)
+                if (!raw) continue
+                const parsed = JSON.parse(raw)
+                if (parsed?.user?.id || parsed?.session?.user?.id) return false
+            }
+        } catch {}
+        return true
+    })
+    const hasResolved = useRef(!isLoading) // уже resolved если прочитали из localStorage
 
     const [supabase] = useState(() => createClient())
     const isLoggingOut = useRef(false)
