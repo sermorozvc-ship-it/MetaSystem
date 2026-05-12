@@ -318,19 +318,12 @@ export default function LandingPage() {
     }, [])
 
     const handleBuyPlan = (planKey: string) => {
-        // Сохраняем выбранный план
+        // Сохраняем выбранный план и переходим на страницу оплаты
+        // Регистрация происходит после оплаты через /onboarding
         if (typeof window !== 'undefined') {
             sessionStorage.setItem('selected_plan', planKey)
         }
-        const paymentUrl = `/payment?plan=${planKey}`
-        // Неавторизованный пользователь сначала проходит авторизацию,
-        // после чего автоматически попадает на страницу оплаты
-        if (!user) {
-            const returnTo = encodeURIComponent(paymentUrl)
-            window.location.href = `/auth?returnTo=${returnTo}`
-        } else {
-            window.location.href = paymentUrl
-        }
+        window.location.href = `/payment?plan=${planKey}`
     }
 
     const scrollTo = (id: string) => {

@@ -57,14 +57,10 @@ export default function PaymentPage() {
     const totalAmount = baseAmount + nutritionAmount
     const hasNutritionIncluded = selectedPlan === '6_months' || includeNutrition
 
-    // Редирект неавторизованных — сохраняем текущий URL как returnTo
+    // Неавторизованные могут видеть страницу оплаты — регистрация происходит после оплаты через /onboarding
+    // Редиректим только админов
     useEffect(() => {
         if (process.env.NEXT_PUBLIC_DISABLE_REDIRECTS === 'true') return
-        if (!authLoading && !user) {
-            const returnTo = encodeURIComponent(window.location.pathname + window.location.search)
-            window.location.href = `/auth?returnTo=${returnTo}`
-        }
-        // Если авторизован и это админ — редиректим на /admin
         if (!authLoading && user) {
             const ADMIN_EMAILS = ['dgmukhin@gmail.com']
             const isAdminUser = ADMIN_EMAILS.includes(user.email?.toLowerCase() || '')
@@ -134,7 +130,12 @@ export default function PaymentPage() {
 
     // Создать платеж и открыть ЮMoney
     const handlePayment = async () => {
-        if (!user) return
+        // Если не авторизован — сначала регистрация, потом вернёмся сюда
+        if (!user) {
+            const returnTo = encodeURIComponent(window.location.pathname + window.location.search)
+            window.location.href = `/auth?returnTo=${returnTo}`
+            return
+        }
         setError('')
         setIsSubmitting(true)
 
