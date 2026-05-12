@@ -6,6 +6,7 @@ import './globals.css'
 import { AuthProvider } from '@/lib/auth'
 import { ErrorSuppressor } from '@/components/ErrorSuppressor'
 import Navigation from '@/components/Navigation'
+import PageWrapper from '@/components/PageWrapper'
 import NextTopLoader from 'nextjs-toploader'
 
 export const viewport = {
@@ -54,19 +55,16 @@ export default function RootLayout({
                 <AuthProvider>
                     <ErrorSuppressor />
                     <Navigation />
-                    <div className="pt-20">
-                        {children}
-                    </div>
+                    <PageWrapper>{children}</PageWrapper>
                 </AuthProvider>
                 <script
                     dangerouslySetInnerHTML={{
                         __html: `
               if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js').then(function(registration) {
-                    console.log('SW registered');
-                  }, function(err) {
-                    console.log('SW registration failed: ', err);
+                navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                  registrations.forEach(function(registration) {
+                    registration.unregister();
+                    console.log('SW unregistered');
                   });
                 });
               }

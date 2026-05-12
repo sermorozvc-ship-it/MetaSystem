@@ -57,7 +57,7 @@ export default function AdminDashboardPage() {
                     getAdminStats(),
                 ])
 
-                const clientsOnly = usersData.filter((u) => u.role === 'client')
+                const clientsOnly = usersData.filter((u) => u.role !== 'admin' && u.role !== 'trainer')
                 setClients(clientsOnly)
                 setStats(statsData)
             } catch (e) {
@@ -90,17 +90,17 @@ export default function AdminDashboardPage() {
     const recentClients = clients.slice(0, 5)
 
     return (
-        <div className="min-h-screen bg-bg-main p-4 py-12">
+        <div className="min-h-screen bg-bg-main p-4 py-6 md:py-12">
             <div className="max-w-6xl mx-auto">
                 {/* Header */}
-                <div className="mb-8">
-                    <div className="flex items-center gap-3 mb-2">
-                        <div className="w-12 h-12 rounded-xl bg-accent flex items-center justify-center">
-                            <Shield className="w-6 h-6 text-bg-main" />
+                <div className="mb-6">
+                    <div className="flex items-center gap-3 mb-1">
+                        <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center flex-shrink-0">
+                            <Shield className="w-5 h-5 text-bg-main" />
                         </div>
                         <div>
-                            <h1 className="text-3xl font-display font-bold text-white">Админ-панель</h1>
-                            <p className="text-text-secondary">Управление платформой</p>
+                            <h1 className="text-2xl md:text-3xl font-display font-bold text-white">Админ-панель</h1>
+                            <p className="text-text-secondary text-sm">Управление платформой</p>
                         </div>
                     </div>
                 </div>

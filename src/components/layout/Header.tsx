@@ -116,7 +116,7 @@ export default function Header({ currentDay = 1, userName: propUserName }: Heade
                     </div>
                     <div className="h-4 w-px bg-white/10" />
                     <span className="text-[11px] md:text-xs font-bold text-gray-500 uppercase tracking-widest italic opacity-60">
-                        Метаболический Запуск
+                        Архитектура тела
                     </span>
                 </div>
             </div>

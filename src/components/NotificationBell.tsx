@@ -42,19 +42,21 @@ export default function NotificationBell() {
   }, [user])
 
   const handleNotificationClick = async (notification: Notification) => {
-    await markAsRead(notification.id)
+    // Оптимистично убираем из UI сразу
     setNotifications((prev) => prev.filter((n) => n.id !== notification.id))
     setIsOpen(false)
+    // Помечаем как прочитанное в фоне (не блокируем UI)
+    markAsRead(notification.id).catch(console.warn)
     if (notification.link) {
       router.push(notification.link)
     }
   }
 
   const handleMarkAllAsRead = async () => {
-    setIsLoading(true)
-    await markAllAsRead()
+    // Оптимистично очищаем UI сразу
     setNotifications([])
-    setIsLoading(false)
+    setIsLoading(true)
+    markAllAsRead().catch(console.warn).finally(() => setIsLoading(false))
   }
 
   if (!user) return null
@@ -129,9 +131,11 @@ export default function NotificationBell() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          handleNotificationClick(notification)
+                          // Только убираем из списка, без редиректа и закрытия панели
+                          setNotifications((prev) => prev.filter((n) => n.id !== notification.id))
+                          markAsRead(notification.id).catch(console.warn)
                         }}
-                        className="text-text-muted hover:text-white"
+                        className="text-text-muted hover:text-white flex-shrink-0"
                       >
                         <X className="w-4 h-4" />
                       </button>

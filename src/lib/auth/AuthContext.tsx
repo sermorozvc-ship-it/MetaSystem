@@ -119,11 +119,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 
     const signUp = async (email: string, password: string, fullName?: string) => {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
             email,
             password,
-            options: { data: { full_name: fullName } }
+            options: { 
+                data: { full_name: fullName },
+                emailRedirectTo: typeof window !== 'undefined' 
+                    ? `${window.location.origin}/auth?mode=login` 
+                    : undefined
+            }
         })
+        // Если Supabase вернул пользователя без ошибки — регистрация прошла
+        // (даже если email confirmation включена — сессия может быть установлена)
         return { error: error as Error | null }
     }
 

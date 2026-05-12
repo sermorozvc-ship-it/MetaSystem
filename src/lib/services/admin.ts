@@ -4,7 +4,7 @@ export interface UserProfile {
     id: string
     email: string
     full_name: string | null
-    role: 'client' | 'admin' | 'trainer'
+    role: 'client' | 'user' | 'admin' | 'trainer' | 'curator'
     is_blocked: boolean
     blocked_at: string | null
     blocked_reason: string | null

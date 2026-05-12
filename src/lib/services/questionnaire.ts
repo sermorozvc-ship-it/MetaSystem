@@ -99,9 +99,11 @@ export async function getQuestionnaireByUserId(userId: string): Promise<ClientQu
     .eq('user_id', userId)
     .single()
 
-  if (error && error.code !== 'PGRST116') {
-    console.error('Error fetching questionnaire:', error)
-    throw error
+  if (error) {
+    if (error.code !== 'PGRST116') {
+      console.error('Error fetching questionnaire:', error)
+    }
+    return null
   }
 
   return data
@@ -118,19 +120,23 @@ export async function upsertQuestionnaire(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
+  // Убираем undefined поля — Supabase не любит их в upsert
+  const payload: Record<string, any> = { user_id: user.id, updated_at: new Date().toISOString() }
+  for (const [key, value] of Object.entries(formData)) {
+    if (value !== undefined && value !== null) {
+      payload[key] = value
+    }
+  }
+
   const { data, error } = await supabase
     .from('client_questionnaires')
-    .upsert({
-      user_id: user.id,
-      ...formData,
-      updated_at: new Date().toISOString(),
-    })
+    .upsert(payload, { onConflict: 'user_id' })
     .select()
     .single()
 
   if (error) {
     console.error('Error upserting questionnaire:', error)
-    throw error
+    throw new Error('Ошибка сохранения: ' + error.message)
   }
 
   // Обновляем флаг в профиле
@@ -185,11 +191,24 @@ export async function isQuestionnaireCompleted(): Promise<boolean> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return false
 
-  const { data } = await supabase
-    .from('profiles')
-    .select('questionnaire_completed')
-    .eq('id', user.id)
-    .single()
+  // Проверяем наличие записи в client_questionnaires
+  // Это более надежно, чем полагаться только на флаг
+  const { data: questionnaire } = await supabase
+    .from('client_questionnaires')
+    .select('id')
+    .eq('user_id', user.id)
+    .maybeSingle()
 
-  return data?.questionnaire_completed ?? false
+  // Если есть запись в анкетах - считаем заполненной
+  if (questionnaire) {
+    // Обновляем флаг в профиле на всякий случай
+    await supabase
+      .from('profiles')
+      .update({ questionnaire_completed: true })
+      .eq('id', user.id)
+    
+    return true
+  }
+
+  return false
 }

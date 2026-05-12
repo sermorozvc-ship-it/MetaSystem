@@ -48,7 +48,7 @@ export default function CourseConclusionModal({ isOpen, onClose, userName }: Cou
                         </h2>
 
                         <p className="text-gray-400 text-lg mb-10 leading-relaxed font-medium">
-                            Вы успешно завершили 7-дневный курс «Метаболический Запуск».
+                            Вы успешно завершили программу «Архитектура твоего тела».
                             Это невероятный результат и важный шаг к вашей идеальной форме!
                         </p>
 

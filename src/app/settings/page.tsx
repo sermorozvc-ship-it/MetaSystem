@@ -242,7 +242,7 @@ export default function SettingsPage() {
 
                                 <div className="flex items-center justify-between p-3 rounded-xl bg-deep-dark-200/40">
                                     <span>Курс</span>
-                                    <span className="text-white">Метаболический Запуск</span>
+                                    <span className="text-white">Архитектура твоего тела</span>
                                 </div>
                                 <div className="flex items-center justify-between p-3 rounded-xl bg-deep-dark-200/40">
                                     <span>Длительность</span>

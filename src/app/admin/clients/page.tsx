@@ -43,7 +43,7 @@ export default function AdminClientsPage() {
         const loadClients = async () => {
             try {
                 const data = await getAllUsers()
-                const clientsOnly = data.filter((u) => u.role === 'client')
+                const clientsOnly = data.filter((u) => u.role !== 'admin' && u.role !== 'trainer')
                 setClients(clientsOnly)
                 setFilteredClients(clientsOnly)
             } catch (e) {

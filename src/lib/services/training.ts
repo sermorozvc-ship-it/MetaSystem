@@ -24,6 +24,7 @@ export interface ProgramData {
   startDate: string
   endDate: string
   days: TrainingDay[]
+  weeklyNote?: string  // общая рекомендация тренера на неделю
 }
 
 export interface TrainingDay {
@@ -33,6 +34,7 @@ export interface TrainingDay {
   exercises: Exercise[]
   cardio?: string
   clientNotes?: string
+  coachNote?: string   // рекомендация тренера на этот день
 }
 
 export interface Exercise {
@@ -41,7 +43,8 @@ export interface Exercise {
   videoUrl?: string
   sets: number
   reps: string
-  targetWeight?: number
+  targetWeights: number[]   // вес для каждого подхода, длина = sets
+  targetWeight?: number     // legacy fallback
   clientData?: {
     actualWeight?: number
     actualReps?: number
@@ -98,11 +101,11 @@ export async function getProgramById(programId: string): Promise<TrainingProgram
     .from('training_programs')
     .select('*')
     .eq('id', programId)
-    .single()
+    .maybeSingle()
 
-  if (error && error.code !== 'PGRST116') {
+  if (error) {
     console.error('Error fetching program:', error)
-    throw error
+    return null
   }
 
   return data
@@ -133,7 +136,8 @@ export async function getProgramByWeek(weekNumber: number): Promise<TrainingProg
 }
 
 /**
- * Получить текущую активную программу
+ * Получить текущую активную программу.
+ * Приоритет: программа на сегодня → последняя активная по дате начала
  */
 export async function getCurrentProgram(): Promise<TrainingProgram | null> {
   const supabase = createClient()
@@ -143,21 +147,29 @@ export async function getCurrentProgram(): Promise<TrainingProgram | null> {
 
   const today = new Date().toISOString().split('T')[0]
 
-  const { data, error } = await supabase
+  // 1. Ищем программу, в диапазон которой попадает сегодня
+  const { data: exact } = await supabase
     .from('training_programs')
     .select('*')
     .eq('user_id', user.id)
     .eq('status', 'active')
     .lte('start_date', today)
     .gte('end_date', today)
-    .single()
+    .maybeSingle()
 
-  if (error && error.code !== 'PGRST116') {
-    console.error('Error fetching current program:', error)
-    throw error
-  }
+  if (exact) return exact
 
-  return data
+  // 2. Fallback: последняя активная программа (по убыванию week_number)
+  const { data: latest } = await supabase
+    .from('training_programs')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .order('week_number', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  return latest ?? null
 }
 
 /**
@@ -175,31 +187,49 @@ export async function createProgram(
 ): Promise<TrainingProgram> {
   const supabase = createClient()
 
-  const { data, error } = await supabase
-    .from('training_programs')
-    .insert({
-      user_id: userId,
-      week_number: weekNumber,
-      start_date: startDate,
-      end_date: endDate,
-      training_days_count: trainingDaysCount,
-      program_md: programMd,
-      program_data: programData,
-      notes_trainer: notesTrainer,
-      status: 'active',
-    })
-    .select()
-    .single()
+  console.log('[Training] Creating program for user:', userId, 'week:', weekNumber)
 
-  if (error) {
-    console.error('Error creating program:', error)
-    throw error
+  const insertPayload = {
+    user_id: userId,
+    week_number: weekNumber,
+    start_date: startDate,
+    end_date: endDate,
+    training_days_count: trainingDaysCount,
+    program_md: programMd,
+    program_data: programData,
+    notes_trainer: notesTrainer || null,
+    status: 'active',
   }
 
-  // Отправить уведомление клиенту о новой программе
-  await notifyProgramUploaded(userId, weekNumber)
+  console.log('[Training] Insert payload keys:', Object.keys(insertPayload))
 
-  return data
+  const { data, error } = await supabase
+    .from('training_programs')
+    .insert(insertPayload)
+    .select()
+
+  console.log('[Training] Insert result - data:', !!data, 'error:', error?.message || 'none')
+
+  if (error) {
+    console.error('[Training] Error creating program:', error)
+    throw new Error('Ошибка создания программы: ' + error.message + ' (code: ' + error.code + ')')
+  }
+
+  const program = Array.isArray(data) ? data[0] : data
+  if (!program) {
+    throw new Error('Программа не была создана (пустой ответ от БД)')
+  }
+
+  console.log('[Training] Program created:', program.id)
+
+  // Отправить уведомление клиенту (не блокируем если не получится)
+  try {
+    await notifyProgramUploaded(userId, weekNumber)
+  } catch (e) {
+    console.warn('[Training] Notification failed (non-critical):', e)
+  }
+
+  return program
 }
 
 /**
@@ -240,11 +270,11 @@ export async function getTrainingEntry(
     .select('*')
     .eq('program_id', programId)
     .eq('day_number', dayNumber)
-    .single()
+    .maybeSingle()
 
-  if (error && error.code !== 'PGRST116') {
+  if (error) {
     console.error('Error fetching entry:', error)
-    throw error
+    return null
   }
 
   return data
@@ -271,14 +301,17 @@ export async function upsertTrainingEntry(
 
   const { data, error } = await supabase
     .from('training_entries')
-    .upsert({
-      program_id: programId,
-      user_id: user.id,
-      day_number: dayNumber,
-      entry_data: entryData,
-      ...metadata,
-      updated_at: new Date().toISOString(),
-    })
+    .upsert(
+      {
+        program_id: programId,
+        user_id: user.id,
+        day_number: dayNumber,
+        entry_data: entryData,
+        ...metadata,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'program_id,day_number' }
+    )
     .select()
     .single()
 
@@ -299,11 +332,15 @@ export async function completeTrainingDay(
 ): Promise<void> {
   const supabase = createClient()
 
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
   const { error } = await supabase
     .from('training_entries')
     .update({ completed_at: new Date().toISOString() })
     .eq('program_id', programId)
     .eq('day_number', dayNumber)
+    .eq('user_id', user.id)
 
   if (error) {
     console.error('Error completing training day:', error)
@@ -337,6 +374,7 @@ export async function getProgramEntries(programId: string): Promise<TrainingEntr
 export async function getClientPrograms(userId: string): Promise<TrainingProgram[]> {
   const supabase = createClient()
 
+  // Пробуем user_id (основное поле)
   const { data, error } = await supabase
     .from('training_programs')
     .select('*')
@@ -344,8 +382,19 @@ export async function getClientPrograms(userId: string): Promise<TrainingProgram
     .order('week_number', { ascending: false })
 
   if (error) {
-    console.error('Error fetching client programs:', error)
-    throw error
+    // Если ошибка — возможно поле называется client_id
+    console.warn('getClientPrograms user_id failed, trying client_id:', error.message)
+    const { data: data2, error: error2 } = await supabase
+      .from('training_programs')
+      .select('*')
+      .eq('client_id', userId)
+      .order('week_number', { ascending: false })
+
+    if (error2) {
+      console.error('Error fetching client programs:', error2)
+      return []
+    }
+    return data2 || []
   }
 
   return data || []

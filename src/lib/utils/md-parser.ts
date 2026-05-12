@@ -1,302 +1,219 @@
 // MetaSystem v2 — Markdown Parser
-// Конвертация между Markdown и JSON для тренировочных программ
 
 import type { ProgramData, TrainingDay, Exercise } from '@/lib/services/training'
 
 /**
- * Парсинг Markdown в JSON
- * 
  * Формат MD:
+ *
  * # Неделя 1
- * **Период:** 2026-05-12 — 2026-05-18
- * 
+ * **Период:** 2026-05-14 — 2026-05-21
+ * **Рекомендация:** Неделя средняя по нагрузке. Закрываем базовый объём.
+ *
  * ## День 1: Верх тела (Push)
- * 
+ * **Рекомендация дня:** Сегодня работаем не до отказа, RIR 2-3 на всех подходах.
+ *
  * ### Жим гантелей лёжа
- * [Видео](https://youtube.com/watch?v=xxx)
- * - 3 x 10-12
- * - Вес: 20 кг
- * 
- * ### Жим гантелей на наклонной скамье
- * - 3 x 10-12
- * 
- * **Кардио:** 15 мин ходьба (ЧСС 120-130)
+ * [Видео](url)
+ * - 4 x 10-12 • 20/22.5/25/30 кг
  */
 export function parseMdToJson(markdown: string): ProgramData {
   const lines = markdown.split('\n').map((line) => line.trim())
-  
-  // Извлекаем номер недели
-  const weekMatch = lines.find((line) => line.startsWith('# Неделя'))
+
+  // Номер недели
+  const weekMatch = lines.find((l) => l.startsWith('# Неделя'))
   const weekNumber = weekMatch ? parseInt(weekMatch.replace('# Неделя', '').trim()) : 1
-  
-  // Извлекаем даты
-  const dateMatch = lines.find((line) => line.includes('**Период:**'))
+
+  // Даты
+  const dateMatch = lines.find((l) => l.includes('**Период:**'))
   let startDate = ''
   let endDate = ''
-  
   if (dateMatch) {
     const dateStr = dateMatch.replace('**Период:**', '').trim()
     const dates = dateStr.split('—').map((d) => d.trim())
     startDate = dates[0] || ''
     endDate = dates[1] || ''
   }
-  
+
+  // Рекомендация на неделю (строка до первого ##)
+  let weeklyNote = ''
+  for (const l of lines) {
+    if (l.startsWith('## ')) break
+    const m = l.match(/^\*\*Рекомендация[^:]*:\*\*\s*(.+)/i)
+    if (m) { weeklyNote = m[1].trim(); break }
+  }
+
   const days: TrainingDay[] = []
   let currentDay: TrainingDay | null = null
   let currentExercise: Exercise | null = null
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    
-    // День тренировки: ## День 1: Верх тела
-    if (line.startsWith('## День')) {
-      if (currentDay && currentExercise) {
-        currentDay.exercises.push(currentExercise)
-        currentExercise = null
+
+  for (const line of lines) {
+    // День: ## День N: Название
+    const dayMatch =
+      line.match(/^##\s+(?:.*?)?День\s*(\d+):?\s*(.*)/i) ||
+      line.match(/^##\s+(?:.*?)?Тренировка\s*(\d+):?\s*(.*)/i) ||
+      line.match(/^##\s+(?:.*?)?Day\s*(\d+):?\s*(.*)/i)
+
+    if (dayMatch) {
+      if (currentExercise && currentDay) { currentDay.exercises.push(currentExercise); currentExercise = null }
+      if (currentDay) days.push(currentDay)
+      currentDay = {
+        dayNumber: parseInt(dayMatch[1]),
+        dayOfWeek: getDayOfWeek(parseInt(dayMatch[1])),
+        title: dayMatch[2].trim() || `День ${dayMatch[1]}`,
+        exercises: [],
+        coachNote: '',
       }
-      if (currentDay) {
-        days.push(currentDay)
-      }
-      
-      const dayMatch = line.match(/## День (\d+):?\s*(.*)/)
-      if (dayMatch) {
-        const dayNumber = parseInt(dayMatch[1])
-        const title = dayMatch[2].trim()
-        
-        currentDay = {
-          dayNumber,
-          dayOfWeek: getDayOfWeek(dayNumber),
-          title,
-          exercises: [],
-        }
-      }
+      continue
     }
-    
-    // Упражнение: ### Жим гантелей
-    else if (line.startsWith('###')) {
-      if (currentExercise && currentDay) {
-        currentDay.exercises.push(currentExercise)
-      }
-      
-      const exerciseName = line.replace('###', '').trim()
+
+    // Рекомендация на день (строка после ## и до первого ###)
+    if (currentDay && !currentExercise) {
+      const noteMatch = line.match(/^\*\*Рекомендация[^:]*:\*\*\s*(.+)/i)
+      if (noteMatch) { currentDay.coachNote = noteMatch[1].trim(); continue }
+    }
+
+    // Упражнение: ### Название
+    if (line.startsWith('###')) {
+      if (currentExercise && currentDay) currentDay.exercises.push(currentExercise)
+      const exerciseName = line.replace(/^###\s*/, '').trim()
       currentExercise = {
         id: generateExerciseId(exerciseName),
         name: exerciseName,
         sets: 3,
         reps: '10-12',
-        clientData: {},
+        targetWeights: [],
+      }
+      continue
+    }
+
+    if (!currentExercise && !currentDay) continue
+
+    // Видео
+    if (currentExercise && line.includes('[Видео]')) {
+      const m = line.match(/\[Видео\]\((.*?)\)/)
+      if (m) currentExercise.videoUrl = m[1]
+      continue
+    }
+
+    // НОВЫЙ формат: - 4 x 10-12 • 20/22.5/25/30 кг
+    if (currentExercise) {
+      const newFmt = line.match(/^-\s*(\d+)\s*x\s*([\d\-]+)\s*[•·]\s*([\d./\s]+)\s*кг/i)
+      if (newFmt) {
+        currentExercise.sets = parseInt(newFmt[1])
+        currentExercise.reps = newFmt[2]
+        const weights = newFmt[3].trim().split('/').map(w => parseFloat(w.trim())).filter(w => !isNaN(w))
+        currentExercise.targetWeights = weights
+        if (weights.length > 0) currentExercise.targetWeight = weights[0]
+        continue
+      }
+
+      // СТАРЫЙ формат: - 3 x 10-12
+      const oldSR = line.match(/^-\s*(\d+)\s*x\s*([\d\-]+)/)
+      if (oldSR) {
+        currentExercise.sets = parseInt(oldSR[1])
+        currentExercise.reps = oldSR[2]
+        continue
+      }
+
+      // СТАРЫЙ формат: - Вес: 20 кг
+      const oldW = line.match(/^-\s*Вес:\s*([\d.]+)/)
+      if (oldW) {
+        const w = parseFloat(oldW[1])
+        currentExercise.targetWeight = w
+        if (currentExercise.targetWeights.length === 0) {
+          currentExercise.targetWeights = Array(currentExercise.sets).fill(w)
+        }
+        continue
       }
     }
-    
-    // Видео: [Видео](url)
-    else if (line.includes('[Видео]') && currentExercise) {
-      const urlMatch = line.match(/\[Видео\]\((.*?)\)/)
-      if (urlMatch) {
-        currentExercise.videoUrl = urlMatch[1]
-      }
-    }
-    
-    // Подходы и повторения: - 3 x 10-12
-    else if (line.match(/^-\s*\d+\s*x\s*[\d\-]+/) && currentExercise) {
-      const setsRepsMatch = line.match(/^-\s*(\d+)\s*x\s*([\d\-]+)/)
-      if (setsRepsMatch) {
-        currentExercise.sets = parseInt(setsRepsMatch[1])
-        currentExercise.reps = setsRepsMatch[2]
-      }
-    }
-    
-    // Целевой вес: - Вес: 20 кг
-    else if (line.match(/^-\s*Вес:\s*\d+/) && currentExercise) {
-      const weightMatch = line.match(/^-\s*Вес:\s*(\d+)/)
-      if (weightMatch) {
-        currentExercise.targetWeight = parseInt(weightMatch[1])
-      }
-    }
-    
-    // Кардио: **Кардио:** 15 мин ходьба
-    else if (line.includes('**Кардио:**') && currentDay) {
+
+    // Кардио
+    if (currentDay && line.includes('**Кардио:**')) {
       currentDay.cardio = line.replace('**Кардио:**', '').trim()
     }
   }
-  
-  // Добавляем последнее упражнение и день
-  if (currentExercise && currentDay) {
-    currentDay.exercises.push(currentExercise)
-  }
-  if (currentDay) {
-    days.push(currentDay)
-  }
-  
-  return {
-    weekNumber,
-    startDate,
-    endDate,
-    days,
-  }
-}
 
-/**
- * Конвертация JSON в Markdown
- */
-export function jsonToMd(programData: ProgramData): string {
-  let md = `# Неделя ${programData.weekNumber}\n\n`
-  md += `**Период:** ${programData.startDate} — ${programData.endDate}\n\n`
-  
-  programData.days.forEach((day) => {
-    md += `## День ${day.dayNumber}: ${day.title}\n\n`
-    
-    day.exercises.forEach((exercise) => {
-      md += `### ${exercise.name}\n`
-      
-      if (exercise.videoUrl) {
-        md += `[Видео](${exercise.videoUrl})\n`
+  if (currentExercise && currentDay) currentDay.exercises.push(currentExercise)
+  if (currentDay) days.push(currentDay)
+
+  // Нормализация targetWeights
+  for (const day of days) {
+    for (const ex of day.exercises) {
+      if (!ex.targetWeights || ex.targetWeights.length === 0) {
+        ex.targetWeights = Array(ex.sets).fill(0)
+      } else if (ex.targetWeights.length < ex.sets) {
+        const last = ex.targetWeights[ex.targetWeights.length - 1]
+        while (ex.targetWeights.length < ex.sets) ex.targetWeights.push(last)
       }
-      
-      md += `- ${exercise.sets} x ${exercise.reps}\n`
-      
-      if (exercise.targetWeight) {
-        md += `- Вес: ${exercise.targetWeight} кг\n`
-      }
-      
-      md += '\n'
-    })
-    
-    if (day.cardio) {
-      md += `**Кардио:** ${day.cardio}\n\n`
     }
-    
-    md += '---\n\n'
-  })
-  
-  return md
+  }
+
+  return { weekNumber, startDate, endDate, days, weeklyNote }
 }
 
-/**
- * Генерация ID упражнения из названия
- */
 function generateExerciseId(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^а-яa-z0-9\s]/g, '')
-    .replace(/\s+/g, '-')
-    .substring(0, 50)
+  return name.toLowerCase().replace(/[^а-яёa-z0-9\s]/g, '').replace(/\s+/g, '-').substring(0, 50)
 }
 
-/**
- * Получить день недели по номеру дня
- */
 function getDayOfWeek(dayNumber: number): string {
-  const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-  return days[(dayNumber - 1) % 7] || 'monday'
+  return ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'][(dayNumber - 1) % 7] || 'monday'
 }
 
 /**
- * Валидация программы
- */
-export function validateProgram(programData: ProgramData): {
-  valid: boolean
-  errors: string[]
-} {
-  const errors: string[] = []
-  
-  if (!programData.weekNumber || programData.weekNumber < 1) {
-    errors.push('Некорректный номер недели')
-  }
-  
-  if (!programData.startDate || !programData.endDate) {
-    errors.push('Не указаны даты начала и окончания')
-  }
-  
-  if (!programData.days || programData.days.length === 0) {
-    errors.push('Программа не содержит тренировочных дней')
-  }
-  
-  programData.days.forEach((day, index) => {
-    if (!day.title) {
-      errors.push(`День ${index + 1}: отсутствует название`)
-    }
-    
-    if (!day.exercises || day.exercises.length === 0) {
-      errors.push(`День ${index + 1}: нет упражнений`)
-    }
-    
-    day.exercises.forEach((exercise, exIndex) => {
-      if (!exercise.name) {
-        errors.push(`День ${index + 1}, упражнение ${exIndex + 1}: отсутствует название`)
-      }
-      
-      if (!exercise.sets || exercise.sets < 1) {
-        errors.push(`День ${index + 1}, ${exercise.name}: некорректное количество подходов`)
-      }
-      
-      if (!exercise.reps) {
-        errors.push(`День ${index + 1}, ${exercise.name}: не указаны повторения`)
-      }
-    })
-  })
-  
-  return {
-    valid: errors.length === 0,
-    errors,
-  }
-}
-
-/**
- * Пример программы для тестирования
+ * Пример программы с рекомендациями
  */
 export const EXAMPLE_PROGRAM_MD = `# Неделя 1
 
-**Период:** 2026-05-12 — 2026-05-18
+**Период:** 2026-05-14 — 2026-05-21
+**Рекомендация:** Неделя средняя по нагрузке. Закрываем базовый объём. Фокус на технике и контроле веса.
 
 ## День 1: Верх тела (Push)
+**Рекомендация дня:** Сегодня работаем не до отказа. RIR 2-3 на всех подходах. Если чувствуешь усталость — снижай вес.
 
 ### Жим гантелей лёжа
 [Видео](https://youtube.com/watch?v=example1)
-- 3 x 10-12
-- Вес: 20 кг
+- 4 x 10-12 • 20/22.5/25/30 кг
 
 ### Жим гантелей на наклонной скамье
 [Видео](https://youtube.com/watch?v=example2)
-- 3 x 10-12
-- Вес: 18 кг
+- 3 x 10-12 • 18/20/20 кг
 
 ### Разводка гантелей
-- 3 x 12-15
+- 3 x 12-15 • 12/12/14 кг
 
 **Кардио:** 15 мин ходьба (ЧСС 120-130)
 
 ---
 
 ## День 2: Низ тела
+**Рекомендация дня:** Приседания — полная амплитуда. Не торопись, контролируй опускание.
 
 ### Приседания со штангой
 [Видео](https://youtube.com/watch?v=example3)
-- 4 x 8-10
-- Вес: 60 кг
+- 4 x 8-10 • 60/65/70/70 кг
 
 ### Румынская тяга
-- 3 x 10-12
-- Вес: 50 кг
+- 3 x 10-12 • 50/55/55 кг
 
 ### Жим ногами
-- 3 x 12-15
+- 3 x 12-15 • 80/90/90 кг
 
 **Кардио:** 10 мин велотренажёр
 
 ---
 
 ## День 3: Верх тела (Pull)
+**Рекомендация дня:** Тяги — локоть ведёт движение, не кисть. Пауза в нижней точке 1 сек.
 
 ### Подтягивания
 [Видео](https://youtube.com/watch?v=example4)
-- 3 x 8-10
+- 3 x 8-10 • 0/0/0 кг
 
 ### Тяга штанги в наклоне
-- 3 x 10-12
-- Вес: 40 кг
+- 3 x 10-12 • 40/45/45 кг
 
 ### Тяга верхнего блока
-- 3 x 12-15
+- 3 x 12-15 • 50/55/55 кг
 
 **Кардио:** 15 мин ходьба
 

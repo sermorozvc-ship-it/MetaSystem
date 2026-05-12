@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Flame, Mail, Lock, User, Eye, EyeOff, ArrowRight, Loader2, CheckCircle } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
+import { createClient } from '@/lib/supabase/client'
 
 type AuthMode = 'login' | 'register'
 
@@ -22,6 +23,7 @@ export default function AuthPage() {
 function AuthContent() {
     const searchParams = useSearchParams()
     const initialMode = searchParams.get('mode') === 'register' ? 'register' : 'login'
+    const returnTo = searchParams.get('returnTo') || '/questionnaire'
     const [mode, setMode] = useState<AuthMode>(initialMode)
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
@@ -31,6 +33,8 @@ function AuthContent() {
     const [showConfirmPassword, setShowConfirmPassword] = useState(false)
     const [error, setError] = useState('')
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [emailNotConfirmed, setEmailNotConfirmed] = useState(false)
+    const [resendCooldown, setResendCooldown] = useState(0)
 
     // Состояние перехода — показывается после успешного входа/регистрации
     const [isRedirecting, setIsRedirecting] = useState(false)
@@ -39,31 +43,88 @@ function AuthContent() {
     const { signIn, signUp, user, isLoading: authLoading } = useAuth()
     const router = useRouter()
 
-    // Если пользователь уже авторизован — сразу редиректим
+    // Определяем куда редиректить после входа
+    const getRedirectTarget = async (loggedInUser: { id?: string; email?: string | null; user_metadata?: any }) => {
+        const ADMIN_EMAILS = ['dgmukhin@gmail.com']
+        const isAdminUser = ADMIN_EMAILS.includes(loggedInUser.email?.toLowerCase() || '')
+            || loggedInUser.user_metadata?.role === 'admin'
+            || loggedInUser.user_metadata?.role === 'curator'
+            || loggedInUser.user_metadata?.role === 'trainer'
+
+        if (isAdminUser) return '/admin'
+
+        // Если есть явный returnTo — используем его
+        if (returnTo && returnTo !== '/questionnaire') return returnTo
+
+        // Иначе определяем по состоянию: оплата → анкета → дашборд
+        try {
+            const { getUserPayment } = await import('@/lib/services/payment')
+            const { isQuestionnaireCompleted } = await import('@/lib/services/questionnaire')
+            const payment = await getUserPayment()
+            if (!payment || payment.status !== 'confirmed') return '/payment'
+            const done = await isQuestionnaireCompleted()
+            return done ? '/dashboard' : '/questionnaire'
+        } catch {
+            return returnTo
+        }
+    }
+
+    // Если пользователь уже авторизован — редиректим
     useEffect(() => {
         if (!authLoading && user && !isRedirecting) {
             setIsRedirecting(true)
             setRedirectMessage('Перенаправляем...')
-            router.replace('/payment')
+            const ADMIN_EMAILS = ['dgmukhin@gmail.com']
+            const isAdminUser = ADMIN_EMAILS.includes(user.email?.toLowerCase() || '')
+                || user.user_metadata?.role === 'admin'
+                || user.user_metadata?.role === 'curator'
+                || user.user_metadata?.role === 'trainer'
+            if (isAdminUser) {
+                window.location.href = '/admin'
+            } else {
+                getRedirectTarget(user).then(target => { window.location.href = target })
+            }
         }
-    }, [user, authLoading, router, isRedirecting])
+    }, [user, authLoading, isRedirecting])
+
+    // Таймер кулдауна для повторной отправки письма
+    useEffect(() => {
+        if (resendCooldown <= 0) return
+        const t = setTimeout(() => setResendCooldown(c => c - 1), 1000)
+        return () => clearTimeout(t)
+    }, [resendCooldown])
+
+    const handleResendConfirmation = async () => {
+        if (resendCooldown > 0 || !email) return
+        setResendCooldown(60)
+        const supabase = createClient()
+        await supabase.auth.resend({ type: 'signup', email })
+    }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         setError('')
+        setEmailNotConfirmed(false)
         setIsSubmitting(true)
 
         try {
             if (mode === 'login') {
                 const { error } = await signIn(email, password)
                 if (error) {
-                    setError(getErrorMessage(error.message))
+                    if (error.message.includes('Email not confirmed')) {
+                        setEmailNotConfirmed(true)
+                        setError('Email не подтверждён. Проверьте почту или отправьте письмо повторно.')
+                    } else {
+                        setError(getErrorMessage(error.message))
+                    }
                     setIsSubmitting(false)
                 } else {
-                    // Успешный вход — показываем плавный экран перехода
                     setIsRedirecting(true)
-                    setRedirectMessage('Добро пожаловать! Переходим к оплате...')
-                    setTimeout(() => router.replace('/payment'), 800)
+                    setRedirectMessage('Добро пожаловать! Переходим...')
+                    const { createClient } = await import('@/lib/supabase/client')
+                    const { data: { user: loggedUser } } = await createClient().auth.getUser()
+                    const target = loggedUser ? await getRedirectTarget(loggedUser) : returnTo
+                    setTimeout(() => { window.location.href = target }, 800)
                 }
             } else {
                 if (password.length < 6) {
@@ -82,11 +143,12 @@ function AuthContent() {
                     setError(getErrorMessage(error.message))
                     setIsSubmitting(false)
                 } else {
-                    // Успешная регистрация — показываем экран перехода
                     setIsRedirecting(true)
-                    setRedirectMessage(`Аккаунт создан! Переходим к оплате...`)
-                    // Дадим время Supabase установить сессию, потом редиректим
-                    setTimeout(() => router.replace('/payment'), 1500)
+                    setRedirectMessage(`Аккаунт создан! Переходим...`)
+                    const { createClient } = await import('@/lib/supabase/client')
+                    const { data: { user: loggedUser } } = await createClient().auth.getUser()
+                    const target = loggedUser ? await getRedirectTarget(loggedUser) : returnTo
+                    setTimeout(() => { window.location.href = target }, 1500)
                 }
             }
         } catch (err) {
@@ -154,26 +216,26 @@ function AuthContent() {
 
     // ── ФОРМА АВТОРИЗАЦИИ ────────────────────────────────────────────────
     return (
-        <div className="min-h-screen bg-deep-dark flex items-center justify-center p-4">
-            <div className="w-full max-w-md">
+        <div className="min-h-screen bg-deep-dark flex items-start justify-center p-4 py-6 overflow-y-auto">
+            <div className="w-full max-w-md my-auto">
                 {/* Logo */}
-                <div className="text-center mb-8">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-meta-orange to-meta-orange-600
-                                    flex items-center justify-center mx-auto mb-4 shadow-glow-orange">
-                        <Flame className="w-9 h-9 text-white" />
+                <div className="text-center mb-6">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-meta-orange to-meta-orange-600
+                                    flex items-center justify-center mx-auto mb-3 shadow-glow-orange">
+                        <Flame className="w-8 h-8 text-white" />
                     </div>
-                    <h1 className="text-2xl font-bold text-white">Метаболический Запуск</h1>
-                    <p className="text-gray-400 mt-2">7-дневная программа перезагрузки</p>
+                    <h1 className="text-2xl font-bold text-white">Архитектура твоего тела</h1>
+                    <p className="text-gray-400 mt-1 text-sm">Научная система трансформации, построенная на принципах адаптации и периодизации</p>
                 </div>
 
                 {/* Auth Card */}
-                <div className="glass-card p-8">
+                <div className="glass-card p-6">
                     {/* Mode Tabs */}
-                    <div className="flex rounded-xl bg-deep-dark-200 p-1 mb-6">
+                    <div className="flex rounded-xl bg-deep-dark-200 p-1 mb-5">
                         <button
                             onClick={() => { setMode('login'); setError('') }}
                             className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-all ${mode === 'login'
-                                ? 'bg-meta-orange text-white'
+                                ? 'bg-meta-orange text-black'
                                 : 'text-gray-400 hover:text-white'
                                 }`}
                         >
@@ -182,7 +244,7 @@ function AuthContent() {
                         <button
                             onClick={() => { setMode('register'); setError('') }}
                             className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-all ${mode === 'register'
-                                ? 'bg-meta-orange text-white'
+                                ? 'bg-meta-orange text-black'
                                 : 'text-gray-400 hover:text-white'
                                 }`}
                         >
@@ -192,8 +254,19 @@ function AuthContent() {
 
                     {/* Error Message */}
                     {error && (
-                        <div className="p-4 mb-4 rounded-xl bg-red-500/10 border border-red-500/30">
+                        <div className="p-3 mb-4 rounded-xl bg-red-500/10 border border-red-500/30">
                             <p className="text-sm text-red-400">{error}</p>
+                            {emailNotConfirmed && (
+                                <button
+                                    onClick={handleResendConfirmation}
+                                    disabled={resendCooldown > 0}
+                                    className="mt-2 text-xs text-meta-orange underline disabled:opacity-50 disabled:no-underline"
+                                >
+                                    {resendCooldown > 0
+                                        ? `Отправить повторно через ${resendCooldown}с`
+                                        : 'Отправить письмо повторно'}
+                                </button>
+                            )}
                         </div>
                     )}
 
@@ -202,17 +275,18 @@ function AuthContent() {
                         {/* Full Name (Register only) */}
                         {mode === 'register' && (
                             <div>
-                                <label className="block text-sm font-medium text-gray-400 mb-2">
+                                <label className="block text-sm font-medium text-gray-400 mb-1.5">
                                     Ваше имя
                                 </label>
-                                <div className="relative">
-                                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+                                <div style={{ position: 'relative' }}>
+                                    <User style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', width: '18px', height: '18px', color: '#6b7280', pointerEvents: 'none', zIndex: 1 }} />
                                     <input
                                         type="text"
                                         value={fullName}
                                         onChange={(e) => setFullName(e.target.value)}
                                         placeholder="Как к вам обращаться?"
-                                        className="glass-input w-full pl-12"
+                                        style={{ paddingLeft: '44px' }}
+                                        className="glass-input w-full"
                                         required={mode === 'register'}
                                         autoFocus
                                     />
@@ -222,17 +296,18 @@ function AuthContent() {
 
                         {/* Email */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-400 mb-2">
+                            <label className="block text-sm font-medium text-gray-400 mb-1.5">
                                 Email
                             </label>
-                            <div className="relative">
-                                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+                            <div style={{ position: 'relative' }}>
+                                <Mail style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', width: '18px', height: '18px', color: '#6b7280', pointerEvents: 'none', zIndex: 1 }} />
                                 <input
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     placeholder="your@email.com"
-                                    className="glass-input w-full pl-12"
+                                    style={{ paddingLeft: '44px' }}
+                                    className="glass-input w-full"
                                     required
                                     autoFocus={mode === 'login'}
                                 />
@@ -241,25 +316,26 @@ function AuthContent() {
 
                         {/* Password */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-400 mb-2">
+                            <label className="block text-sm font-medium text-gray-400 mb-1.5">
                                 Пароль
                             </label>
-                            <div className="relative">
-                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+                            <div style={{ position: 'relative' }}>
+                                <Lock style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', width: '18px', height: '18px', color: '#6b7280', pointerEvents: 'none', zIndex: 1 }} />
                                 <input
                                     type={showPassword ? 'text' : 'password'}
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     placeholder={mode === 'register' ? 'Минимум 6 символов' : '••••••••'}
-                                    className="glass-input w-full pl-12 pr-12"
+                                    style={{ paddingLeft: '44px', paddingRight: '44px' }}
+                                    className="glass-input w-full"
                                     required
                                 />
                                 <button
                                     type="button"
                                     onClick={() => setShowPassword(!showPassword)}
-                                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+                                    style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', display: 'flex', alignItems: 'center', padding: 0, zIndex: 1 }}
                                 >
-                                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                    {showPassword ? <EyeOff style={{ width: '18px', height: '18px' }} /> : <Eye style={{ width: '18px', height: '18px' }} />}
                                 </button>
                             </div>
                         </div>
@@ -267,19 +343,20 @@ function AuthContent() {
                         {/* Confirm Password (Register only) */}
                         {mode === 'register' && (
                             <div>
-                                <label className="block text-sm font-medium text-gray-400 mb-2">
+                                <label className="block text-sm font-medium text-gray-400 mb-1.5">
                                     Повторите пароль
                                 </label>
-                                <div className="relative">
-                                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+                                <div style={{ position: 'relative' }}>
+                                    <Lock style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', width: '18px', height: '18px', color: '#6b7280', pointerEvents: 'none', zIndex: 1 }} />
                                     <input
                                         type={showConfirmPassword ? 'text' : 'password'}
                                         value={confirmPassword}
                                         onChange={(e) => setConfirmPassword(e.target.value)}
                                         placeholder="••••••••"
-                                        className={`glass-input w-full pl-12 pr-12 ${
+                                        style={{ paddingLeft: '44px', paddingRight: '44px' }}
+                                        className={`glass-input w-full ${
                                             confirmPassword && confirmPassword !== password
-                                                ? 'border-red-500/60 focus:border-red-500'
+                                                ? 'border-red-500/60'
                                                 : confirmPassword && confirmPassword === password
                                                 ? 'border-green-500/60'
                                                 : ''
@@ -289,9 +366,9 @@ function AuthContent() {
                                     <button
                                         type="button"
                                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+                                        style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', display: 'flex', alignItems: 'center', padding: 0, zIndex: 1 }}
                                     >
-                                        {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                        {showConfirmPassword ? <EyeOff style={{ width: '18px', height: '18px' }} /> : <Eye style={{ width: '18px', height: '18px' }} />}
                                     </button>
                                 </div>
                                 {confirmPassword && confirmPassword !== password && (
@@ -307,7 +384,7 @@ function AuthContent() {
                         <button
                             type="submit"
                             disabled={isSubmitting}
-                            className="glass-button w-full flex items-center justify-center gap-2 py-4 mt-6"
+                            className="glass-button w-full flex items-center justify-center gap-2 py-4 mt-4"
                         >
                             {isSubmitting ? (
                                 <>
@@ -324,7 +401,7 @@ function AuthContent() {
                     </form>
 
                     {/* Back */}
-                    <div className="mt-6 pt-6 border-t border-white/10">
+                    <div className="mt-5 pt-5 border-t border-white/10">
                         <button
                             onClick={() => router.push('/')}
                             className="glass-button-secondary w-full text-sm"
@@ -334,7 +411,7 @@ function AuthContent() {
                     </div>
                 </div>
 
-                <p className="text-center text-xs text-gray-500 mt-6">
+                <p className="text-center text-xs text-gray-500 mt-4 mb-4">
                     Продолжая, вы соглашаетесь с условиями использования
                 </p>
             </div>

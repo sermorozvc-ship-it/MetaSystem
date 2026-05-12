@@ -1,547 +1,299 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { AlertTriangle, Bell, ArrowLeft, CheckCircle, Mail, X, CheckCheck, ExternalLink, Send } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Send, Loader2, MessageCircle, ArrowLeft, Users } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { createClient } from '@/lib/supabase/client'
-import Sidebar from '@/components/layout/Sidebar'
-import { getConversation, sendReply } from '@/lib/services/messages'
+import {
+    getMyConversation, sendMessageToTrainer,
+    getClientsWithMessages, getConversationWithClient, sendMessageToClient, markConversationRead,
+    type ChatMessage
+} from '@/lib/services/messages'
+import { getAllUsers, type UserWithProgress } from '@/lib/services/admin'
 
-interface AdminMessage {
-    id: number
-    from_user_id: string | null
-    to_user_id: string
-    message: string
-    is_read: boolean
-    message_type: 'message' | 'warning' | 'announcement'
-    created_at: string
-}
+const ADMIN_EMAILS = ['dgmukhin@gmail.com']
+const TRAINER_ID = '2c87d862-8f21-4ca0-ac69-eafe5a343ee1'
 
-// Демо-сообщения для показа при отсутствии реальных данных
-const demoMessages: AdminMessage[] = [
-    {
-        id: 1,
-        from_user_id: null,
-        to_user_id: 'demo',
-        message: 'Добро пожаловать в программу «Метаболический Запуск»! 🔥\n\nЯ ваш куратор и буду помогать вам на протяжении всего курса. Если у вас возникнут вопросы — пишите сюда, я отвечу в течение 24 часов.\n\nУспешного старта!',
-        is_read: false,
-        message_type: 'message',
-        created_at: new Date().toISOString()
-    },
-    {
-        id: 2,
-        from_user_id: null,
-        to_user_id: 'demo',
-        message: '📢 Важное обновление: добавлен новый калькулятор висцерального жира!\n\nТеперь вы можете отслеживать свой WHR и WHtR прямо в приложении. Инструмент доступен в задании Дня 1.',
-        is_read: true,
-        message_type: 'announcement',
-        created_at: new Date(Date.now() - 86400000).toISOString()
-    },
-    {
-        id: 3,
-        from_user_id: null,
-        to_user_id: 'demo',
-        message: 'Напоминание: не забудьте отправить отчёт за день 1!\n\nПришлите:\n1. Скриншот результата калькулятора\n2. Фото продуктового набора\n\nЭто поможет мне оценить ваш прогресс.',
-        is_read: true,
-        message_type: 'warning',
-        created_at: new Date(Date.now() - 172800000).toISOString()
-    }
-]
+// ─── Клиентский чат ──────────────────────────────────────────────────────────
 
-export default function MessagesPage() {
-    const { user, isLoading: authLoading } = useAuth()
-    const router = useRouter()
-    const [messages, setMessages] = useState<AdminMessage[]>([])
+function ClientChat({ user }: { user: any }) {
+    const [messages, setMessages] = useState<ChatMessage[]>([])
     const [isLoading, setIsLoading] = useState(true)
-    const [selectedMessage, setSelectedMessage] = useState<AdminMessage | null>(null)
-    const [replyText, setReplyText] = useState('')
-    const [isSending, setIsSending] = useState(false)
+    const [text, setText] = useState('')
+    const [sending, setSending] = useState(false)
+    const [error, setError] = useState('')
+    const bottomRef = useRef<HTMLDivElement>(null)
 
-    const loadMessages = useCallback(async () => {
-        setIsLoading(true)
-
-        try {
-            if (!user) {
-                const stored = localStorage.getItem('demo_messages')
-                if (stored) {
-                    setMessages(JSON.parse(stored))
-                } else {
-                    localStorage.setItem('demo_messages', JSON.stringify(demoMessages))
-                    setMessages(demoMessages)
-                }
-                return
-            }
-
-            const data = await getConversation(user.id)
-            setMessages(data && data.length > 0 ? data : demoMessages)
-        } catch (e) {
-            console.error('Messages fetch failed:', e)
-            setMessages(demoMessages)
-        } finally {
-            setIsLoading(false)
-        }
-    }, [user])
-
-    useEffect(() => {
-        if (authLoading) return
-        loadMessages()
-    }, [authLoading, loadMessages])
-
-    const markAsRead = async (messageId: number) => {
-        if (!user) {
-            // Демо-режим
-            const updated = messages.map(m =>
-                m.id === messageId ? { ...m, is_read: true } : m
-            )
-            setMessages(updated)
-            localStorage.setItem('demo_messages', JSON.stringify(updated))
-            return
-        }
-
-        const supabase = createClient()
-        await supabase
-            .from('admin_messages')
-            .update({ is_read: true })
-            .eq('id', messageId)
-
-        setMessages(prev => prev.map(m =>
-            m.id === messageId ? { ...m, is_read: true } : m
-        ))
+    const load = async () => {
+        const data = await getMyConversation()
+        setMessages(data)
+        setIsLoading(false)
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
     }
 
-    const handleMessageClick = async (msg: AdminMessage) => {
-        setSelectedMessage(msg)
-        if (!msg.is_read && msg.to_user_id === user?.id) {
-            await markAsRead(msg.id)
-        }
+    useEffect(() => { load() }, [])
+
+    const handleSend = async () => {
+        if (!text.trim() || sending) return
+        setSending(true)
+        setError('')
+        const result = await sendMessageToTrainer(text.trim())
+        if (result.success) { setText(''); await load() }
+        else setError(result.error || 'Ошибка отправки')
+        setSending(false)
     }
 
-    const handleSendReply = async () => {
-        if (!replyText.trim() || !user) return
-
-        setIsSending(true)
-        try {
-            // Priority for recipient:
-            // 1. If we have a selected message, try to reply to its sender (if not us)
-            // 2. Otherwise find any message from a curator in our history
-            // 3. Fallback to a default admin/curator ID
-
-            let finalRecipientId = '3c07b01d-29e6-47c7-b533-f722f752e4b3' // Default fallback
-
-            if (selectedMessage) {
-                const recipientId = selectedMessage.from_user_id || selectedMessage.to_user_id
-                if (recipientId && recipientId !== user.id) {
-                    finalRecipientId = recipientId
-                } else {
-                    const curatorMsg = messages.find(m => m.from_user_id && m.from_user_id !== user.id)
-                    if (curatorMsg?.from_user_id) {
-                        finalRecipientId = curatorMsg.from_user_id
-                    }
-                }
-            } else {
-                // If nothing selected, try to find a curator from any message
-                const curatorMsg = messages.find(m => m.from_user_id && m.from_user_id !== user.id)
-                if (curatorMsg?.from_user_id) {
-                    finalRecipientId = curatorMsg.from_user_id
-                }
-            }
-
-            const result = await sendReply(finalRecipientId, replyText.trim())
-
-            if (result.success) {
-                setReplyText('')
-                await loadMessages() // Refresh conversation
-                // Clear selection if it was a demo message or something weird
-                if (!selectedMessage || selectedMessage.to_user_id === 'demo') {
-                    setSelectedMessage(null)
-                }
-            } else {
-                alert('Ошибка при отправке: ' + (result.error || 'Неизвестная ошибка'))
-            }
-        } catch (error) {
-            console.error('Send reply failed:', error)
-            alert('Не удалось отправить сообщение. Попробуйте позже.')
-        } finally {
-            setIsSending(false)
-        }
-    }
-
-    const markAllAsRead = async () => {
-        if (messages.every(m => m.is_read)) return
-
-        setIsLoading(true)
-        try {
-            if (!user) {
-                const updated = messages.map(m => ({ ...m, is_read: true }))
-                setMessages(updated)
-                localStorage.setItem('demo_messages', JSON.stringify(updated))
-            } else {
-                const supabase = createClient()
-                await supabase
-                    .from('admin_messages')
-                    .update({ is_read: true })
-                    .eq('to_user_id', user.id)
-                    .eq('is_read', false)
-
-                setMessages(prev => prev.map(m => ({ ...m, is_read: true })))
-            }
-        } finally {
-            setIsLoading(false)
-        }
-    }
-
-    const unreadCount = messages.filter(m => !m.is_read && m.to_user_id === user?.id).length
-
-    const getMessageIcon = (type: string) => {
-        switch (type) {
-            case 'warning':
-                return <AlertTriangle className="w-5 h-5 text-yellow-400" />
-            case 'announcement':
-                return <Bell className="w-5 h-5 text-blue-400" />
-            default:
-                return <Mail className="w-5 h-5 text-meta-orange" />
-        }
-    }
-
-    const getMessageTypeLabel = (type: string) => {
-        switch (type) {
-            case 'warning':
-                return 'Предупреждение'
-            case 'announcement':
-                return 'Объявление'
-            default:
-                return 'Сообщение'
-        }
-    }
-
+    if (isLoading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-8 h-8 text-accent animate-spin" /></div>
 
     return (
-        <div className="flex min-h-screen bg-deep-dark">
-            <Sidebar activeItem="messages" />
-
-            <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8">
-                {/* Header */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 md:mb-10">
-                    <div className="flex items-center gap-3 md:gap-4">
-                        <button
-                            onClick={() => router.push('/dashboard')}
-                            className="w-10 h-10 rounded-xl bg-deep-dark-200/60 border border-white/10
-                                       flex items-center justify-center text-gray-400 hover:text-white 
-                                       hover:bg-deep-dark-300 transition-all duration-200 group"
-                        >
-                            <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
-                        </button>
-                        <div>
-                            <h1 className="text-xl md:text-3xl font-bold text-white">
-                                <span className="truncate">Сообщения</span>
-                            </h1>
-                            <p className="text-sm text-gray-400 mt-1 flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-meta-orange inline-block" />
-                                {unreadCount > 0
-                                    ? unreadCount === 1 ? '1 новое сообщение' : `${unreadCount} новых сообщения`
-                                    : 'Все сообщения прочитаны'
-                                }
-                            </p>
-                        </div>
-                    </div>
-
-                    {unreadCount > 0 && (
-                        <button
-                            onClick={markAllAsRead}
-                            className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl
-                                     bg-white/5 border border-white/10 text-sm text-gray-300
-                                     hover:bg-white/10 hover:text-white transition-all duration-200"
-                        >
-                            <CheckCheck className="w-4 h-4" />
-                            Прочитать все
-                        </button>
-                    )}
+        <div className="flex flex-col h-full">
+            {/* Header */}
+            <div className="border-b border-border px-4 py-4 flex items-center gap-3 flex-shrink-0">
+                <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center">
+                    <span className="text-accent font-bold text-sm">ДМ</span>
                 </div>
+                <div>
+                    <p className="font-semibold text-white">Дмитрий Мухин</p>
+                    <p className="text-xs text-text-muted">Тренер · отвечает в течение дня</p>
+                </div>
+            </div>
 
-                {/* Mobile: Message Detail Overlay */}
-                {selectedMessage && (
-                    <div className="lg:hidden fixed inset-0 z-[60] bg-black/80 backdrop-blur-md" onClick={() => setSelectedMessage(null)}>
-                        <div
-                            className="absolute bottom-0 left-0 right-0 bg-deep-dark-100 border-t border-white/10 rounded-t-[2.5rem] max-h-[85vh] overflow-y-auto"
-                            onClick={e => e.stopPropagation()}
-                        >
-                            <div className="sticky top-0 bg-deep-dark-100/90 backdrop-blur-sm rounded-t-[2.5rem] z-10 px-6 pt-8 pb-4 flex items-center justify-between">
-                                <h3 className="text-lg font-bold text-white">Просмотр</h3>
-                                <button
-                                    onClick={() => setSelectedMessage(null)}
-                                    className="w-10 h-10 rounded-full bg-deep-dark-300 flex items-center justify-center text-gray-400"
-                                >
-                                    <X className="w-5 h-5" />
-                                </button>
-                            </div>
-                            <div className="px-6 pb-24">
-                                <MessageDetail
-                                    message={selectedMessage}
-                                    getMessageIcon={getMessageIcon}
-                                    getMessageTypeLabel={getMessageTypeLabel}
-                                    user={user}
-                                    replyText={replyText}
-                                    setReplyText={setReplyText}
-                                    onSend={handleSendReply}
-                                    isSending={isSending}
-                                />
-                            </div>
-                        </div>
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+                {messages.length === 0 && (
+                    <div className="text-center py-16">
+                        <MessageCircle className="w-12 h-12 text-text-muted mx-auto mb-3" />
+                        <p className="text-text-secondary text-sm">Напишите тренеру — он ответит в течение дня</p>
                     </div>
                 )}
-
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                    {/* Messages List */}
-                    <div className="lg:col-span-5 xl:col-span-4 glass-card overflow-hidden h-fit">
-                        <div className="p-4 border-b border-white/5 bg-white/5 flex items-center justify-between">
-                            <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Входящие</h2>
-                            <span className="text-xs bg-meta-orange/20 text-meta-orange px-2 py-1 rounded-full">{messages.length}</span>
-                        </div>
-
-                        <div className="p-2 space-y-1 max-h-[65vh] overflow-y-auto custom-scrollbar">
-                            {(authLoading || isLoading) ? (
-                                <div className="space-y-2 p-2 animate-pulse">
-                                    {[1, 2, 3].map(i => <div key={i} className="h-16 rounded-2xl bg-white/5" />)}
-                                </div>
-                            ) : messages.length === 0 ? (
-                                <div className="text-center py-20 px-4">
-                                    <div className="w-16 h-16 rounded-3xl bg-white/5 flex items-center justify-center mx-auto mb-4">
-                                        <Mail className="w-8 h-8 text-gray-600" />
-                                    </div>
-                                    <p className="text-white font-semibold">Пусто</p>
-                                    <p className="text-sm text-gray-400 mt-1 max-w-[200px] mx-auto">
-                                        Сообщения от куратора появятся здесь
-                                    </p>
-                                </div>
-                            ) : (
-                                messages.map(msg => (
-                                    <button
-                                        key={msg.id}
-                                        onClick={() => handleMessageClick(msg)}
-                                        className={`w-full text-left p-4 rounded-2xl transition-all duration-200 relative group
-                                            ${selectedMessage?.id === msg.id
-                                                ? 'bg-meta-orange/15 shadow-lg shadow-meta-orange/5'
-                                                : 'hover:bg-white/5'
-                                            }`}
-                                    >
-                                        <div className="flex gap-4">
-                                            <div className={`w-12 h-12 rounded-2xl flex-shrink-0 flex items-center justify-center transition-transform duration-300 group-hover:scale-110 ${msg.message_type === 'warning'
-                                                ? 'bg-yellow-500/15'
-                                                : msg.message_type === 'announcement'
-                                                    ? 'bg-blue-500/15'
-                                                    : 'bg-meta-orange/15'
-                                                }`}>
-                                                {getMessageIcon(msg.message_type)}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <span className={`text-[11px] font-bold uppercase tracking-wider ${msg.from_user_id === user?.id
-                                                        ? 'text-gray-400'
-                                                        : msg.message_type === 'warning'
-                                                            ? 'text-yellow-400'
-                                                            : msg.message_type === 'announcement'
-                                                                ? 'text-blue-400'
-                                                                : 'text-meta-orange'
-                                                        }`}>
-                                                        {msg.from_user_id === user?.id ? 'Ваш ответ' : getMessageTypeLabel(msg.message_type)}
-                                                    </span>
-                                                    <span className="text-[10px] text-gray-500 font-medium">
-                                                        {new Date(msg.created_at).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
-                                                    </span>
-                                                </div>
-                                                <p className={`text-sm leading-snug truncate ${!msg.is_read && msg.to_user_id === user?.id ? 'text-white font-bold' : 'text-gray-400 font-medium'
-                                                    }`}>
-                                                    {msg.from_user_id === user?.id && <span className="text-meta-orange mr-1">Вы:</span>}
-                                                    {msg.message}
-                                                </p>
-                                            </div>
-                                            {!msg.is_read && msg.to_user_id === user?.id && (
-                                                <div className="absolute top-4 right-4 w-2 h-2 rounded-full bg-meta-orange shadow-[0_0_10px_rgba(255,107,0,0.5)]" />
-                                            )}
-                                        </div>
-                                        {selectedMessage?.id === msg.id && (
-                                            <div className="absolute left-0 top-4 bottom-4 w-1 bg-meta-orange rounded-r-full" />
-                                        )}
-                                    </button>
-                                ))
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Desktop: Message Detail */}
-                    <div className="hidden lg:block lg:col-span-7 xl:col-span-8 glass-card border border-white/5 min-h-[60vh] h-full">
-                        {selectedMessage ? (
-                            <div className="p-8 xl:p-10 h-full flex flex-col">
-                                <MessageDetail
-                                    message={selectedMessage}
-                                    getMessageIcon={getMessageIcon}
-                                    getMessageTypeLabel={getMessageTypeLabel}
-                                    user={user}
-                                    replyText={replyText}
-                                    setReplyText={setReplyText}
-                                    onSend={handleSendReply}
-                                    isSending={isSending}
-                                />
+                {messages.map(msg => {
+                    const isFromMe = msg.from_user_id === user?.id
+                    return (
+                        <div key={msg.id} className={`flex ${isFromMe ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[75%] rounded-2xl px-4 py-3 ${
+                                isFromMe ? 'bg-accent text-bg-main rounded-br-sm' : 'bg-bg-elevated text-white rounded-bl-sm'
+                            }`}>
+                                <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.message}</p>
+                                <p className={`text-xs mt-1 ${isFromMe ? 'text-bg-main/60' : 'text-text-muted'}`}>
+                                    {new Date(msg.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                </p>
                             </div>
-                        ) : (
-                            <div className="h-full min-h-[500px] flex items-center justify-center text-center p-10">
-                                <div className="max-w-xs">
-                                    <div className="w-20 h-20 rounded-[2.5rem] bg-white/5 flex items-center justify-center mx-auto mb-6">
-                                        <Mail className="w-10 h-10 text-gray-700" />
-                                    </div>
-                                    <h3 className="text-lg font-bold text-white mb-2">Выберите сообщение</h3>
-                                    <p className="text-sm text-gray-400 leading-relaxed">
-                                        Нажмите на любое сообщение слева, чтобы открыть детали и прочитать полный текст.
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                        </div>
+                    )
+                })}
+                <div ref={bottomRef} />
+            </div>
+
+            {/* Input */}
+            <div className="border-t border-border px-4 py-4 flex-shrink-0">
+                {error && <p className="text-xs text-danger mb-2">{error}</p>}
+                <div className="flex gap-3 items-end">
+                    <textarea
+                        value={text}
+                        onChange={e => setText(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+                        placeholder="Напишите сообщение... (Enter — отправить)"
+                        className="glass-input flex-1 resize-none text-sm min-h-[44px] max-h-32 py-3"
+                        rows={1}
+                    />
+                    <button onClick={handleSend} disabled={!text.trim() || sending}
+                        className="glass-button p-3 flex-shrink-0 disabled:opacity-40">
+                        {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                    </button>
                 </div>
-            </main>
+            </div>
         </div>
     )
 }
 
-// Вынесенный компонент детали сообщения
-function MessageDetail({
-    message,
-    getMessageIcon,
-    getMessageTypeLabel,
-    user,
-    replyText,
-    setReplyText,
-    onSend,
-    isSending
-}: {
-    message: AdminMessage
-    getMessageIcon: (type: string) => React.ReactNode
-    getMessageTypeLabel: (type: string) => string
-    user: any
-    replyText: string
-    setReplyText: (val: string) => void
-    onSend: () => void
-    isSending: boolean
-}) {
-    const isFromMe = message.from_user_id === user?.id
+// ─── Админский чат ───────────────────────────────────────────────────────────
+
+function AdminChat() {
+    const [clients, setClients] = useState<UserWithProgress[]>([])
+    const [selectedClient, setSelectedClient] = useState<UserWithProgress | null>(null)
+    const [messages, setMessages] = useState<ChatMessage[]>([])
+    const [unreadMap, setUnreadMap] = useState<Record<string, number>>({})
+    const [isLoadingClients, setIsLoadingClients] = useState(true)
+    const [isLoadingMsgs, setIsLoadingMsgs] = useState(false)
+    const [text, setText] = useState('')
+    const [sending, setSending] = useState(false)
+    const bottomRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        const load = async () => {
+            const [allUsers, withMsgs] = await Promise.all([getAllUsers(), getClientsWithMessages()])
+            const clientsOnly = allUsers.filter(u => u.role !== 'admin' && u.role !== 'trainer')
+            setClients(clientsOnly)
+            // Строим карту непрочитанных
+            const map: Record<string, number> = {}
+            for (const c of withMsgs) map[c.userId] = c.unread
+            setUnreadMap(map)
+            setIsLoadingClients(false)
+        }
+        load()
+    }, [])
+
+    const selectClient = async (client: UserWithProgress) => {
+        setSelectedClient(client)
+        setIsLoadingMsgs(true)
+        const data = await getConversationWithClient(client.id)
+        setMessages(data)
+        setIsLoadingMsgs(false)
+        await markConversationRead(client.id)
+        setUnreadMap(prev => ({ ...prev, [client.id]: 0 }))
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+    }
+
+    const handleSend = async () => {
+        if (!text.trim() || !selectedClient || sending) return
+        setSending(true)
+        const result = await sendMessageToClient(selectedClient.id, text.trim())
+        if (result.success) {
+            setText('')
+            const data = await getConversationWithClient(selectedClient.id)
+            setMessages(data)
+            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+        }
+        setSending(false)
+    }
+
+    // Клиенты у которых есть сообщения — сначала
+    const clientsWithMsgs = clients.filter(c => unreadMap[c.id] !== undefined || messages.some(m => m.from_user_id === c.id || m.to_user_id === c.id))
+    const sortedClients = [...clients].sort((a, b) => (unreadMap[b.id] || 0) - (unreadMap[a.id] || 0))
 
     return (
-        <div className="flex flex-col h-full animate-fade-in">
-            {/* Header Detail */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-                <div className="flex items-center gap-4">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg ${isFromMe
-                        ? 'bg-white/10 text-gray-400'
-                        : message.message_type === 'warning'
-                            ? 'bg-yellow-500/20 text-yellow-400'
-                            : message.message_type === 'announcement'
-                                ? 'bg-blue-500/20 text-blue-400'
-                                : 'bg-meta-orange/20 text-meta-orange'
-                        }`}>
-                        {isFromMe ? <Send className="w-6 h-6" /> : getMessageIcon(message.message_type)}
+        <div className="flex h-full">
+            {/* Список клиентов */}
+            <div className="w-72 flex-shrink-0 border-r border-border flex flex-col">
+                <div className="px-4 py-4 border-b border-border">
+                    <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-text-muted" />
+                        <h2 className="font-semibold text-white text-sm">Клиенты</h2>
                     </div>
-                    <div>
-                        <div className="flex items-center gap-2 mb-0.5">
-                            <h3 className={`text-lg font-bold uppercase tracking-wider ${isFromMe
-                                ? 'text-gray-300'
-                                : message.message_type === 'warning'
-                                    ? 'text-yellow-400'
-                                    : message.message_type === 'announcement'
-                                        ? 'text-blue-400'
-                                        : 'text-meta-orange'
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                    {isLoadingClients ? (
+                        <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 text-accent animate-spin" /></div>
+                    ) : sortedClients.length === 0 ? (
+                        <p className="text-text-muted text-sm text-center py-8">Нет клиентов</p>
+                    ) : (
+                        sortedClients.map(client => (
+                            <button key={client.id} onClick={() => selectClient(client)}
+                                className={`w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-bg-elevated transition-colors ${
+                                    selectedClient?.id === client.id ? 'bg-accent/10 border-r-2 border-accent' : ''
                                 }`}>
-                                {isFromMe ? 'Ваш ответ' : getMessageTypeLabel(message.message_type)}
-                            </h3>
-                            {message.is_read && !isFromMe && (
-                                <span className="flex items-center gap-1 text-[10px] bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full border border-green-500/20">
-                                    <CheckCircle className="w-3 h-3" />
-                                    Прочитано
-                                </span>
-                            )}
-                        </div>
-                        <p className="text-sm text-gray-400 font-medium">
-                            {isFromMe ? (user?.full_name || 'Вы') : 'Куратор курса MetaSystem'}
-                        </p>
-                    </div>
-                </div>
-                <div className="text-right">
-                    <p className="text-xs text-gray-500 font-medium mb-1 uppercase tracking-tight">Отправлено</p>
-                    <p className="text-sm text-gray-300 font-bold">
-                        {new Date(message.created_at).toLocaleString('ru-RU', {
-                            day: 'numeric', month: 'short', year: 'numeric'
-                        })} в {new Date(message.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
+                                <div className="w-9 h-9 rounded-full bg-accent/20 flex items-center justify-center text-accent font-bold text-sm flex-shrink-0">
+                                    {(client.full_name || client.email).charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-white truncate">{client.full_name || 'Без имени'}</p>
+                                    <p className="text-xs text-text-muted truncate">{client.email}</p>
+                                </div>
+                                {(unreadMap[client.id] || 0) > 0 && (
+                                    <span className="w-5 h-5 rounded-full bg-accent text-bg-main text-xs font-bold flex items-center justify-center flex-shrink-0">
+                                        {unreadMap[client.id]}
+                                    </span>
+                                )}
+                            </button>
+                        ))
+                    )}
                 </div>
             </div>
 
-            {/* Content Body */}
-            <div className={`flex-1 ${isFromMe ? 'bg-meta-orange/5 border-meta-orange/10' : 'bg-white/5 border-white/5'} border rounded-3xl p-6 md:p-8 mb-8 overflow-y-auto`}>
-                <div className="prose prose-invert max-w-none">
-                    <p className="text-white text-base md:text-lg leading-relaxed whitespace-pre-wrap font-medium">
-                        {message.message}
-                    </p>
-                </div>
-            </div>
-
-            {/* Footer / Reply Action */}
-            <div className="pt-6 border-t border-white/5">
-                <div className="space-y-4">
-                    <div className="relative group">
-                        <textarea
-                            value={replyText}
-                            onChange={(e) => setReplyText(e.target.value)}
-                            placeholder={isFromMe ? "Продолжить переписку..." : "Напишите ваш ответ куратору..."}
-                            className="w-full bg-deep-dark-200/60 border border-white/10 rounded-2xl p-4 md:p-5
-                                     text-white placeholder:text-gray-500 focus:outline-none focus:border-meta-orange/50
-                                     transition-all duration-300 min-h-[120px] resize-none pr-12 text-sm md:text-base font-medium"
-                        />
-                        <div className="absolute right-4 bottom-4 text-[10px] text-gray-600 font-bold uppercase tracking-widest">
-                            {replyText.length} символов
+            {/* Переписка */}
+            <div className="flex-1 flex flex-col min-w-0">
+                {!selectedClient ? (
+                    <div className="flex-1 flex items-center justify-center text-center p-8">
+                        <div>
+                            <MessageCircle className="w-12 h-12 text-text-muted mx-auto mb-3" />
+                            <p className="text-text-secondary">Выберите клиента слева</p>
                         </div>
                     </div>
+                ) : (
+                    <>
+                        {/* Header */}
+                        <div className="border-b border-border px-4 py-4 flex items-center gap-3 flex-shrink-0">
+                            <div className="w-9 h-9 rounded-full bg-accent/20 flex items-center justify-center text-accent font-bold text-sm">
+                                {(selectedClient.full_name || selectedClient.email).charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <p className="font-semibold text-white text-sm">{selectedClient.full_name || 'Без имени'}</p>
+                                <p className="text-xs text-text-muted">{selectedClient.email}</p>
+                            </div>
+                        </div>
 
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                        <button
-                            onClick={onSend}
-                            disabled={isSending || !replyText.trim()}
-                            className="w-full sm:w-auto px-10 py-4 rounded-2xl bg-meta-orange text-white font-bold 
-                                     flex items-center justify-center gap-3 hover:bg-meta-orange-hover 
-                                     disabled:opacity-50 disabled:grayscale transition-all duration-300 
-                                     shadow-lg shadow-meta-orange/20 active:scale-95"
-                        >
-                            {isSending ? (
-                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        {/* Messages */}
+                        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+                            {isLoadingMsgs ? (
+                                <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 text-accent animate-spin" /></div>
+                            ) : messages.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <p className="text-text-muted text-sm">Сообщений пока нет</p>
+                                    <p className="text-text-muted text-xs mt-1">Напишите первым</p>
+                                </div>
                             ) : (
-                                <Send className="w-5 h-5" />
+                                messages.map(msg => {
+                                    const isFromTrainer = msg.from_user_id === TRAINER_ID
+                                    return (
+                                        <div key={msg.id} className={`flex ${isFromTrainer ? 'justify-end' : 'justify-start'}`}>
+                                            <div className={`max-w-[75%] rounded-2xl px-4 py-3 ${
+                                                isFromTrainer ? 'bg-accent text-bg-main rounded-br-sm' : 'bg-bg-elevated text-white rounded-bl-sm'
+                                            }`}>
+                                                <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.message}</p>
+                                                <p className={`text-xs mt-1 ${isFromTrainer ? 'text-bg-main/60' : 'text-text-muted'}`}>
+                                                    {new Date(msg.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )
+                                })
                             )}
-                            {isFromMe ? "Отправить ещё" : "Отправить куратору"}
-                        </button>
+                            <div ref={bottomRef} />
+                        </div>
 
-                        <a
-                            href="https://t.me/BodyBal"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-2 text-xs text-gray-400 hover:text-white transition-colors group"
-                        >
-                            <ExternalLink className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100" />
-                            Перейти в Telegram
-                        </a>
-                    </div>
-                </div>
+                        {/* Input */}
+                        <div className="border-t border-border px-4 py-4 flex-shrink-0">
+                            <div className="flex gap-3 items-end">
+                                <textarea
+                                    value={text}
+                                    onChange={e => setText(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+                                    placeholder="Ответить клиенту... (Enter — отправить)"
+                                    className="glass-input flex-1 resize-none text-sm min-h-[44px] max-h-32 py-3"
+                                    rows={1}
+                                />
+                                <button onClick={handleSend} disabled={!text.trim() || sending}
+                                    className="glass-button p-3 flex-shrink-0 disabled:opacity-40">
+                                    {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                                </button>
+                            </div>
+                        </div>
+                    </>
+                )}
             </div>
+        </div>
+    )
+}
 
-            {message.message_type === 'warning' && !isFromMe && (
-                <div className="mt-8 bg-yellow-500/5 border border-yellow-500/20 rounded-2xl p-4">
-                    <div className="flex items-start gap-3">
-                        <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-                        <p className="text-xs text-yellow-200/80 leading-relaxed font-medium">
-                            Это системное предупреждение. Пожалуйста, убедитесь, что вы соблюдаете правила программы
-                            и рекомендации куратора для достижения максимального результата.
-                        </p>
-                    </div>
-                </div>
-            )}
+// ─── Главная страница ─────────────────────────────────────────────────────────
+
+export default function MessagesPage() {
+    const { user, isLoading: authLoading } = useAuth()
+
+    useEffect(() => {
+        if (!authLoading && !user) window.location.href = '/auth'
+    }, [user, authLoading])
+
+    if (authLoading || !user) {
+        return <div className="min-h-screen bg-bg-main flex items-center justify-center"><Loader2 className="w-8 h-8 text-accent animate-spin" /></div>
+    }
+
+    const isAdmin = ADMIN_EMAILS.includes(user.email?.toLowerCase() || '')
+        || user.user_metadata?.role === 'admin'
+        || user.user_metadata?.role === 'trainer'
+
+    return (
+        <div className="bg-bg-main flex flex-col" style={{ height: '100vh', paddingTop: '72px' }}>
+            {isAdmin ? <AdminChat /> : <ClientChat user={user} />}
         </div>
     )
 }

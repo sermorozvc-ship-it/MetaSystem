@@ -1,13 +1,7 @@
-// Minimal Service Worker for PWA installation
-self.addEventListener('install', (event) => {
-    self.skipWaiting();
-});
-
+// Service Worker disabled - unregister self
+self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => {
-    event.waitUntil(clients.claim());
-});
-
-self.addEventListener('fetch', (event) => {
-    // Service worker must have a fetch handler
-    event.respondWith(fetch(event.request));
+    event.waitUntil(
+        self.clients.claim().then(() => self.registration.unregister())
+    );
 });

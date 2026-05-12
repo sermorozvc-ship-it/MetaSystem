@@ -36,8 +36,8 @@ export default function WeekGrid({
             {/* Week Header */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 md:mb-6 gap-2">
                 <div>
-                    <h2 className="text-lg md:text-xl font-bold text-white">7-дневный курс</h2>
-                    <p className="text-xs md:text-sm text-gray-400 mt-1">Метаболический Запуск</p>
+                    <h2 className="text-lg md:text-xl font-bold text-white">Программа тренировок</h2>
+                    <p className="text-xs md:text-sm text-gray-400 mt-1">Архитектура твоего тела</p>
                 </div>
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">

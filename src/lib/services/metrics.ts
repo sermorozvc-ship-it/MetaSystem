@@ -165,18 +165,23 @@ export async function upsertMetric(formData: MetricFormData): Promise<ClientMetr
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
+  // Убираем undefined поля
+  const payload: Record<string, any> = { user_id: user.id }
+  for (const [key, value] of Object.entries(formData)) {
+    if (value !== undefined && value !== null && value !== '') {
+      payload[key] = value
+    }
+  }
+
   const { data, error } = await supabase
     .from('client_metrics')
-    .upsert({
-      user_id: user.id,
-      ...formData,
-    })
+    .upsert(payload, { onConflict: 'user_id,measured_at' })
     .select()
     .single()
 
   if (error) {
     console.error('Error upserting metric:', error)
-    throw error
+    throw new Error('Ошибка сохранения: ' + error.message)
   }
 
   return data

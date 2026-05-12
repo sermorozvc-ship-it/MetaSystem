@@ -123,12 +123,12 @@ export default function ProgramsPage() {
     }
 
     return (
-        <div className="min-h-screen bg-bg-main p-4 py-12">
+        <div className="min-h-screen bg-bg-main p-4 py-6 md:py-12">
             <div className="max-w-4xl mx-auto">
                 {/* Header */}
-                <div className="mb-8">
-                    <h1 className="text-3xl font-display font-bold text-white mb-2">Тренировочные программы</h1>
-                    <p className="text-text-secondary">Ваши недельные программы тренировок</p>
+                <div className="mb-6">
+                    <h1 className="text-2xl md:text-3xl font-display font-bold text-white mb-1">Тренировочные программы</h1>
+                    <p className="text-text-secondary text-sm">Ваши недельные программы тренировок</p>
                 </div>
 
                 {/* Current Program Highlight */}
@@ -191,17 +191,15 @@ export default function ProgramsPage() {
                             const status = getProgramStatus(program)
                             const StatusIcon = status.icon
                             const completion = completionStats[program.id] || 0
-                            const isClickable = program.status === 'active'
+                            // Все программы кликабельны — можно просматривать историю
+                            const isClickable = true
+                            const isCurrent = program.status === 'active'
 
                             return (
                                 <div
                                     key={program.id}
-                                    onClick={() => isClickable && router.push(`/programs/${program.id}`)}
-                                    className={`glass-card p-6 transition-all ${
-                                        isClickable
-                                            ? 'cursor-pointer hover:border-accent'
-                                            : 'opacity-60 cursor-not-allowed'
-                                    }`}
+                                    onClick={() => router.push(`/programs/${program.id}`)}
+                                    className="glass-card p-6 transition-all cursor-pointer hover:border-accent"
                                 >
                                     <div className="flex items-start justify-between">
                                         <div className="flex-1">
@@ -224,28 +222,24 @@ export default function ProgramsPage() {
                                                 {program.training_days_count} тренировочных дней
                                             </p>
 
-                                            {/* Progress bar */}
-                                            {isClickable && (
-                                                <div className="mt-3">
-                                                    <div className="flex justify-between items-center mb-1">
-                                                        <span className="text-xs text-text-muted">Заполнено</span>
-                                                        <span className="text-xs font-semibold text-accent">
-                                                            {Math.round(completion)}%
-                                                        </span>
-                                                    </div>
-                                                    <div className="progress-bar h-1.5">
-                                                        <div
-                                                            className="progress-bar-fill"
-                                                            style={{ width: `${completion}%` }}
-                                                        />
-                                                    </div>
+                                            {/* Progress bar — для всех программ */}
+                                            <div className="mt-3">
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <span className="text-xs text-text-muted">Заполнено</span>
+                                                    <span className="text-xs font-semibold text-accent">
+                                                        {Math.round(completion)}%
+                                                    </span>
                                                 </div>
-                                            )}
+                                                <div className="progress-bar h-1.5">
+                                                    <div
+                                                        className="progress-bar-fill"
+                                                        style={{ width: `${completion}%` }}
+                                                    />
+                                                </div>
+                                            </div>
                                         </div>
 
-                                        {isClickable && (
-                                            <ChevronRight className="w-5 h-5 text-text-muted flex-shrink-0 ml-4" />
-                                        )}
+                                        <ChevronRight className="w-5 h-5 text-text-muted flex-shrink-0 ml-4" />
                                     </div>
                                 </div>
                             )
@@ -276,7 +270,12 @@ export default function ProgramsPage() {
                             </div>
                             <div className="text-center">
                                 <div className="text-2xl font-display font-bold text-accent mb-1">
-                                    {currentProgram ? Math.round(completionStats[currentProgram.id] || 0) : 0}%
+                                    {(() => {
+                                        // Прогресс текущей программы (последней незавершённой или последней вообще)
+                                        const active = programs.find(p => completionStats[p.id] !== undefined && completionStats[p.id] < 100 && completionStats[p.id] > 0)
+                                            || currentProgram
+                                        return active ? Math.round(completionStats[active.id] || 0) : 0
+                                    })()}%
                                 </div>
                                 <div className="text-xs text-text-muted">Текущий прогресс</div>
                             </div>

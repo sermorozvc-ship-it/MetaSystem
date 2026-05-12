@@ -1,13 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import {
     Flame, CreditCard, Check, Clock, ArrowRight, Loader2,
     CheckCircle2, ExternalLink, RefreshCw, Gift, Zap
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { getUserPayment, createPaymentRequest, type Payment } from '@/lib/services/payment'
+import { getUserPayment, createPaymentRequest, createTestPayment, type Payment } from '@/lib/services/payment'
 
 const YOOMONEY_WALLET = process.env.NEXT_PUBLIC_YOOMONEY_WALLET || '410014990008683'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://meta-system-ja1o.vercel.app'
@@ -15,12 +14,12 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://meta-system-ja1o.ver
 type PlanType = '1_month' | '3_months' | '6_months'
 
 const PLANS = {
-    '1_month': { price: 14900, months: 1, label: '1 месяц' },
-    '3_months': { price: 35900, months: 3, label: '3 месяца' },
-    '6_months': { price: 59900, months: 6, label: '6 месяцев' },
+    '1_month': { price: 5, months: 1, label: '1 месяц' },
+    '3_months': { price: 6, months: 3, label: '3 месяца' },
+    '6_months': { price: 7, months: 6, label: '6 месяцев' },
 }
 
-const NUTRITION_PRICE = 3000
+const NUTRITION_PRICE = 2
 
 function buildYooMoneyUrl(userId: string, amount: number) {
     const params = new URLSearchParams({
@@ -29,7 +28,7 @@ function buildYooMoneyUrl(userId: string, amount: number) {
         paymentType: 'AC',
         sum: amount.toString(),
         label: userId,
-        successURL: `${APP_URL}/questionnaire`,
+        successURL: `${APP_URL}/onboarding`,
         targets: 'MetaSystem — Онлайн-ведение',
         'short-dest': 'Платформа MetaSystem',
         comment: 'Оплата тарифа MetaSystem',
@@ -39,9 +38,12 @@ function buildYooMoneyUrl(userId: string, amount: number) {
 
 export default function PaymentPage() {
     const { user, isLoading: authLoading } = useAuth()
-    const router = useRouter()
+    const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+    const planFromUrl = searchParams.get('plan') as PlanType | null
+    // Fallback: читаем из sessionStorage если план не передан в URL
+    const planFromStorage = typeof window !== 'undefined' ? sessionStorage.getItem('selected_plan') as PlanType | null : null
 
-    const [selectedPlan, setSelectedPlan] = useState<PlanType>('3_months')
+    const [selectedPlan, setSelectedPlan] = useState<PlanType>(planFromUrl || planFromStorage || '3_months')
     const [includeNutrition, setIncludeNutrition] = useState(false)
     const [payment, setPayment] = useState<Payment | null>(null)
     const [isLoading, setIsLoading] = useState(true)
@@ -55,12 +57,24 @@ export default function PaymentPage() {
     const totalAmount = baseAmount + nutritionAmount
     const hasNutritionIncluded = selectedPlan === '6_months' || includeNutrition
 
-    // Редирект неавторизованных
+    // Редирект неавторизованных — сохраняем текущий URL как returnTo
     useEffect(() => {
+        if (process.env.NEXT_PUBLIC_DISABLE_REDIRECTS === 'true') return
         if (!authLoading && !user) {
-            router.replace('/auth')
+            const returnTo = encodeURIComponent(window.location.pathname + window.location.search)
+            window.location.href = `/auth?returnTo=${returnTo}`
         }
-    }, [user, authLoading, router])
+        // Если авторизован и это админ — редиректим на /admin
+        if (!authLoading && user) {
+            const ADMIN_EMAILS = ['dgmukhin@gmail.com']
+            const isAdminUser = ADMIN_EMAILS.includes(user.email?.toLowerCase() || '')
+                || user.user_metadata?.role === 'admin'
+                || user.user_metadata?.role === 'curator'
+            if (isAdminUser) {
+                window.location.href = '/admin'
+            }
+        }
+    }, [user, authLoading])
 
     // Загрузка статуса оплаты
     useEffect(() => {
@@ -69,11 +83,24 @@ export default function PaymentPage() {
         const loadPayment = async () => {
             try {
                 const existing = await getUserPayment()
-                if (existing?.status === 'confirmed') {
-                    router.replace('/questionnaire')
+                console.log('[Payment] Loaded payment:', existing)
+                
+                if (process.env.NEXT_PUBLIC_DISABLE_REDIRECTS === 'true') {
+                    setPayment(existing?.status === 'pending' && existing.amount <= 10 ? existing : null)
+                    setIsLoading(false)
                     return
                 }
-                setPayment(existing)
+
+                if (existing?.status === 'confirmed') {
+                    window.location.href = '/onboarding'
+                    return
+                }
+                
+                if (existing?.status === 'pending' && existing.amount <= 10) {
+                    setPayment(existing)
+                } else {
+                    setPayment(null)
+                }
             } catch (e) {
                 console.error('[Payment] Load error:', e)
             } finally {
@@ -81,7 +108,7 @@ export default function PaymentPage() {
             }
         }
         loadPayment()
-    }, [user, router])
+    }, [user])
 
     // Polling для автоподтверждения
     useEffect(() => {
@@ -95,7 +122,7 @@ export default function PaymentPage() {
                 if (current?.status === 'confirmed') {
                     clearInterval(interval)
                     setIsPolling(false)
-                    router.replace('/questionnaire')
+                    window.location.href = '/onboarding'
                 }
             } catch (e) {
                 console.error('[Payment] Polling error:', e)
@@ -103,7 +130,7 @@ export default function PaymentPage() {
         }, 3000)
 
         return () => clearInterval(interval)
-    }, [user, isLoading, payment?.status, router])
+    }, [user, isLoading, payment?.status])
 
     // Создать платеж и открыть ЮMoney
     const handlePayment = async () => {
@@ -149,7 +176,7 @@ export default function PaymentPage() {
         try {
             const current = await getUserPayment()
             if (current?.status === 'confirmed') {
-                window.location.href = '/questionnaire'
+                window.location.href = '/onboarding'
                 return
             }
             setPayment(current)
@@ -160,7 +187,51 @@ export default function PaymentPage() {
         }
     }
 
-    if (!authLoading && !user) {
+    // Тестовая оплата (только для разработки)
+    const handleTestPayment = async () => {
+        if (!user) {
+            alert('Пользователь не авторизован')
+            return
+        }
+        setError('')
+        setIsSubmitting(true)
+
+        try {
+            const { payment: testPayment, error: testError } = await createTestPayment(
+                selectedPlan,
+                hasNutritionIncluded
+            )
+
+            if (testError) {
+                setError(testError)
+                alert('Ошибка: ' + testError)
+                return
+            }
+
+            // Успешно создан тестовый платеж
+            console.log('[Payment] Test payment created:', testPayment)
+            window.location.href = '/onboarding'
+        } catch (e) {
+            console.error('[Payment] Test payment error:', e)
+            const msg = e instanceof Error ? e.message : 'Неизвестная ошибка'
+            setError('Ошибка создания тестового платежа: ' + msg)
+            alert('Ошибка: ' + msg)
+        } finally {
+            setIsSubmitting(false)
+        }
+    }
+
+    // Пока проверяем авторизацию — показываем спиннер
+    if (authLoading) {
+        return (
+            <div className="min-h-screen bg-bg-main flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-accent animate-spin" />
+            </div>
+        )
+    }
+
+    // Не авторизован — редирект уже запущен в useEffect, показываем спиннер
+    if (!user) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />
@@ -239,6 +310,51 @@ export default function PaymentPage() {
                             <RefreshCw className={`w-4 h-4 ${isPolling ? 'animate-spin' : ''}`} />
                             Проверить статус
                         </button>
+
+                        {/* Кнопка сброса платежа (только для разработки) */}
+                        {process.env.NODE_ENV === 'development' && (
+                            <div className="flex flex-col gap-2 mt-2 pt-4 border-t border-white/10">
+                                <p className="text-xs text-text-muted text-center">DEV инструменты</p>
+                                <button
+                                    onClick={async () => {
+                                        if (!user) return
+                                        try {
+                                            const { createClient } = await import('@/lib/supabase/client')
+                                            const supabase = createClient()
+                                            await supabase
+                                                .from('payments')
+                                                .update({ status: 'confirmed', confirmed_at: new Date().toISOString() })
+                                                .eq('user_id', user.id)
+                                                .eq('status', 'pending')
+                                            window.location.href = '/onboarding'
+                                        } catch (e) {
+                                            alert('Ошибка: ' + e)
+                                        }
+                                    }}
+                                    className="glass-button-secondary w-full flex items-center justify-center gap-2 text-sm text-green-400"
+                                >
+                                    ✅ Подтвердить оплату вручную (DEV)
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        if (!user) return
+                                        try {
+                                            const { createClient } = await import('@/lib/supabase/client')
+                                            const supabase = createClient()
+                                            await supabase.from('payments').delete().eq('user_id', user.id)
+                                            setPayment(null)
+                                            setIsPolling(false)
+                                            window.location.reload()
+                                        } catch (e) {
+                                            alert('Ошибка: ' + e)
+                                        }
+                                    }}
+                                    className="glass-button-secondary w-full flex items-center justify-center gap-2 text-sm text-red-400"
+                                >
+                                    🗑️ Удалить все платежи (DEV)
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -282,7 +398,7 @@ export default function PaymentPage() {
                                     </div>
                                 )}
                                 {isBest && (
-                                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 bg-gold text-bg-main text-xs font-display font-semibold rounded-full">
+                                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 bg-accent text-bg-main text-xs font-display font-semibold rounded-full">
                                         <Gift className="w-3 h-3 inline mr-1" />
                                         Лучшее предложение
                                     </div>
@@ -416,6 +532,57 @@ export default function PaymentPage() {
                         </>
                     )}
                 </button>
+
+                {/* Кнопка тестовой оплаты (только для разработки) */}
+                {process.env.NODE_ENV === 'development' && (
+                    <>
+                        <button
+                            onClick={handleTestPayment}
+                            disabled={isSubmitting}
+                            className="glass-button-secondary w-full flex items-center justify-center gap-2 py-3 text-sm mt-3"
+                        >
+                            {isSubmitting ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Создание...
+                                </>
+                            ) : (
+                                <>
+                                    <Zap className="w-4 h-4" />
+                                    Пропустить оплату (тест)
+                                </>
+                            )}
+                        </button>
+
+                        <button
+                            onClick={async () => {
+                                if (!user) return
+                                if (!confirm('Полный сброс: удалить платеж, анкету и программы?')) return
+                                
+                                try {
+                                    const { createClient } = await import('@/lib/supabase/client')
+                                    const supabase = createClient()
+                                    
+                                    // Удаляем все данные пользователя
+                                    await Promise.all([
+                                        supabase.from('payments').delete().eq('user_id', user.id),
+                                        supabase.from('questionnaires').delete().eq('user_id', user.id),
+                                        supabase.from('training_programs').delete().eq('client_id', user.id),
+                                    ])
+                                    
+                                    alert('Данные удалены. Страница перезагрузится.')
+                                    window.location.href = '/payment'
+                                } catch (e) {
+                                    console.error('Error resetting data:', e)
+                                    alert('Ошибка сброса данных')
+                                }
+                            }}
+                            className="glass-button-secondary w-full flex items-center justify-center gap-2 py-2 text-xs mt-2 text-red-400 hover:text-red-300"
+                        >
+                            🗑️ Полный сброс (DEV)
+                        </button>
+                    </>
+                )}
 
                 <p className="text-center text-xs text-text-muted mt-4">
                     Безопасная оплата через ЮMoney. После оплаты вы перейдете к заполнению анкеты.

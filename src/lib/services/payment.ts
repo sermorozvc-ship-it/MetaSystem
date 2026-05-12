@@ -85,13 +85,13 @@ export async function createPaymentRequest(
 
     // Рассчитываем стоимость
     const prices = {
-        '1_month': 14900,
-        '3_months': 35900,
-        '6_months': 59900,
+        '1_month': 5,
+        '3_months': 6,
+        '6_months': 7,
     }
     
     const baseAmount = prices[planType]
-    const nutritionAmount = planType === '6_months' ? 0 : (includesNutrition ? 3000 : 0)
+    const nutritionAmount = planType === '6_months' ? 0 : (includesNutrition ? 2 : 0)
     const totalAmount = baseAmount + nutritionAmount
     
     const planMonths = planType === '1_month' ? 1 : planType === '3_months' ? 3 : 6
@@ -137,4 +137,89 @@ export async function getPaymentStatus(userId: string): Promise<'none' | 'pendin
 
     if (error || !data) return 'none'
     return data.status as Payment['status']
+}
+
+/**
+ * Создать тестовый платеж (для разработки)
+ * ВНИМАНИЕ: Использовать только в dev режиме!
+ */
+export async function createTestPayment(
+    planType: '1_month' | '3_months' | '6_months' = '3_months',
+    includesNutrition: boolean = true
+): Promise<{ payment: Payment | null; error: string | null }> {
+    const supabase = createClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { payment: null, error: 'Пользователь не авторизован' }
+
+    // Удаляем ВСЕ старые платежи пользователя
+    await supabase.from('payments').delete().eq('user_id', user.id)
+
+    // Рассчитываем стоимость
+    const prices = {
+        '1_month': 5,
+        '3_months': 6,
+        '6_months': 7,
+    }
+    
+    const baseAmount = prices[planType]
+    const nutritionAmount = planType === '6_months' ? 0 : (includesNutrition ? 2 : 0)
+    const totalAmount = baseAmount + nutritionAmount
+    const planMonths = planType === '1_month' ? 1 : planType === '3_months' ? 3 : 6
+
+    const getNextMonday = () => {
+        const today = new Date()
+        const dayOfWeek = today.getDay()
+        const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek
+        const nextMonday = new Date(today)
+        nextMonday.setDate(today.getDate() + daysUntilMonday)
+        return nextMonday.toISOString().split('T')[0]
+    }
+
+    // Шаг 1: Создаём pending платёж (RLS разрешает)
+    const { data: insertData, error: insertError } = await supabase
+        .from('payments')
+        .insert({
+            user_id: user.id,
+            amount: totalAmount,
+            currency: 'RUB',
+            status: 'pending',
+            payment_method: 'manual',
+            plan_type: planType,
+            plan_months: planMonths,
+            includes_nutrition: planType === '6_months' ? true : includesNutrition,
+            base_amount: baseAmount,
+            nutrition_amount: nutritionAmount,
+            cohort_start: getNextMonday(),
+        })
+        .select()
+
+    if (insertError) {
+        console.error('[Payment] Error creating pending payment:', insertError)
+        return { payment: null, error: 'Ошибка создания платежа: ' + insertError.message }
+    }
+
+    const pendingPayment = Array.isArray(insertData) ? insertData[0] : insertData
+    if (!pendingPayment) {
+        return { payment: null, error: 'Платёж не создан' }
+    }
+
+    // Шаг 2: Обновляем на confirmed
+    const { data: updateData, error: updateError } = await supabase
+        .from('payments')
+        .update({
+            status: 'confirmed',
+            confirmed_by: null,
+            confirmed_at: new Date().toISOString(),
+        })
+        .eq('id', pendingPayment.id)
+        .select()
+
+    if (updateError) {
+        console.error('[Payment] Error confirming payment:', updateError)
+        return { payment: null, error: 'Ошибка подтверждения: ' + updateError.message }
+    }
+
+    const confirmedPayment = Array.isArray(updateData) ? updateData[0] : updateData
+    return { payment: (confirmedPayment || pendingPayment) as Payment, error: null }
 }

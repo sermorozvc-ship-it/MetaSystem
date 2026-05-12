@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-    Dumbbell, TrendingUp, Calendar, MessageCircle, Settings,
-    ChevronRight, Loader2, CheckCircle2, Clock, Target, Zap
+    Dumbbell, TrendingUp, Calendar, MessageCircle,
+    ChevronRight, Loader2, Zap
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { getCurrentProgram, type TrainingProgram } from '@/lib/services/training'
@@ -71,14 +71,14 @@ export default function DashboardPage() {
     const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Атлет'
 
     return (
-        <div className="min-h-screen bg-bg-main p-4 py-12">
+        <div className="min-h-screen bg-bg-main p-4 py-6 md:py-12">
             <div className="max-w-6xl mx-auto">
                 {/* Header */}
-                <div className="mb-8">
-                    <h1 className="text-3xl font-display font-bold text-white mb-2">
+                <div className="mb-6">
+                    <h1 className="text-2xl md:text-3xl font-display font-bold text-white mb-1">
                         Привет, {userName}! 👋
                     </h1>
-                    <p className="text-text-secondary">Добро пожаловать в MetaSystem</p>
+                    <p className="text-text-secondary text-sm">Добро пожаловать в MetaSystem</p>
                 </div>
 
                 {/* Quick Stats */}
@@ -220,24 +220,6 @@ export default function DashboardPage() {
                                 <div>
                                     <h3 className="text-lg font-display font-bold text-white mb-1">Сообщения</h3>
                                     <p className="text-sm text-text-secondary">Чат с тренером</p>
-                                </div>
-                            </div>
-                            <ChevronRight className="w-5 h-5 text-text-muted" />
-                        </div>
-                    </button>
-
-                    <button
-                        onClick={() => router.push('/settings')}
-                        className="glass-card p-6 text-left hover:border-accent transition-all"
-                    >
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 rounded-xl bg-warning/20 flex items-center justify-center">
-                                    <Settings className="w-6 h-6 text-warning" />
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-display font-bold text-white mb-1">Настройки</h3>
-                                    <p className="text-sm text-text-secondary">Профиль и настройки</p>
                                 </div>
                             </div>
                             <ChevronRight className="w-5 h-5 text-text-muted" />
