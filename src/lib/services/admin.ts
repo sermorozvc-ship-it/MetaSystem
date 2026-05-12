@@ -493,7 +493,80 @@ export async function unblockUser(userId: string): Promise<{ success: boolean; e
     return { success: true }
 }
 
-// Archive user (move to archive — data preserved)
+// Create client manually (admin bypass — no payment flow)
+export async function createClientManually(params: {
+    email: string
+    password: string
+    full_name: string
+    amount: number
+    plan_months: number
+    subscription_start: string
+    subscription_end: string
+}): Promise<{ success: boolean; userId?: string; error?: string }> {
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return { success: false, error: 'Не авторизован' }
+
+    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    // Service role key — используется только в admin-контексте, как и в других местах проекта
+    const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA'
+
+    const { createClient: createDirectClient } = await import('@supabase/supabase-js')
+    const db = createDirectClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+
+    // 1. Create auth user (email confirmed — no verification needed)
+    const { data: newUser, error: createError } = await db.auth.admin.createUser({
+        email: params.email,
+        password: params.password,
+        email_confirm: true,
+        user_metadata: { full_name: params.full_name },
+    })
+
+    if (createError || !newUser.user) {
+        return { success: false, error: createError?.message || 'Ошибка создания пользователя' }
+    }
+
+    const userId = newUser.user.id
+
+    // 2. Upsert profile
+    const { error: profileError } = await db.from('profiles').upsert({
+        id: userId,
+        email: params.email,
+        full_name: params.full_name,
+        role: 'user',
+        is_blocked: false,
+        subscription_status: 'active',
+        subscription_end_date: params.subscription_end,
+        questionnaire_completed: false,
+    })
+
+    if (profileError) {
+        return { success: false, error: 'Профиль: ' + profileError.message }
+    }
+
+    // 3. Create confirmed payment
+    if (params.amount > 0) {
+        const { error: paymentError } = await db.from('payments').insert({
+            user_id: userId,
+            amount: params.amount,
+            currency: 'RUB',
+            status: 'confirmed',
+            payment_method: 'manual',
+            plan_months: params.plan_months,
+            confirmed_by: session.user.id,
+            confirmed_at: new Date().toISOString(),
+            cohort_start: params.subscription_start,
+            base_amount: params.amount,
+            nutrition_amount: 0,
+        })
+
+        if (paymentError) {
+            return { success: false, error: 'Платёж: ' + paymentError.message }
+        }
+    }
+
+    return { success: true, userId }
+}
 export async function archiveUser(
     userId: string,
     reason: string = ''
