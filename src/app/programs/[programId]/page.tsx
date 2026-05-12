@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Play, CheckCircle2, Loader2, ChevronLeft, ChevronRight, X, Maximize2, Minimize2 } from 'lucide-react'
+import { ArrowLeft, Play, CheckCircle2, Loader2, ChevronLeft, ChevronRight, X, Maximize2, Minimize2, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import {
     getProgramById,
@@ -122,18 +122,25 @@ function ExerciseCard({
     data,
     onChange,
     onVideoClick,
+    collapsed,
+    onToggleCollapse,
 }: {
     exercise: Exercise
     index: number
     data: ExerciseClientData
     onChange: (d: ExerciseClientData) => void
     onVideoClick: (url: string, title: string) => void
+    collapsed: boolean
+    onToggleCollapse: () => void
 }) {
     const plannedSets = exercise.sets || 3
     const targetWeights = exercise.targetWeights || Array(plannedSets).fill(0)
 
     // Реальное количество подходов = max(плановые, введённые клиентом)
     const totalSets = Math.max(plannedSets, data.sets.length)
+
+    // Считаем сколько подходов заполнено (для индикатора в свёрнутом виде)
+    const filledSets = data.sets.filter(s => s.weight || s.reps).length
 
     const updateSet = (setIdx: number, field: keyof SetData, value: string) => {
         const newSets = [...data.sets]
@@ -150,101 +157,121 @@ function ExerciseCard({
     }
 
     const removeExtraSet = (setIdx: number) => {
-        if (setIdx < plannedSets) return // нельзя удалить плановые подходы
+        if (setIdx < plannedSets) return
         const newSets = data.sets.filter((_, i) => i !== setIdx)
         onChange({ ...data, sets: newSets })
     }
 
     return (
-        <div className="glass-card p-5">
-            {/* Заголовок */}
-            <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                        <span className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center text-accent font-bold text-xs flex-shrink-0">
-                            {index + 1}
-                        </span>
-                        <h3 className="text-base font-display font-bold text-white leading-tight">{exercise.name}</h3>
+        <div className={`glass-card overflow-hidden transition-all duration-200 ${collapsed ? 'opacity-70' : ''}`}>
+            {/* Заголовок — всегда виден, клик сворачивает/разворачивает */}
+            <div
+                className="flex items-center justify-between p-5 cursor-pointer select-none"
+                onClick={onToggleCollapse}
+            >
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 transition-colors ${
+                        collapsed && filledSets > 0 ? 'bg-success/20 text-success' : 'bg-accent/20 text-accent'
+                    }`}>
+                        {collapsed && filledSets > 0 ? '✓' : index + 1}
+                    </span>
+                    <div className="min-w-0">
+                        <h3 className="text-base font-display font-bold text-white leading-tight truncate">{exercise.name}</h3>
+                        <p className="text-xs text-text-secondary">
+                            {plannedSets} x {exercise.reps}
+                            {targetWeights.some((w: number) => w > 0) && (
+                                <span className="text-accent ml-1">
+                                    • {targetWeights.map((w: number) => w > 0 ? `${w}` : '—').join('/')} кг
+                                </span>
+                            )}
+                            {collapsed && filledSets > 0 && (
+                                <span className="text-success ml-2">· {filledSets}/{totalSets} подх. заполнено</span>
+                            )}
+                        </p>
                     </div>
-                    <p className="text-xs text-text-secondary ml-9">
-                        {plannedSets} x {exercise.reps}
-                        {targetWeights.some((w: number) => w > 0) && (
-                            <span className="text-accent ml-1">
-                                • {targetWeights.map((w: number) => w > 0 ? `${w}` : '—').join('/')} кг
-                            </span>
-                        )}
-                    </p>
                 </div>
-                {exercise.videoUrl && (
-                    <button
-                        onClick={() => onVideoClick(exercise.videoUrl!, exercise.name)}
-                        className="glass-button-secondary flex items-center gap-1.5 text-xs px-3 py-1.5 flex-shrink-0 ml-2">
-                        <Play className="w-3 h-3" />Видео
+                <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                    {exercise.videoUrl && !collapsed && (
+                        <button
+                            onClick={e => { e.stopPropagation(); onVideoClick(exercise.videoUrl!, exercise.name) }}
+                            className="glass-button-secondary flex items-center gap-1.5 text-xs px-3 py-1.5">
+                            <Play className="w-3 h-3" />Видео
+                        </button>
+                    )}
+                    <button className="glass-button-secondary p-1.5 rounded-lg" title={collapsed ? 'Развернуть' : 'Свернуть'}>
+                        {collapsed
+                            ? <ChevronDown className="w-4 h-4 text-text-muted" />
+                            : <ChevronUp className="w-4 h-4 text-text-muted" />
+                        }
                     </button>
-                )}
-            </div>
-
-            {/* Таблица подходов */}
-            <div className="space-y-2">
-                <div className="grid grid-cols-4 gap-2 text-xs text-text-muted px-1">
-                    <div>Подход</div>
-                    <div>Вес (кг)</div>
-                    <div>Повт.</div>
-                    <div>RIR</div>
                 </div>
+            </div>
 
-                {Array.from({ length: totalSets }).map((_, setIdx) => {
-                    const setData = data.sets[setIdx] || { weight: '', reps: '', rir: '' }
-                    const plannedWeight = targetWeights[setIdx] ?? 0
-                    const isExtra = setIdx >= plannedSets
-
-                    return (
-                        <div key={setIdx} className="grid grid-cols-4 gap-2 items-center">
-                            <div className="flex flex-col">
-                                <div className="flex items-center gap-1">
-                                    <span className={`text-sm font-semibold ${isExtra ? 'text-accent' : 'text-white'}`}>
-                                        {setIdx + 1}
-                                        {isExtra && <span className="text-xs ml-0.5">+</span>}
-                                    </span>
-                                    {isExtra && (
-                                        <button onClick={() => removeExtraSet(setIdx)}
-                                            className="text-text-muted hover:text-danger text-xs ml-1 leading-none">✕</button>
-                                    )}
-                                </div>
-                                {plannedWeight > 0 && (
-                                    <span className="text-xs text-text-muted">{plannedWeight} кг</span>
-                                )}
-                            </div>
-                            <input type="number" step="0.5" value={setData.weight}
-                                onChange={e => updateSet(setIdx, 'weight', e.target.value)}
-                                className="glass-input text-sm py-2 px-3 text-center"
-                                placeholder={plannedWeight > 0 ? String(plannedWeight) : '—'} />
-                            <input type="number" value={setData.reps}
-                                onChange={e => updateSet(setIdx, 'reps', e.target.value)}
-                                className="glass-input text-sm py-2 px-3 text-center"
-                                placeholder={exercise.reps.split('-')[0] || '—'} />
-                            <input type="number" min="0" max="5" value={setData.rir}
-                                onChange={e => updateSet(setIdx, 'rir', e.target.value)}
-                                className="glass-input text-sm py-2 px-3 text-center"
-                                placeholder="2" />
+            {/* Тело — скрывается при свёртывании */}
+            {!collapsed && (
+                <div className="px-5 pb-5">
+                    {/* Таблица подходов */}
+                    <div className="space-y-2">
+                        <div className="grid grid-cols-4 gap-2 text-xs text-text-muted px-1">
+                            <div>Подход</div>
+                            <div>Вес (кг)</div>
+                            <div>Повт.</div>
+                            <div>RIR</div>
                         </div>
-                    )
-                })}
 
-                {/* Кнопка добавить подход */}
-                <button onClick={addSet}
-                    className="w-full mt-1 py-2 rounded-xl border border-dashed border-border text-xs text-text-muted hover:border-accent hover:text-accent transition-colors flex items-center justify-center gap-1.5">
-                    <span className="text-base leading-none">+</span> Добавить подход
-                </button>
-            </div>
+                        {Array.from({ length: totalSets }).map((_, setIdx) => {
+                            const setData = data.sets[setIdx] || { weight: '', reps: '', rir: '' }
+                            const plannedWeight = targetWeights[setIdx] ?? 0
+                            const isExtra = setIdx >= plannedSets
 
-            {/* Комментарий */}
-            <div className="mt-3">
-                <input type="text" value={data.comment}
-                    onChange={e => onChange({ ...data, comment: e.target.value })}
-                    className="glass-input w-full text-sm"
-                    placeholder="Комментарий к упражнению..." />
-            </div>
+                            return (
+                                <div key={setIdx} className="grid grid-cols-4 gap-2 items-center">
+                                    <div className="flex flex-col">
+                                        <div className="flex items-center gap-1">
+                                            <span className={`text-sm font-semibold ${isExtra ? 'text-accent' : 'text-white'}`}>
+                                                {setIdx + 1}
+                                                {isExtra && <span className="text-xs ml-0.5">+</span>}
+                                            </span>
+                                            {isExtra && (
+                                                <button onClick={() => removeExtraSet(setIdx)}
+                                                    className="text-text-muted hover:text-danger text-xs ml-1 leading-none">✕</button>
+                                            )}
+                                        </div>
+                                        {plannedWeight > 0 && (
+                                            <span className="text-xs text-text-muted">{plannedWeight} кг</span>
+                                        )}
+                                    </div>
+                                    <input type="number" step="0.5" value={setData.weight}
+                                        onChange={e => updateSet(setIdx, 'weight', e.target.value)}
+                                        className="glass-input text-sm py-2 px-3 text-center"
+                                        placeholder={plannedWeight > 0 ? String(plannedWeight) : '—'} />
+                                    <input type="number" value={setData.reps}
+                                        onChange={e => updateSet(setIdx, 'reps', e.target.value)}
+                                        className="glass-input text-sm py-2 px-3 text-center"
+                                        placeholder={exercise.reps.split('-')[0] || '—'} />
+                                    <input type="number" min="0" max="5" value={setData.rir}
+                                        onChange={e => updateSet(setIdx, 'rir', e.target.value)}
+                                        className="glass-input text-sm py-2 px-3 text-center"
+                                        placeholder="2" />
+                                </div>
+                            )
+                        })}
+
+                        <button onClick={addSet}
+                            className="w-full mt-1 py-2 rounded-xl border border-dashed border-border text-xs text-text-muted hover:border-accent hover:text-accent transition-colors flex items-center justify-center gap-1.5">
+                            <span className="text-base leading-none">+</span> Добавить подход
+                        </button>
+                    </div>
+
+                    {/* Комментарий */}
+                    <div className="mt-3">
+                        <input type="text" value={data.comment}
+                            onChange={e => onChange({ ...data, comment: e.target.value })}
+                            className="glass-input w-full text-sm"
+                            placeholder="Комментарий к упражнению..." />
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
@@ -271,6 +298,7 @@ export default function ProgramDetailPage() {
     const [notes, setNotes] = useState('')
     const [completedDays, setCompletedDays] = useState<Set<number>>(new Set())
     const [videoModal, setVideoModal] = useState<{ url: string; title: string } | null>(null)
+    const [collapsedExercises, setCollapsedExercises] = useState<Set<string>>(new Set())
 
     const dataLoadedRef = useRef(false)
     const userChangedRef = useRef(false)
@@ -537,6 +565,29 @@ export default function ProgramDetailPage() {
                         </div>
                     )}
 
+                    {/* Кнопка свернуть/развернуть все */}
+                    {currentDay.exercises.length > 1 && (
+                        <div className="flex justify-end">
+                            <button
+                                onClick={() => {
+                                    const allIds = currentDay.exercises.map(e => e.id)
+                                    const allCollapsed = allIds.every(id => collapsedExercises.has(id))
+                                    if (allCollapsed) {
+                                        setCollapsedExercises(new Set())
+                                    } else {
+                                        setCollapsedExercises(new Set(allIds))
+                                    }
+                                }}
+                                className="glass-button-secondary text-xs flex items-center gap-1.5 px-3 py-1.5"
+                            >
+                                {currentDay.exercises.every(e => collapsedExercises.has(e.id))
+                                    ? <><ChevronDown className="w-3.5 h-3.5" />Развернуть все</>
+                                    : <><ChevronUp className="w-3.5 h-3.5" />Свернуть все</>
+                                }
+                            </button>
+                        </div>
+                    )}
+
                     {currentDay.exercises.map((exercise, idx) => (
                         <ExerciseCard
                             key={exercise.id}
@@ -545,6 +596,13 @@ export default function ProgramDetailPage() {
                             data={exerciseData[exercise.id] || { sets: [], comment: '' }}
                             onChange={d => updateExercise(exercise.id, d)}
                             onVideoClick={(url, title) => setVideoModal({ url, title })}
+                            collapsed={collapsedExercises.has(exercise.id)}
+                            onToggleCollapse={() => setCollapsedExercises(prev => {
+                                const next = new Set(prev)
+                                if (next.has(exercise.id)) next.delete(exercise.id)
+                                else next.add(exercise.id)
+                                return next
+                            })}
                         />
                     ))}
                 </div>
