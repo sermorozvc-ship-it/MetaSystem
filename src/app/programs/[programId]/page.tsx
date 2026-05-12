@@ -300,6 +300,14 @@ export default function ProgramDetailPage() {
     const [videoModal, setVideoModal] = useState<{ url: string; title: string } | null>(null)
     const [collapsedExercises, setCollapsedExercises] = useState<Set<string>>(new Set())
 
+    // Сворачиваем все упражнения при смене дня
+    useEffect(() => {
+        if (!program) return
+        const currentDay = program.program_data.days[currentDayIndex]
+        if (!currentDay) return
+        setCollapsedExercises(new Set(currentDay.exercises.map(e => e.id)))
+    }, [program, currentDayIndex])
+
     const dataLoadedRef = useRef(false)
     const userChangedRef = useRef(false)
 
