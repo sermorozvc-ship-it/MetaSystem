@@ -8,6 +8,9 @@ export interface UserProfile {
     is_blocked: boolean
     blocked_at: string | null
     blocked_reason: string | null
+    is_archived: boolean
+    archived_at: string | null
+    archived_reason: string | null
     created_at: string
     subscription_status?: 'inactive' | 'active' | 'paused' | 'expired'
     subscription_end_date?: string | null
@@ -490,25 +493,68 @@ export async function unblockUser(userId: string): Promise<{ success: boolean; e
     return { success: true }
 }
 
-// Delete user
-export async function deleteUser(userId: string): Promise<{ success: boolean; error?: string }> {
+// Archive user (move to archive — data preserved)
+export async function archiveUser(
+    userId: string,
+    reason: string = ''
+): Promise<{ success: boolean; error?: string }> {
     const supabase = createClient()
 
-    // First block the user
-    const { error: blockError } = await supabase
+    const { error } = await supabase
         .from('profiles')
         .update({
-            is_blocked: true,
-            blocked_at: new Date().toISOString(),
-            blocked_reason: 'DELETED'
+            is_archived: true,
+            archived_at: new Date().toISOString(),
+            archived_reason: reason || null,
         })
         .eq('id', userId)
 
-    if (blockError) {
-        return { success: false, error: blockError.message }
-    }
-
+    if (error) return { success: false, error: error.message }
     return { success: true }
+}
+
+// Unarchive user (restore from archive)
+export async function unarchiveUser(userId: string): Promise<{ success: boolean; error?: string }> {
+    const supabase = createClient()
+
+    const { error } = await supabase
+        .from('profiles')
+        .update({
+            is_archived: false,
+            archived_at: null,
+            archived_reason: null,
+        })
+        .eq('id', userId)
+
+    if (error) return { success: false, error: error.message }
+    return { success: true }
+}
+
+// Delete user permanently — calls Edge Function with service role
+export async function deleteUser(userId: string): Promise<{ success: boolean; error?: string }> {
+    const supabase = createClient()
+
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return { success: false, error: 'Не авторизован' }
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+
+    try {
+        const res = await fetch(`${supabaseUrl}/functions/v1/delete-user`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ userId }),
+        })
+
+        const json = await res.json()
+        if (!res.ok) return { success: false, error: json.error || 'Ошибка удаления' }
+        return { success: true }
+    } catch (e: any) {
+        return { success: false, error: e.message }
+    }
 }
 
 // Get admin stats — все запросы параллельно

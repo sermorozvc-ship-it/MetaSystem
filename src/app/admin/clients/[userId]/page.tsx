@@ -5,10 +5,10 @@ import { useRouter, useParams } from 'next/navigation'
 import {
     ArrowLeft, Dumbbell, TrendingUp, FileText, Plus,
     Loader2, Upload, X, Check, ChevronDown, ChevronUp,
-    Download, CheckCircle2, Clock, Pencil
+    Download, CheckCircle2, Clock, Pencil, Archive, ArchiveRestore
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { isAdmin, getUserDetails } from '@/lib/services/admin'
+import { isAdmin, getUserDetails, archiveUser, unarchiveUser } from '@/lib/services/admin'
 import { getQuestionnaireByUserId, type ClientQuestionnaire } from '@/lib/services/questionnaire'
 import { getClientPrograms, type TrainingProgram, type TrainingEntry } from '@/lib/services/training'
 import { parseMdToJson, EXAMPLE_PROGRAM_MD } from '@/lib/utils/md-parser'
@@ -756,6 +756,7 @@ export default function AdminClientDetailPage() {
     const [clientProfile, setClientProfile] = useState<any>(null)
     const [questionnaire, setQuestionnaire] = useState<ClientQuestionnaire | null>(null)
     const [programs, setPrograms] = useState<TrainingProgram[]>([])
+    const [isArchiving, setIsArchiving] = useState(false)
 
     // Upload modal state
     const [showUploadModal, setShowUploadModal] = useState(false)
@@ -807,6 +808,21 @@ export default function AdminClientDetailPage() {
         }
         load()
     }, [isAdminUser, userId])
+
+    const handleArchiveToggle = async () => {
+        const isCurrentlyArchived = clientProfile?.is_archived
+        const action = isCurrentlyArchived ? 'восстановить клиента из архива' : 'переместить клиента в архив'
+        if (!confirm(`Вы уверены что хотите ${action}?`)) return
+        setIsArchiving(true)
+        const fn = isCurrentlyArchived ? unarchiveUser : archiveUser
+        const { success, error } = await fn(userId)
+        if (success) {
+            setClientProfile((prev: any) => ({ ...prev, is_archived: !isCurrentlyArchived }))
+        } else {
+            alert('Ошибка: ' + error)
+        }
+        setIsArchiving(false)
+    }
 
     const handleUploadProgram = async () => {
         setUploadError('')
@@ -887,12 +903,38 @@ export default function AdminClientDetailPage() {
                         <ArrowLeft className="w-4 h-4" />
                         <span className="hidden sm:inline">Назад</span>
                     </button>
-                    <div className="min-w-0">
-                        <h1 className="text-2xl md:text-3xl font-display font-bold text-white truncate">
-                            {clientProfile?.full_name || 'Клиент'}
-                        </h1>
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <h1 className="text-2xl md:text-3xl font-display font-bold text-white truncate">
+                                {clientProfile?.full_name || 'Клиент'}
+                            </h1>
+                            {clientProfile?.is_archived && (
+                                <span className="px-2 py-0.5 rounded-full bg-text-muted/20 text-text-muted text-xs font-semibold flex items-center gap-1">
+                                    <Archive className="w-3 h-3" /> Архив
+                                </span>
+                            )}
+                        </div>
                         <p className="text-text-secondary text-sm truncate">{clientProfile?.email}</p>
                     </div>
+                    <button
+                        onClick={handleArchiveToggle}
+                        disabled={isArchiving}
+                        className={`glass-button-secondary flex items-center gap-2 flex-shrink-0 text-sm transition-colors ${
+                            clientProfile?.is_archived
+                                ? 'hover:text-success hover:border-success/40'
+                                : 'hover:text-warning hover:border-warning/40'
+                        }`}
+                    >
+                        {isArchiving
+                            ? <Loader2 className="w-4 h-4 animate-spin" />
+                            : clientProfile?.is_archived
+                                ? <ArchiveRestore className="w-4 h-4" />
+                                : <Archive className="w-4 h-4" />
+                        }
+                        <span className="hidden sm:inline">
+                            {clientProfile?.is_archived ? 'Из архива' : 'В архив'}
+                        </span>
+                    </button>
                 </div>
 
                 {/* Tabs */}
