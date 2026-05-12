@@ -283,7 +283,7 @@ export default function MetricsPage() {
                                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                                         <XAxis dataKey="date" stroke="#555" tick={{ fontSize: 11 }} />
                                         <YAxis stroke="#555" tick={{ fontSize: 11 }} domain={['auto', 'auto']} />
-                                        <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', fontSize: 12 }} formatter={(v: any, name: string) => [`${v} см`, name]} />
+                                        <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', fontSize: 12 }} formatter={(v: any, name: any) => [`${v} см`, name]} />
                                         <Legend wrapperStyle={{ fontSize: 12 }} />
                                         <Line type="monotone" dataKey="waist" stroke="#c8f542" strokeWidth={2} dot={{ r: 3 }} name="Талия" />
                                         <Line type="monotone" dataKey="hips" stroke="#60a5fa" strokeWidth={2} dot={{ r: 3 }} name="Бёдра" />
