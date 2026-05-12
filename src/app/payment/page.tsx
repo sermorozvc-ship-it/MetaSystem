@@ -74,7 +74,11 @@ export default function PaymentPage() {
 
     // Загрузка статуса оплаты
     useEffect(() => {
-        if (!user) return
+        if (!user) {
+            // Неавторизованный — просто показываем страницу без загрузки
+            setIsLoading(false)
+            return
+        }
 
         const loadPayment = async () => {
             try {
@@ -224,15 +228,6 @@ export default function PaymentPage() {
 
     // Пока проверяем авторизацию — показываем спиннер
     if (authLoading) {
-        return (
-            <div className="min-h-screen bg-bg-main flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-accent animate-spin" />
-            </div>
-        )
-    }
-
-    // Не авторизован — редирект уже запущен в useEffect, показываем спиннер
-    if (!user) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />
