@@ -603,30 +603,48 @@ export async function unarchiveUser(userId: string): Promise<{ success: boolean;
     return { success: true }
 }
 
-// Delete user permanently — calls Edge Function with service role
+// Delete user permanently — uses service role key directly (same pattern as rest of admin code)
 export async function deleteUser(userId: string): Promise<{ success: boolean; error?: string }> {
-    const supabase = createClient()
-
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return { success: false, error: 'Не авторизован' }
-
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA'
 
     try {
-        const res = await fetch(`${supabaseUrl}/functions/v1/delete-user`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({ userId }),
-        })
+        const { createClient: createDirectClient } = await import('@supabase/supabase-js')
+        const db = createDirectClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
 
-        const json = await res.json()
-        if (!res.ok) return { success: false, error: json.error || 'Ошибка удаления' }
+        // Delete all user data explicitly (most have CASCADE but be explicit)
+        const tables: Array<{ table: string; col: string }> = [
+            { table: 'training_entries', col: 'user_id' },
+            { table: 'training_programs', col: 'user_id' },
+            { table: 'client_metrics', col: 'user_id' },
+            { table: 'client_questionnaires', col: 'user_id' },
+            { table: 'payments', col: 'user_id' },
+            { table: 'notifications', col: 'user_id' },
+            { table: 'journal_entries', col: 'user_id' },
+            { table: 'user_progress', col: 'user_id' },
+            { table: 'body_measurements', col: 'user_id' },
+            { table: 'day_reports', col: 'user_id' },
+        ]
+
+        for (const { table, col } of tables) {
+            await db.from(table).delete().eq(col, userId)
+        }
+        // Messages: delete both sent and received
+        await db.from('admin_messages').delete().eq('to_user_id', userId)
+        await db.from('admin_messages').delete().eq('from_user_id', userId)
+
+        // Delete profile
+        await db.from('profiles').delete().eq('id', userId)
+
+        // Delete from auth.users
+        const { error: authError } = await db.auth.admin.deleteUser(userId)
+        if (authError) {
+            return { success: false, error: 'Auth delete failed: ' + authError.message }
+        }
+
         return { success: true }
     } catch (e: any) {
-        return { success: false, error: e.message }
+        return { success: false, error: e.message || 'Ошибка удаления' }
     }
 }
 
