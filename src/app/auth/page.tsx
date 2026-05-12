@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Flame, Mail, Lock, User, Eye, EyeOff, ArrowRight, Loader2, CheckCircle } from 'lucide-react'
+import { Flame, Mail, Lock, User, Eye, EyeOff, ArrowRight, Loader2, CheckCircle, ShieldCheck, CreditCard } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/client'
 
@@ -24,7 +24,8 @@ function AuthContent() {
     const searchParams = useSearchParams()
     const initialMode = searchParams.get('mode') === 'register' ? 'register' : 'login'
     const returnTo = searchParams.get('returnTo') || '/questionnaire'
-    const [mode, setMode] = useState<AuthMode>(initialMode)
+    const isPaymentFlow = returnTo.includes('/payment')
+    const [mode, setMode] = useState<AuthMode>(isPaymentFlow ? 'register' : initialMode)
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [fullName, setFullName] = useState('')
@@ -227,6 +228,49 @@ function AuthContent() {
                     <h1 className="text-2xl font-bold text-white">Архитектура твоего тела</h1>
                     <p className="text-gray-400 mt-1 text-sm">Научная система трансформации, построенная на принципах адаптации и периодизации</p>
                 </div>
+
+                {/* Баннер контекста оплаты */}
+                {isPaymentFlow && (
+                    <div className="mb-5 rounded-2xl border border-accent/30 bg-accent/5 p-4">
+                        {/* Шаги */}
+                        <div className="flex items-center justify-center gap-2 mb-3 text-xs font-medium">
+                            <span className="flex items-center gap-1 text-accent">
+                                <span className="w-5 h-5 rounded-full bg-accent text-bg-main flex items-center justify-center font-bold text-[10px]">1</span>
+                                Тариф выбран
+                            </span>
+                            <span className="text-white/20">──</span>
+                            <span className="flex items-center gap-1 text-white font-semibold">
+                                <span className="w-5 h-5 rounded-full bg-white text-bg-main flex items-center justify-center font-bold text-[10px]">2</span>
+                                Аккаунт
+                            </span>
+                            <span className="text-white/20">──</span>
+                            <span className="flex items-center gap-1 text-white/40">
+                                <span className="w-5 h-5 rounded-full border border-white/20 flex items-center justify-center font-bold text-[10px]">3</span>
+                                Оплата
+                            </span>
+                        </div>
+
+                        <p className="text-sm text-white/80 text-center mb-3">
+                            Создайте аккаунт — это нужно чтобы привязать платёж к вашему личному кабинету.
+                            Займёт 30 секунд.
+                        </p>
+
+                        <div className="flex flex-col gap-1.5">
+                            <div className="flex items-center gap-2 text-xs text-white/60">
+                                <ShieldCheck className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+                                После регистрации вы вернётесь на страницу оплаты
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-white/60">
+                                <CreditCard className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+                                Оплата через ЮMoney — безопасно и без комиссии
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-white/60">
+                                <ShieldCheck className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+                                Гарантия возврата в течение 5 дней — без вопросов
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Auth Card */}
                 <div className="glass-card p-6">
