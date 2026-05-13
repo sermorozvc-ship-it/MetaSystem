@@ -14,6 +14,7 @@ import {
     isNutritionQuestionnaireCompleted,
 } from '@/lib/services/nutrition'
 import { getCurrentNutritionProgram, type NutritionProgram } from '@/lib/services/nutrition-programs'
+import { getMyQuestionnaire } from '@/lib/services/questionnaire'
 
 export default function DashboardPage() {
     const { user, isLoading: authLoading } = useAuth()
@@ -22,6 +23,7 @@ export default function DashboardPage() {
     const [currentProgram, setCurrentProgram] = useState<TrainingProgram | null>(null)
     const [currentNutritionPlan, setCurrentNutritionPlan] = useState<NutritionProgram | null>(null)
     const [latestMetric, setLatestMetric] = useState<ClientMetric | null>(null)
+    const [questionnaireWeight, setQuestionnaireWeight] = useState<number | null>(null)
     const [isLoading, setIsLoading] = useState(true)
     const [subscriptionDaysLeft, setSubscriptionDaysLeft] = useState<number | null>(null)
     const [subscriptionEndDate, setSubscriptionEndDate] = useState<Date | null>(null)
@@ -49,6 +51,14 @@ export default function DashboardPage() {
                 setCurrentProgram(program)
                 setLatestMetric(metric)
                 setNutritionPending(needsNutrition && !nutritionDone)
+
+                // Если нет замеров — берём вес из анкеты как fallback
+                if (!metric?.weight_kg) {
+                    try {
+                        const q = await getMyQuestionnaire()
+                        if (q?.weight_kg) setQuestionnaireWeight(q.weight_kg)
+                    } catch {}
+                }
 
                 // Загружаем текущий план питания
                 try {
@@ -171,10 +181,18 @@ export default function DashboardPage() {
                             <div>
                                 <p className="text-sm text-text-muted">Вес</p>
                                 <p className="text-xl font-display font-bold text-white">
-                                    {latestMetric?.weight_kg ? `${latestMetric.weight_kg} кг` : '—'}
+                                    {latestMetric?.weight_kg
+                                        ? `${latestMetric.weight_kg} кг`
+                                        : questionnaireWeight
+                                        ? `${questionnaireWeight} кг`
+                                        : '—'
+                                    }
                                 </p>
                             </div>
                         </div>
+                        {!latestMetric?.weight_kg && questionnaireWeight && (
+                            <p className="text-xs text-text-muted">из анкеты</p>
+                        )}
                     </div>
 
                     <div className="glass-card p-6">

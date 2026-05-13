@@ -14,6 +14,7 @@ import {
   isNutritionQuestionnaireRequired,
   type NutritionAnswers,
 } from '@/lib/services/nutrition'
+import { getMyQuestionnaire } from '@/lib/services/questionnaire'
 
 const STEPS = [
   { id: 1, title: 'Основные данные', icon: Target },
@@ -53,7 +54,23 @@ export default function NutritionQuestionnairePage() {
         }
         // Если уже заполнена — предзаполняем
         const existing = await getMyNutritionQuestionnaire()
-        if (existing?.answers) setFormData(existing.answers)
+        if (existing?.answers) {
+          setFormData(existing.answers)
+        } else {
+          // Анкета питания ещё не заполнена — берём базовые данные из анкеты тренировок
+          try {
+            const trainingQ = await getMyQuestionnaire()
+            if (trainingQ) {
+              setFormData(prev => ({
+                ...prev,
+                current_weight_kg: trainingQ.weight_kg ?? prev.current_weight_kg,
+                height_cm: trainingQ.height_cm ?? prev.height_cm,
+                age: trainingQ.age ?? prev.age,
+                gender: trainingQ.gender ?? prev.gender,
+              }))
+            }
+          } catch {}
+        }
       } finally {
         setChecking(false)
       }
