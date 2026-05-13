@@ -65,7 +65,14 @@ function PaymentContent() {
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [error, setError] = useState('')
     const [isPolling, setIsPolling] = useState(false)
-    const [showWelcomeBanner, setShowWelcomeBanner] = useState(isJustRegistered)
+    const [showWelcomeBanner, setShowWelcomeBanner] = useState(false)
+
+    // Читаем флаг registered из URL после монтирования (useSearchParams в Suspense может быть пустым при SSR)
+    useEffect(() => {
+        if (isJustRegistered) {
+            setShowWelcomeBanner(true)
+        }
+    }, [isJustRegistered])
 
     // Расчет итоговой суммы
     const baseAmount = PLANS[selectedPlan].price
@@ -174,18 +181,19 @@ function PaymentContent() {
                         return
                     }
                     setError(paymentError)
+                    setIsSubmitting(false)
                     return
                 }
                 setPayment(newPayment)
             }
 
-            // Открываем ЮMoney напрямую — window.open с about:blank блокируется браузерами после await
+            // Переходим на ЮMoney — isSubmitting остаётся true пока идёт навигация
             const yooUrl = buildYooMoneyUrl(user.id, totalAmount)
-            window.location.href = yooUrl
             setIsPolling(true)
+            window.location.href = yooUrl
+            // НЕ сбрасываем isSubmitting — страница уходит на ЮMoney
         } catch (e) {
             setError('Произошла ошибка. Попробуйте позже.')
-        } finally {
             setIsSubmitting(false)
         }
     }
