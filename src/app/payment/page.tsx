@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
     Flame, CreditCard, Check, Clock, ArrowRight, Loader2,
     CheckCircle2, ExternalLink, RefreshCw, Gift, Zap
@@ -37,9 +38,23 @@ function buildYooMoneyUrl(userId: string, amount: number) {
 }
 
 export default function PaymentPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen bg-bg-main flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-accent animate-spin" />
+            </div>
+        }>
+            <PaymentContent />
+        </Suspense>
+    )
+}
+
+function PaymentContent() {
     const { user, isLoading: authLoading } = useAuth()
-    const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+    const searchParams = useSearchParams()
     const planFromUrl = searchParams.get('plan') as PlanType | null
+    const isJustRegistered = searchParams.get('registered') === 'true'
+
     // Fallback: читаем из sessionStorage если план не передан в URL
     const planFromStorage = typeof window !== 'undefined' ? sessionStorage.getItem('selected_plan') as PlanType | null : null
 
@@ -50,9 +65,6 @@ export default function PaymentPage() {
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [error, setError] = useState('')
     const [isPolling, setIsPolling] = useState(false)
-
-    // Флаг — пользователь только что зарегистрировался и вернулся сюда
-    const isJustRegistered = searchParams.get('registered') === 'true'
     const [showWelcomeBanner, setShowWelcomeBanner] = useState(isJustRegistered)
 
     // Расчет итоговой суммы
@@ -147,8 +159,6 @@ export default function PaymentPage() {
         setError('')
         setIsSubmitting(true)
 
-        const yooWindow = window.open('about:blank', '_blank')
-
         try {
             if (!payment || payment.status !== 'pending') {
                 const { payment: newPayment, error: paymentError } = await createPaymentRequest(
@@ -157,7 +167,6 @@ export default function PaymentPage() {
                 )
 
                 if (paymentError) {
-                    yooWindow?.close()
                     // Сессия протухла — отправляем на авторизацию
                     if (paymentError === 'Пользователь не авторизован') {
                         const returnTo = encodeURIComponent(window.location.pathname + window.location.search)
@@ -170,17 +179,12 @@ export default function PaymentPage() {
                 setPayment(newPayment)
             }
 
+            // Открываем ЮMoney напрямую — window.open с about:blank блокируется браузерами после await
             const yooUrl = buildYooMoneyUrl(user.id, totalAmount)
-            if (yooWindow && !yooWindow.closed) {
-                yooWindow.location.href = yooUrl
-            } else {
-                window.location.href = yooUrl
-            }
-
+            window.location.href = yooUrl
             setIsPolling(true)
         } catch (e) {
             setError('Произошла ошибка. Попробуйте позже.')
-            yooWindow?.close()
         } finally {
             setIsSubmitting(false)
         }
