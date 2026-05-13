@@ -38,13 +38,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setSession(initialSession)
                 setUser(initialSession.user)
                 setCachedUser(initialSession.user)
-                // Снимаем лоадер немедленно — данные из localStorage уже достаточно надёжны
-                if (!hasResolved.current) {
-                    hasResolved.current = true
-                    setIsLoading(false)
-                }
+            } else {
+                // Сессии нет — сразу снимаем лоадер, не ждём onAuthStateChange
+                setSession(null)
+                setUser(null)
+                setCachedUser(null)
             }
-            // Если сессии нет — ждём onAuthStateChange (он сработает быстро)
+            // В любом случае снимаем лоадер после getSession
+            if (!hasResolved.current) {
+                hasResolved.current = true
+                setIsLoading(false)
+            }
+        }).catch(() => {
+            // Ошибка getSession — тоже снимаем лоадер
+            if (!hasResolved.current && isMounted) {
+                hasResolved.current = true
+                setIsLoading(false)
+            }
         })
 
 
@@ -99,14 +109,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
         )
 
-        // 3. Таймаут-страховка: если onAuthStateChange не сработал за 3с — снимаем лоадер
+        // 3. Таймаут-страховка: если что-то пошло не так — снимаем лоадер через 1.5с
         const timeout = setTimeout(() => {
             if (!hasResolved.current && isMounted) {
                 console.warn('[Auth] Timeout — forcing isLoading=false')
                 hasResolved.current = true
                 setIsLoading(false)
             }
-        }, 3000)
+        }, 1500)
 
         return () => {
             isMounted = false
