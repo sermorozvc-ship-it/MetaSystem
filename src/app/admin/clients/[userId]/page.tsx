@@ -1176,18 +1176,18 @@ export default function AdminClientDetailPage() {
                                 </div>
 
                                 {/* Быстрые данные */}
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                                <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
                                     {[
                                         { label: 'Вес', value: nutritionQ.current_weight_kg, unit: 'кг', color: 'text-accent' },
                                         { label: 'Рост', value: nutritionQ.height_cm, unit: 'см', color: 'text-blue-400' },
                                         { label: 'Возраст', value: nutritionQ.age, unit: 'лет', color: 'text-yellow-400' },
                                         { label: 'Пол', value: nutritionQ.gender === 'male' ? 'М' : nutritionQ.gender === 'female' ? 'Ж' : null, unit: '', color: 'text-purple-400' },
-                                        { label: 'Цель', value: nutritionQ.nutrition_goal ? NUTRITION_LABELS.GOAL_MAP[nutritionQ.nutrition_goal]?.split(' ').slice(0, 2).join(' ') : null, unit: '', color: 'text-emerald-400' },
-                                        { label: 'Тип питания', value: nutritionQ.diet_type ? NUTRITION_LABELS.DIET_TYPE_MAP[nutritionQ.diet_type]?.split(' ').slice(0, 2).join(' ') : null, unit: '', color: 'text-orange-400' },
+                                        { label: 'Цель', value: nutritionQ.nutrition_goal ? NUTRITION_LABELS.GOAL_MAP[nutritionQ.nutrition_goal] : null, unit: '', color: 'text-emerald-400' },
+                                        { label: 'Тип питания', value: nutritionQ.diet_type ? NUTRITION_LABELS.DIET_TYPE_MAP[nutritionQ.diet_type] : null, unit: '', color: 'text-orange-400' },
                                     ].filter(c => c.value).map(c => (
-                                        <div key={c.label} className="glass-card p-4 text-center">
+                                        <div key={c.label} className="glass-card p-3 text-center">
                                             <p className="text-xs text-text-muted mb-1">{c.label}</p>
-                                            <p className={`text-lg font-display font-bold ${c.color} leading-tight`}>{c.value}</p>
+                                            <p className={`text-sm font-display font-bold ${c.color} leading-tight`}>{c.value}</p>
                                             {c.unit && <p className="text-xs text-text-muted">{c.unit}</p>}
                                         </div>
                                     ))}
