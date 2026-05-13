@@ -20,11 +20,13 @@ import {
 } from '@/lib/services/nutrition'
 import { getClientPrograms, type TrainingProgram, type TrainingEntry } from '@/lib/services/training'
 import { parseMdToJson, EXAMPLE_PROGRAM_MD } from '@/lib/utils/md-parser'
+import { getClientNutritionPrograms, type NutritionProgram } from '@/lib/services/nutrition-programs'
+import { parseNutritionMdToJson, EXAMPLE_NUTRITION_MD } from '@/lib/utils/nutrition-md-parser'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 
-type Tab = 'questionnaire' | 'nutrition' | 'programs' | 'metrics'
+type Tab = 'questionnaire' | 'nutrition' | 'programs' | 'nutrition_plans' | 'metrics'
 
 // ─── Просмотр метрик клиента (для админа) ───────────────────────────────────
 function ClientMetricsView({ userId }: { userId: string }) {
@@ -744,6 +746,234 @@ function ProgramCard({ program, onDelete, onUpdate }: {
     )
 }
 
+// ─── Карточка плана питания (для админа) ────────────────────────────────────
+function NutritionPlanCard({ plan, onDelete, onUpdate }: {
+    plan: NutritionProgram
+    onDelete: (id: string) => void
+    onUpdate: (updated: NutritionProgram) => void
+}) {
+    const [expanded, setExpanded] = useState(false)
+    const [deleting, setDeleting] = useState(false)
+    const [confirmDelete, setConfirmDelete] = useState(false)
+    const [editing, setEditing] = useState(false)
+    const [editMd, setEditMd] = useState('')
+    const [editTitle, setEditTitle] = useState('')
+    const [editStartDate, setEditStartDate] = useState('')
+    const [editEndDate, setEditEndDate] = useState('')
+    const [saving, setSaving] = useState(false)
+    const [saveError, setSaveError] = useState('')
+
+    const openEdit = () => {
+        setEditMd(plan.plan_md)
+        setEditTitle(plan.title)
+        setEditStartDate(plan.start_date)
+        setEditEndDate(plan.end_date)
+        setSaveError('')
+        setEditing(true)
+    }
+
+    const handleSaveEdit = async () => {
+        if (!editMd.trim()) { setSaveError('План не может быть пустым'); return }
+        if (!editStartDate || !editEndDate) { setSaveError('Укажите даты'); return }
+        setSaving(true)
+        setSaveError('')
+        try {
+            const { parseNutritionMdToJson } = await import('@/lib/utils/nutrition-md-parser')
+            const planData = parseNutritionMdToJson(editMd)
+            planData.planNumber = plan.plan_number
+            planData.startDate = editStartDate
+            planData.endDate = editEndDate
+
+            const { createClient: createDirectClient } = await import('@supabase/supabase-js')
+            const db = createDirectClient(
+                'https://bzyypoyvihqhrbllgffh.supabase.co',
+                'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
+                { auth: { persistSession: false } }
+            )
+
+            const { data, error } = await db
+                .from('nutrition_programs')
+                .update({
+                    plan_md: editMd,
+                    plan_data: planData,
+                    title: editTitle || plan.title,
+                    start_date: editStartDate,
+                    end_date: editEndDate,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', plan.id)
+                .select()
+                .single()
+
+            if (error) throw new Error(error.message)
+            onUpdate(data)
+            setEditing(false)
+        } catch (e: any) {
+            setSaveError(e.message || 'Ошибка сохранения')
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    const handleDelete = async () => {
+        if (!confirmDelete) { setConfirmDelete(true); return }
+        setDeleting(true)
+        try {
+            const { createClient: createDirectClient } = await import('@supabase/supabase-js')
+            const db = createDirectClient(
+                'https://bzyypoyvihqhrbllgffh.supabase.co',
+                'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
+                { auth: { persistSession: false } }
+            )
+            const { error } = await db.from('nutrition_programs').delete().eq('id', plan.id)
+            if (error) throw new Error(error.message)
+            onDelete(plan.id)
+        } catch (e: any) {
+            console.error('Delete nutrition plan error:', e)
+            setDeleting(false)
+            setConfirmDelete(false)
+        }
+    }
+
+    const days = plan.plan_data?.days || []
+
+    return (
+        <>
+        <div className="glass-card overflow-hidden">
+            <div className="p-4 cursor-pointer hover:bg-white/5 transition-colors" onClick={() => setExpanded(v => !v)}>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <Apple className="w-4 h-4 text-accent flex-shrink-0" />
+                        <h3 className="text-base font-display font-bold text-white truncate">
+                            {plan.title || `План питания №${plan.plan_number}`}
+                        </h3>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 ${
+                            plan.status === 'active' ? 'bg-accent/20 text-accent' : 'bg-bg-elevated text-text-muted'
+                        }`}>
+                            {plan.status}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                        <button onClick={openEdit} className="glass-button-secondary p-2" title="Редактировать">
+                            <Pencil className="w-4 h-4" />
+                        </button>
+                        {confirmDelete ? (
+                            <div className="flex items-center gap-1">
+                                <button onClick={handleDelete} disabled={deleting}
+                                    className="px-2 py-1.5 rounded-xl bg-danger/20 border border-danger/40 text-danger text-xs font-semibold">
+                                    {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Да'}
+                                </button>
+                                <button onClick={() => setConfirmDelete(false)} className="px-2 py-1.5 rounded-xl glass-button-secondary text-xs">Нет</button>
+                            </div>
+                        ) : (
+                            <button onClick={handleDelete} className="glass-button-secondary p-2 text-danger hover:border-danger/40" title="Удалить">
+                                <X className="w-4 h-4" />
+                            </button>
+                        )}
+                        <div className="ml-1">
+                            {expanded ? <ChevronUp className="w-4 h-4 text-text-muted" /> : <ChevronDown className="w-4 h-4 text-text-muted" />}
+                        </div>
+                    </div>
+                </div>
+                <p className="text-xs text-text-secondary">
+                    {new Date(plan.start_date).toLocaleDateString('ru-RU')} — {new Date(plan.end_date).toLocaleDateString('ru-RU')}
+                    {' · '}{days.length} дней
+                    {plan.plan_data?.dailyKcal && <span className="ml-2 text-accent">{plan.plan_data.dailyKcal} ккал/день</span>}
+                </p>
+            </div>
+
+            {expanded && (
+                <div className="border-t border-border px-6 pb-6 pt-4">
+                    {days.length === 0 ? (
+                        <pre className="text-xs text-text-secondary whitespace-pre-wrap font-mono bg-bg-elevated p-4 rounded-xl max-h-64 overflow-y-auto">
+                            {plan.plan_md}
+                        </pre>
+                    ) : (
+                        <div className="space-y-3">
+                            {days.map(day => (
+                                <div key={day.dayNumber} className="rounded-xl bg-bg-elevated border border-border p-4">
+                                    <h4 className="font-display font-bold text-white mb-2">
+                                        День {day.dayNumber}: {day.title}
+                                    </h4>
+                                    {day.totalKcal && (
+                                        <div className="flex gap-3 text-xs mb-2">
+                                            <span className="text-accent">{day.totalKcal} ккал</span>
+                                            {day.totalProtein && <span className="text-text-secondary">Б: {day.totalProtein}г</span>}
+                                            {day.totalFat && <span className="text-text-secondary">Ж: {day.totalFat}г</span>}
+                                            {day.totalCarbs && <span className="text-text-secondary">У: {day.totalCarbs}г</span>}
+                                        </div>
+                                    )}
+                                    <div className="space-y-1">
+                                        {day.meals.map((meal, idx) => (
+                                            <div key={idx} className="text-sm flex items-center gap-2">
+                                                <span className="text-text-muted">{meal.name}</span>
+                                                {meal.kcal && <span className="text-accent text-xs">{meal.kcal} ккал</span>}
+                                                <span className="text-text-muted text-xs">({meal.dishes.length} блюд)</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+
+        {/* Модал редактирования */}
+        {editing && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setEditing(false)}>
+                <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+                <div className="relative z-10 glass-card p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center justify-between mb-5">
+                        <h2 className="text-xl font-display font-bold text-white">
+                            Редактировать — {plan.title || `План №${plan.plan_number}`}
+                        </h2>
+                        <button onClick={() => setEditing(false)} className="glass-button-secondary p-2">
+                            <X className="w-5 h-5" />
+                        </button>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="col-span-2">
+                                <label className="block text-sm text-text-secondary mb-2">Название</label>
+                                <input type="text" value={editTitle} onChange={e => setEditTitle(e.target.value)} className="glass-input w-full" />
+                            </div>
+                            <div>
+                                <label className="block text-sm text-text-secondary mb-2">Дата начала</label>
+                                <input type="date" value={editStartDate} onChange={e => setEditStartDate(e.target.value)} className="glass-input w-full" />
+                            </div>
+                            <div>
+                                <label className="block text-sm text-text-secondary mb-2">Дата окончания</label>
+                                <input type="date" value={editEndDate} onChange={e => setEditEndDate(e.target.value)} className="glass-input w-full" />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm text-text-secondary mb-2">План питания (Markdown)</label>
+                            <textarea value={editMd} onChange={e => setEditMd(e.target.value)}
+                                className="glass-input w-full h-96 resize-none font-mono text-sm" />
+                        </div>
+
+                        {saveError && (
+                            <div className="p-3 rounded-xl bg-danger/10 border border-danger/30 text-sm text-danger">{saveError}</div>
+                        )}
+
+                        <div className="flex gap-3">
+                            <button onClick={() => setEditing(false)} className="glass-button-secondary flex-1">Отмена</button>
+                            <button onClick={handleSaveEdit} disabled={saving} className="glass-button flex-1 flex items-center justify-center gap-2">
+                                {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Сохранение...</> : <><Check className="w-4 h-4" />Сохранить</>}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+        </>
+    )
+}
+
 // ─── Главная страница ────────────────────────────────────────────────────────
 export default function AdminClientDetailPage() {
     const { user, isLoading: authLoading } = useAuth()
@@ -760,8 +990,19 @@ export default function AdminClientDetailPage() {
     const [nutritionQ, setNutritionQ] = useState<NutritionQuestionnaire | null>(null)
     const [nutritionAccess, setNutritionAccess] = useState(false)
     const [programs, setPrograms] = useState<TrainingProgram[]>([])
+    const [nutritionPlans, setNutritionPlans] = useState<NutritionProgram[]>([])
     const [isArchiving, setIsArchiving] = useState(false)
     const [clientPayment, setClientPayment] = useState<any>(null)
+
+    // Upload nutrition plan modal state
+    const [showNutritionModal, setShowNutritionModal] = useState(false)
+    const [nutritionMd, setNutritionMd] = useState('')
+    const [nutritionPlanNumber, setNutritionPlanNumber] = useState(1)
+    const [nutritionTitle, setNutritionTitle] = useState('План питания')
+    const [nutritionStartDate, setNutritionStartDate] = useState('')
+    const [nutritionEndDate, setNutritionEndDate] = useState('')
+    const [isUploadingNutrition, setIsUploadingNutrition] = useState(false)
+    const [nutritionUploadError, setNutritionUploadError] = useState('')
 
     // Upload modal state
     const [showUploadModal, setShowUploadModal] = useState(false)
@@ -809,6 +1050,13 @@ export default function AdminClientDetailPage() {
                 setPrograms(progs.status === 'fulfilled' ? progs.value : [])
                 setNutritionQ(nutQ.status === 'fulfilled' ? nutQ.value : null)
                 setNutritionAccess(nutAccess.status === 'fulfilled' ? nutAccess.value : false)
+
+                // Загружаем планы питания
+                try {
+                    const nutPlans = await getClientNutritionPrograms(userId)
+                    setNutritionPlans(nutPlans)
+                    if (nutPlans.length > 0) setNutritionPlanNumber(nutPlans[0].plan_number + 1)
+                } catch {}
 
                 // Загружаем платёж клиента для отображения подписки
                 try {
@@ -914,6 +1162,64 @@ export default function AdminClientDetailPage() {
         }
     }
 
+    const handleUploadNutritionPlan = async () => {
+        setNutritionUploadError('')
+        setIsUploadingNutrition(true)
+        try {
+            if (!nutritionStartDate || !nutritionEndDate) { setNutritionUploadError('Укажите даты'); return }
+            if (!nutritionMd.trim()) { setNutritionUploadError('Введите план питания'); return }
+
+            const planData = parseNutritionMdToJson(nutritionMd)
+            planData.planNumber = nutritionPlanNumber
+            planData.startDate = nutritionStartDate
+            planData.endDate = nutritionEndDate
+
+            const { createClient: createDirectClient } = await import('@supabase/supabase-js')
+            const db = createDirectClient(
+                'https://bzyypoyvihqhrbllgffh.supabase.co',
+                'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
+                { auth: { persistSession: false } }
+            )
+
+            const { data, error } = await db
+                .from('nutrition_programs')
+                .insert({
+                    user_id: userId,
+                    plan_number: nutritionPlanNumber,
+                    title: nutritionTitle || `План питания №${nutritionPlanNumber}`,
+                    start_date: nutritionStartDate,
+                    end_date: nutritionEndDate,
+                    plan_md: nutritionMd,
+                    plan_data: planData,
+                    status: 'active',
+                })
+                .select()
+                .single()
+
+            if (error) { setNutritionUploadError('Ошибка БД: ' + error.message); return }
+
+            // Уведомление клиенту
+            db.from('notifications').insert({
+                user_id: userId,
+                type: 'nutrition_plan_uploaded',
+                title: 'Новый план питания! 🥗',
+                message: `Тренер загрузил план питания №${nutritionPlanNumber}.`,
+                link: '/nutrition',
+                read: false,
+            }).then(() => {})
+
+            const updated = await getClientNutritionPrograms(userId)
+            setNutritionPlans(updated)
+            setShowNutritionModal(false)
+            setNutritionMd('')
+            setNutritionPlanNumber(nutritionPlanNumber + 1)
+        } catch (e: any) {
+            setNutritionUploadError(e.message || 'Ошибка загрузки')
+        } finally {
+            setIsUploadingNutrition(false)
+        }
+    }
+
     if (authLoading || isLoading || !isAdminUser) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
@@ -1012,7 +1318,7 @@ export default function AdminClientDetailPage() {
 
                 {/* Tabs */}
                 <div className="-mx-4 px-4 flex gap-2 mb-6 overflow-x-auto pb-1" style={{scrollbarWidth: 'none'}}>
-                    {(['questionnaire', 'nutrition', 'programs', 'metrics'] as Tab[]).map(tab => {
+                    {(['questionnaire', 'nutrition', 'programs', 'nutrition_plans', 'metrics'] as Tab[]).map(tab => {
                         if (tab === 'nutrition' && !nutritionAccess) return null
                         return (
                             <button
@@ -1025,6 +1331,7 @@ export default function AdminClientDetailPage() {
                                 {tab === 'questionnaire' && <><FileText className="w-4 h-4 inline mr-1" />Анкета</>}
                                 {tab === 'nutrition' && <><Apple className="w-4 h-4 inline mr-1" />Питание</>}
                                 {tab === 'programs' && <><Dumbbell className="w-4 h-4 inline mr-1" />Программы</>}
+                                {tab === 'nutrition_plans' && <><Apple className="w-4 h-4 inline mr-1" />Планы питания</>}
                                 {tab === 'metrics' && <><TrendingUp className="w-4 h-4 inline mr-1" />Метрики</>}
                             </button>
                         )
@@ -1417,11 +1724,48 @@ export default function AdminClientDetailPage() {
                     </div>
                 )}
 
+                {/* Планы питания */}
+                {activeTab === 'nutrition_plans' && (
+                    <div>
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+                            <h2 className="text-lg font-display font-bold text-white">
+                                Планы питания ({nutritionPlans.length})
+                            </h2>
+                            <button onClick={() => setShowNutritionModal(true)} className="glass-button flex items-center gap-2 text-sm">
+                                <Plus className="w-4 h-4" />
+                                Загрузить план питания
+                            </button>
+                        </div>
+
+                        {nutritionPlans.length === 0 ? (
+                            <div className="glass-card p-12 text-center">
+                                <Apple className="w-16 h-16 text-text-muted mx-auto mb-4" />
+                                <h3 className="text-xl font-display font-bold text-white mb-2">Планов питания пока нет</h3>
+                                <p className="text-text-secondary mb-6">Загрузите первый план питания для клиента</p>
+                                <button onClick={() => setShowNutritionModal(true)} className="glass-button flex items-center gap-2 mx-auto">
+                                    <Upload className="w-4 h-4" />
+                                    Загрузить план питания
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {nutritionPlans.map(plan => (
+                                    <NutritionPlanCard
+                                        key={plan.id}
+                                        plan={plan}
+                                        onDelete={id => setNutritionPlans(prev => prev.filter(p => p.id !== id))}
+                                        onUpdate={updated => setNutritionPlans(prev => prev.map(p => p.id === updated.id ? updated : p))}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* Метрики */}
                 {activeTab === 'metrics' && (
                     <ClientMetricsView userId={userId} />
-                )}
-            </div>
+                )}            </div>
 
             {/* Модал загрузки программы */}
             {showUploadModal && (
@@ -1484,6 +1828,84 @@ export default function AdminClientDetailPage() {
                                         <><Loader2 className="w-4 h-4 animate-spin" />Загрузка...</>
                                     ) : (
                                         <><Check className="w-4 h-4" />Загрузить</>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Модал загрузки плана питания */}
+            {showNutritionModal && (
+                <div className="modal-overlay" onClick={() => setShowNutritionModal(false)}>
+                    <div className="glass-card p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-2xl font-display font-bold text-white">Загрузить план питания</h2>
+                            <button onClick={() => setShowNutritionModal(false)} className="glass-button-secondary p-2">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-sm text-text-secondary mb-2">Название плана</label>
+                                    <input type="text" value={nutritionTitle}
+                                        onChange={e => setNutritionTitle(e.target.value)}
+                                        className="glass-input w-full"
+                                        placeholder="План питания" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm text-text-secondary mb-2">Номер плана</label>
+                                    <input type="number" min="1" value={nutritionPlanNumber}
+                                        onChange={e => setNutritionPlanNumber(parseInt(e.target.value))}
+                                        className="glass-input w-full" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm text-text-secondary mb-2">Дата начала</label>
+                                    <input type="date" value={nutritionStartDate}
+                                        onChange={e => setNutritionStartDate(e.target.value)}
+                                        className="glass-input w-full" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm text-text-secondary mb-2">Дата конца</label>
+                                    <input type="date" value={nutritionEndDate}
+                                        onChange={e => setNutritionEndDate(e.target.value)}
+                                        className="glass-input w-full" />
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="block text-sm text-text-secondary">План питания (Markdown)</label>
+                                    <button onClick={() => setNutritionMd(EXAMPLE_NUTRITION_MD)} className="text-xs text-accent hover:underline">
+                                        Загрузить пример
+                                    </button>
+                                </div>
+                                <textarea
+                                    value={nutritionMd}
+                                    onChange={e => setNutritionMd(e.target.value)}
+                                    className="glass-input w-full h-96 resize-none font-mono text-sm"
+                                    placeholder="# План питания №1&#10;&#10;## День 1: Тренировочный день&#10;..."
+                                />
+                            </div>
+
+                            {nutritionUploadError && (
+                                <div className="p-4 rounded-xl bg-danger/10 border border-danger/30">
+                                    <p className="text-sm text-danger">{nutritionUploadError}</p>
+                                </div>
+                            )}
+
+                            <div className="flex gap-4">
+                                <button onClick={() => setShowNutritionModal(false)} className="glass-button-secondary flex-1">
+                                    Отмена
+                                </button>
+                                <button onClick={handleUploadNutritionPlan} disabled={isUploadingNutrition} className="glass-button flex-1 flex items-center justify-center gap-2">
+                                    {isUploadingNutrition ? (
+                                        <><Loader2 className="w-4 h-4 animate-spin" />Загрузка...</>
+                                    ) : (
+                                        <><Check className="w-4 h-4" />Загрузить план</>
                                     )}
                                 </button>
                             </div>

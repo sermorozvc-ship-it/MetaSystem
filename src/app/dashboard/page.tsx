@@ -13,12 +13,14 @@ import {
     isNutritionQuestionnaireRequired,
     isNutritionQuestionnaireCompleted,
 } from '@/lib/services/nutrition'
+import { getCurrentNutritionProgram, type NutritionProgram } from '@/lib/services/nutrition-programs'
 
 export default function DashboardPage() {
     const { user, isLoading: authLoading } = useAuth()
     const router = useRouter()
 
     const [currentProgram, setCurrentProgram] = useState<TrainingProgram | null>(null)
+    const [currentNutritionPlan, setCurrentNutritionPlan] = useState<NutritionProgram | null>(null)
     const [latestMetric, setLatestMetric] = useState<ClientMetric | null>(null)
     const [isLoading, setIsLoading] = useState(true)
     const [subscriptionDaysLeft, setSubscriptionDaysLeft] = useState<number | null>(null)
@@ -47,6 +49,12 @@ export default function DashboardPage() {
                 setCurrentProgram(program)
                 setLatestMetric(metric)
                 setNutritionPending(needsNutrition && !nutritionDone)
+
+                // Загружаем текущий план питания
+                try {
+                    const nutPlan = await getCurrentNutritionProgram()
+                    setCurrentNutritionPlan(nutPlan)
+                } catch {}
 
                 // Считаем дни подписки из платежа
                 try {
@@ -242,6 +250,36 @@ export default function DashboardPage() {
                                         Тренировочные программы
                                     </h3>
                                     <p className="text-sm text-text-secondary">Просмотр и заполнение программ</p>
+                                </div>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-text-muted" />
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => router.push('/nutrition')}
+                        className={`glass-card p-6 text-left transition-all ${currentNutritionPlan ? 'hover:border-accent border-accent/30' : 'hover:border-accent'}`}
+                    >
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center">
+                                    <Apple className="w-6 h-6 text-accent" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-display font-bold text-white mb-1">
+                                        {currentNutritionPlan
+                                            ? currentNutritionPlan.title || `План питания №${currentNutritionPlan.plan_number}`
+                                            : 'Планы питания'
+                                        }
+                                    </h3>
+                                    <p className="text-sm text-text-secondary">
+                                        {currentNutritionPlan
+                                            ? currentNutritionPlan.plan_data?.dailyKcal
+                                                ? `${currentNutritionPlan.plan_data.dailyKcal} ккал · ${currentNutritionPlan.plan_data.days?.length || 0} дней`
+                                                : 'Активный план питания'
+                                            : 'Индивидуальный план от тренера'
+                                        }
+                                    </p>
                                 </div>
                             </div>
                             <ChevronRight className="w-5 h-5 text-text-muted" />
