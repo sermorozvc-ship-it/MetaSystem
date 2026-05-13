@@ -1,5 +1,6 @@
 export * from './reports'
 export * from './admin'
 export * from './questionnaire'
+export * from './nutrition'
 export * from './training'
 export * from './metrics'

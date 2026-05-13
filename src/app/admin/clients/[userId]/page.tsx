@@ -5,18 +5,26 @@ import { useRouter, useParams } from 'next/navigation'
 import {
     ArrowLeft, Dumbbell, TrendingUp, FileText, Plus,
     Loader2, Upload, X, Check, ChevronDown, ChevronUp,
-    Download, CheckCircle2, Clock, Pencil, Archive, ArchiveRestore
+    Download, CheckCircle2, Clock, Pencil, Archive, ArchiveRestore,
+    Apple, Copy
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { isAdmin, getUserDetails, archiveUser, unarchiveUser } from '@/lib/services/admin'
 import { getQuestionnaireByUserId, type ClientQuestionnaire } from '@/lib/services/questionnaire'
+import {
+    getNutritionQuestionnaireByUserId,
+    userHasNutritionAccess,
+    formatNutritionForAdmin,
+    NUTRITION_LABELS,
+    type NutritionQuestionnaire,
+} from '@/lib/services/nutrition'
 import { getClientPrograms, type TrainingProgram, type TrainingEntry } from '@/lib/services/training'
 import { parseMdToJson, EXAMPLE_PROGRAM_MD } from '@/lib/utils/md-parser'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 
-type Tab = 'questionnaire' | 'programs' | 'metrics'
+type Tab = 'questionnaire' | 'nutrition' | 'programs' | 'metrics'
 
 // ─── Просмотр метрик клиента (для админа) ───────────────────────────────────
 function ClientMetricsView({ userId }: { userId: string }) {
@@ -473,15 +481,16 @@ function ProgramCard({ program, onDelete, onUpdate }: {
         <div className="glass-card overflow-hidden">
             {/* Заголовок */}
             <div
-                className="p-6 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors"
+                className="p-4 cursor-pointer hover:bg-white/5 transition-colors"
                 onClick={handleToggle}
             >
-                <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-1">
-                        <h3 className="text-xl font-display font-bold text-white">
+                {/* Верхняя строка: название + кнопки */}
+                <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <h3 className="text-base font-display font-bold text-white whitespace-nowrap">
                             Неделя {program.week_number}
                         </h3>
-                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 ${
                             program.status === 'active'
                                 ? 'bg-accent/20 text-accent'
                                 : 'bg-bg-elevated text-text-muted'
@@ -489,78 +498,71 @@ function ProgramCard({ program, onDelete, onUpdate }: {
                             {program.status}
                         </span>
                     </div>
-                    <p className="text-sm text-text-secondary">
-                        {new Date(program.start_date).toLocaleDateString('ru-RU')} —{' '}
-                        {new Date(program.end_date).toLocaleDateString('ru-RU')}
-                    </p>
-                    <p className="text-sm text-text-muted mt-1">
-                        {program.training_days_count} тренировочных дней
-                        {entries.length > 0 && (
-                            <span className="ml-3 text-accent">
-                                ✓ {completedCount}/{days.length} завершено
-                            </span>
-                        )}
-                    </p>
-                </div>
 
-                <div className="flex items-center gap-2 ml-4" onClick={e => e.stopPropagation()}>
-                    <button
-                        onClick={handleDownload}
-                        disabled={loadingEntries}
-                        className="glass-button-secondary flex items-center gap-2 text-sm px-3 py-2"
-                        title="Скачать заполненный .md"
-                    >
-                        {loadingEntries
-                            ? <Loader2 className="w-4 h-4 animate-spin" />
-                            : <Download className="w-4 h-4" />
-                        }
-                        <span className="hidden sm:inline">.md</span>
-                    </button>
-
-                    {/* Кнопка редактирования */}
-                    <button
-                        onClick={openEdit}
-                        className="glass-button-secondary flex items-center gap-1.5 text-sm px-3 py-2"
-                        title="Редактировать программу"
-                    >
-                        <Pencil className="w-4 h-4" />
-                    </button>
-
-                    {/* Кнопка удаления */}
-                    {confirmDelete ? (
-                        <div className="flex items-center gap-1.5">
-                            <span className="text-xs text-danger hidden sm:inline">Удалить?</span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                        <button
+                            onClick={handleDownload}
+                            disabled={loadingEntries}
+                            className="glass-button-secondary p-2"
+                            title="Скачать .md"
+                        >
+                            {loadingEntries
+                                ? <Loader2 className="w-4 h-4 animate-spin" />
+                                : <Download className="w-4 h-4" />
+                            }
+                        </button>
+                        <button
+                            onClick={openEdit}
+                            className="glass-button-secondary p-2"
+                            title="Редактировать"
+                        >
+                            <Pencil className="w-4 h-4" />
+                        </button>
+                        {confirmDelete ? (
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={handleDelete}
+                                    disabled={deleting}
+                                    className="px-2 py-1.5 rounded-xl bg-danger/20 border border-danger/40 text-danger text-xs font-semibold"
+                                >
+                                    {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Да'}
+                                </button>
+                                <button
+                                    onClick={() => setConfirmDelete(false)}
+                                    className="px-2 py-1.5 rounded-xl glass-button-secondary text-xs"
+                                >
+                                    Нет
+                                </button>
+                            </div>
+                        ) : (
                             <button
                                 onClick={handleDelete}
-                                disabled={deleting}
-                                className="px-3 py-2 rounded-xl bg-danger/20 border border-danger/40 text-danger text-xs font-semibold hover:bg-danger/30 transition-colors"
+                                className="glass-button-secondary p-2 text-danger hover:border-danger/40 transition-colors"
+                                title="Удалить"
                             >
-                                {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Да'}
+                                <X className="w-4 h-4" />
                             </button>
-                            <button
-                                onClick={() => setConfirmDelete(false)}
-                                className="px-3 py-2 rounded-xl glass-button-secondary text-xs"
-                            >
-                                Нет
-                            </button>
+                        )}
+                        <div className="ml-1">
+                            {expanded
+                                ? <ChevronUp className="w-4 h-4 text-text-muted" />
+                                : <ChevronDown className="w-4 h-4 text-text-muted" />
+                            }
                         </div>
-                    ) : (
-                        <button
-                            onClick={handleDelete}
-                            className="glass-button-secondary flex items-center gap-1.5 text-sm px-3 py-2 text-danger hover:border-danger/40 transition-colors"
-                            title="Удалить программу"
-                        >
-                            <X className="w-4 h-4" />
-                        </button>
-                    )}
+                    </div>
                 </div>
 
-                <div className="ml-3">
-                    {expanded
-                        ? <ChevronUp className="w-5 h-5 text-text-muted" />
-                        : <ChevronDown className="w-5 h-5 text-text-muted" />
-                    }
-                </div>
+                {/* Нижняя строка: даты и прогресс */}
+                <p className="text-xs text-text-secondary">
+                    {new Date(program.start_date).toLocaleDateString('ru-RU')} —{' '}
+                    {new Date(program.end_date).toLocaleDateString('ru-RU')}
+                    {' · '}{program.training_days_count} дней
+                    {entries.length > 0 && (
+                        <span className="ml-2 text-accent">
+                            ✓ {completedCount}/{days.length}
+                        </span>
+                    )}
+                </p>
             </div>
 
             {/* Раскрытое содержимое */}
@@ -755,6 +757,8 @@ export default function AdminClientDetailPage() {
 
     const [clientProfile, setClientProfile] = useState<any>(null)
     const [questionnaire, setQuestionnaire] = useState<ClientQuestionnaire | null>(null)
+    const [nutritionQ, setNutritionQ] = useState<NutritionQuestionnaire | null>(null)
+    const [nutritionAccess, setNutritionAccess] = useState(false)
     const [programs, setPrograms] = useState<TrainingProgram[]>([])
     const [isArchiving, setIsArchiving] = useState(false)
 
@@ -792,14 +796,18 @@ export default function AdminClientDetailPage() {
         if (!isAdminUser || !userId) return
         const load = async () => {
             try {
-                const [profile, quest, progs] = await Promise.allSettled([
+                const [profile, quest, progs, nutQ, nutAccess] = await Promise.allSettled([
                     getUserDetails(userId),
                     getQuestionnaireByUserId(userId),
                     getClientPrograms(userId),
+                    getNutritionQuestionnaireByUserId(userId),
+                    userHasNutritionAccess(userId),
                 ])
                 setClientProfile(profile.status === 'fulfilled' ? profile.value : null)
                 setQuestionnaire(quest.status === 'fulfilled' ? quest.value : null)
                 setPrograms(progs.status === 'fulfilled' ? progs.value : [])
+                setNutritionQ(nutQ.status === 'fulfilled' ? nutQ.value : null)
+                setNutritionAccess(nutAccess.status === 'fulfilled' ? nutAccess.value : false)
             } catch (e) {
                 console.error('Error loading client data:', e)
             } finally {
@@ -938,20 +946,24 @@ export default function AdminClientDetailPage() {
                 </div>
 
                 {/* Tabs */}
-                <div className="flex gap-2 mb-6 overflow-x-auto no-scrollbar pb-1">
-                    {(['questionnaire', 'programs', 'metrics'] as Tab[]).map(tab => (
-                        <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`px-4 py-2.5 rounded-xl font-semibold transition-all whitespace-nowrap flex-shrink-0 text-sm ${
-                                activeTab === tab ? 'bg-accent text-bg-main' : 'glass-button-secondary text-text-secondary'
-                            }`}
-                        >
-                            {tab === 'questionnaire' && <><FileText className="w-4 h-4 inline mr-1.5" />Анкета</>}
-                            {tab === 'programs' && <><Dumbbell className="w-4 h-4 inline mr-1.5" />Программы</>}
-                            {tab === 'metrics' && <><TrendingUp className="w-4 h-4 inline mr-1.5" />Метрики</>}
-                        </button>
-                    ))}
+                <div className="-mx-4 px-4 flex gap-2 mb-6 overflow-x-auto pb-1" style={{scrollbarWidth: 'none'}}>
+                    {(['questionnaire', 'nutrition', 'programs', 'metrics'] as Tab[]).map(tab => {
+                        if (tab === 'nutrition' && !nutritionAccess) return null
+                        return (
+                            <button
+                                key={tab}
+                                onClick={() => setActiveTab(tab)}
+                                className={`px-3 py-2 rounded-xl font-semibold transition-all whitespace-nowrap flex-shrink-0 text-sm ${
+                                    activeTab === tab ? 'bg-accent text-bg-main' : 'glass-button-secondary text-text-secondary'
+                                }`}
+                            >
+                                {tab === 'questionnaire' && <><FileText className="w-4 h-4 inline mr-1" />Анкета</>}
+                                {tab === 'nutrition' && <><Apple className="w-4 h-4 inline mr-1" />Питание</>}
+                                {tab === 'programs' && <><Dumbbell className="w-4 h-4 inline mr-1" />Программы</>}
+                                {tab === 'metrics' && <><TrendingUp className="w-4 h-4 inline mr-1" />Метрики</>}
+                            </button>
+                        )
+                    })}
                 </div>
 
                 {/* Анкета */}
@@ -1127,14 +1139,189 @@ export default function AdminClientDetailPage() {
                     </div>
                 )}
 
+                {/* Питание */}
+                {activeTab === 'nutrition' && (
+                    <div className="glass-card p-8">
+                        {nutritionQ ? (
+                            <div className="space-y-6">
+                                {/* Шапка с кнопкой копирования */}
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <h2 className="text-xl font-display font-bold text-white flex items-center gap-2">
+                                            <Apple className="w-5 h-5 text-accent" />
+                                            Анкета питания
+                                        </h2>
+                                        <p className="text-sm text-text-muted mt-1">
+                                            Заполнена {new Date(nutritionQ.created_at).toLocaleDateString('ru-RU')}
+                                            {nutritionQ.updated_at !== nutritionQ.created_at && (
+                                                <> · обновлена {new Date(nutritionQ.updated_at).toLocaleDateString('ru-RU')}</>
+                                            )}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            const text = formatNutritionForAdmin(nutritionQ, {
+                                                full_name: clientProfile?.full_name,
+                                                email: clientProfile?.email,
+                                            })
+                                            navigator.clipboard.writeText(text)
+                                                .then(() => alert('Анкета питания скопирована в буфер обмена'))
+                                                .catch(() => alert('Не удалось скопировать'))
+                                        }}
+                                        className="glass-button-secondary flex items-center gap-2 text-sm"
+                                    >
+                                        <Copy className="w-4 h-4" />
+                                        Скопировать анкету
+                                    </button>
+                                </div>
+
+                                {/* Быстрые данные */}
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                                    {[
+                                        { label: 'Вес', value: nutritionQ.current_weight_kg, unit: 'кг', color: 'text-accent' },
+                                        { label: 'Рост', value: nutritionQ.height_cm, unit: 'см', color: 'text-blue-400' },
+                                        { label: 'Возраст', value: nutritionQ.age, unit: 'лет', color: 'text-yellow-400' },
+                                        { label: 'Пол', value: nutritionQ.gender === 'male' ? 'М' : nutritionQ.gender === 'female' ? 'Ж' : null, unit: '', color: 'text-purple-400' },
+                                        { label: 'Цель', value: nutritionQ.nutrition_goal ? NUTRITION_LABELS.GOAL_MAP[nutritionQ.nutrition_goal]?.split(' ').slice(0, 2).join(' ') : null, unit: '', color: 'text-emerald-400' },
+                                        { label: 'Тип питания', value: nutritionQ.diet_type ? NUTRITION_LABELS.DIET_TYPE_MAP[nutritionQ.diet_type]?.split(' ').slice(0, 2).join(' ') : null, unit: '', color: 'text-orange-400' },
+                                    ].filter(c => c.value).map(c => (
+                                        <div key={c.label} className="glass-card p-4 text-center">
+                                            <p className="text-xs text-text-muted mb-1">{c.label}</p>
+                                            <p className={`text-lg font-display font-bold ${c.color} leading-tight`}>{c.value}</p>
+                                            {c.unit && <p className="text-xs text-text-muted">{c.unit}</p>}
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Все блоки ответов */}
+                                {[
+                                    {
+                                        title: 'Блок 1. Основные данные и цель',
+                                        fields: [
+                                            ['Вес', nutritionQ.answers?.current_weight_kg ? `${nutritionQ.answers.current_weight_kg} кг` : null],
+                                            ['Рост', nutritionQ.answers?.height_cm ? `${nutritionQ.answers.height_cm} см` : null],
+                                            ['Возраст', nutritionQ.answers?.age],
+                                            ['Пол', nutritionQ.answers?.gender === 'male' ? 'Мужской' : nutritionQ.answers?.gender === 'female' ? 'Женский' : null],
+                                            ['Цель', nutritionQ.answers?.nutrition_goal ? NUTRITION_LABELS.GOAL_MAP[nutritionQ.answers.nutrition_goal] : null],
+                                            ['Желаемый вес / % жира', nutritionQ.answers?.target_weight],
+                                            ['Срок', nutritionQ.answers?.target_deadline],
+                                        ],
+                                    },
+                                    {
+                                        title: 'Блок 2. Активность и образ жизни',
+                                        fields: [
+                                            ['Деятельность', nutritionQ.answers?.job_activity ? NUTRITION_LABELS.JOB_MAP[nutritionQ.answers.job_activity] : null],
+                                            ['Тренировок в неделю', nutritionQ.answers?.workouts_per_week],
+                                            ['Длительность тренировки', nutritionQ.answers?.workout_duration_min ? `${nutritionQ.answers.workout_duration_min} мин` : null],
+                                            ['Тип тренировок', nutritionQ.answers?.workout_type],
+                                            ['Шагов в день', nutritionQ.answers?.steps_per_day],
+                                        ],
+                                    },
+                                    {
+                                        title: 'Блок 3. Текущее питание',
+                                        fields: [
+                                            ['Приёмов пищи в день', nutritionQ.answers?.meals_per_day],
+                                            ['Завтракает', nutritionQ.answers?.breakfast_habit === 'yes' ? 'Да' : nutritionQ.answers?.breakfast_habit === 'no' ? 'Нет' : nutritionQ.answers?.breakfast_habit === 'sometimes' ? 'Иногда' : null],
+                                            ['Первый приём пищи', nutritionQ.answers?.first_meal_time],
+                                            ['Последний приём пищи', nutritionQ.answers?.last_meal_time],
+                                            ['Описание питания', nutritionQ.answers?.current_diet_description ? NUTRITION_LABELS.DIET_CURRENT_MAP[nutritionQ.answers.current_diet_description] : null],
+                                            ['Раньше считал(а) КБЖУ', nutritionQ.answers?.tracked_kcal_before],
+                                            ['Размер порции', nutritionQ.answers?.portion_size ? NUTRITION_LABELS.PORTION_MAP[nutritionQ.answers.portion_size] : null],
+                                        ],
+                                    },
+                                    {
+                                        title: 'Блок 4. Ограничения и предпочтения',
+                                        fields: [
+                                            ['Аллергии', nutritionQ.answers?.allergies],
+                                            ['Не ест принципиально', nutritionQ.answers?.excluded_by_principle],
+                                            ['Не нравятся продукты', nutritionQ.answers?.disliked_foods],
+                                            ['Тип питания', nutritionQ.answers?.diet_type ? NUTRITION_LABELS.DIET_TYPE_MAP[nutritionQ.answers.diet_type] : null],
+                                            ['Непереносимость лактозы/глютена', nutritionQ.answers?.lactose_gluten_intolerance],
+                                            ['Молочные продукты', nutritionQ.answers?.dairy_attitude ? NUTRITION_LABELS.DAIRY_MAP[nutritionQ.answers.dairy_attitude] : null],
+                                        ],
+                                    },
+                                    {
+                                        title: 'Блок 5. Условия и реальность жизни',
+                                        fields: [
+                                            ['Готовит', nutritionQ.answers?.cooking_mode ? NUTRITION_LABELS.COOKING_MAP[nutritionQ.answers.cooking_mode] : null],
+                                            ['Время на готовку', nutritionQ.answers?.cooking_time ? NUTRITION_LABELS.COOK_TIME_MAP[nutritionQ.answers.cooking_time] : null],
+                                            ['Берёт еду на работу', nutritionQ.answers?.can_take_to_work === 'yes' ? 'Да' : nutritionQ.answers?.can_take_to_work === 'no' ? 'Нет' : nutritionQ.answers?.can_take_to_work === 'sometimes' ? 'Иногда' : null],
+                                            ['Питание в будни', nutritionQ.answers?.weekday_eating],
+                                            ['Питание в выходные', nutritionQ.answers?.weekend_eating],
+                                        ],
+                                    },
+                                    {
+                                        title: 'Блок 6. Сложности и паттерны',
+                                        fields: [
+                                            ['Поздние ужины', nutritionQ.answers?.late_evening_eating],
+                                            ['Срывы / переедания', nutritionQ.answers?.binges_frequency],
+                                            ['Провоцирует срыв', nutritionQ.answers?.binge_triggers?.map(t => NUTRITION_LABELS.TRIGGER_MAP[t] || t).join(', ')],
+                                            ['Тяга к сладкому', nutritionQ.answers?.sweet_craving],
+                                            ['Тяга к солёному/жирному', nutritionQ.answers?.salty_fatty_craving],
+                                            ['Алкоголь', nutritionQ.answers?.alcohol_frequency],
+                                        ],
+                                    },
+                                    {
+                                        title: 'Блок 7. Здоровье и медицина',
+                                        fields: [
+                                            ['Заболевания обмена веществ', nutritionQ.answers?.metabolic_conditions],
+                                            ['Проблемы с ЖКТ', nutritionQ.answers?.gi_issues],
+                                            ['Препараты', nutritionQ.answers?.medications],
+                                            ...(nutritionQ.answers?.gender === 'female' ? [['Цикл / СПКЯ', nutritionQ.answers?.female_cycle] as [string, any]] : []),
+                                        ],
+                                    },
+                                    {
+                                        title: 'Блок 8. Спортивное питание',
+                                        fields: [
+                                            ['Текущие добавки', nutritionQ.answers?.current_supplements],
+                                            ['Готов принимать протеин', nutritionQ.answers?.protein_ok === 'yes' ? 'Да' : nutritionQ.answers?.protein_ok === 'no' ? 'Нет' : nutritionQ.answers?.protein_ok === 'unsure' ? 'Не уверен' : null],
+                                        ],
+                                    },
+                                    {
+                                        title: 'Блок 9. Ожидания от плана',
+                                        fields: [
+                                            ['Формат плана', nutritionQ.answers?.plan_format ? NUTRITION_LABELS.PLAN_FORMAT_MAP[nutritionQ.answers.plan_format] : null],
+                                            ['Кол-во приёмов пищи', nutritionQ.answers?.comfortable_meals_count ? NUTRITION_LABELS.MEALS_COUNT_MAP[nutritionQ.answers.comfortable_meals_count] : null],
+                                            ['Любимые продукты', nutritionQ.answers?.favorite_foods],
+                                            ['Прошлый опыт диет', nutritionQ.answers?.past_diets_experience],
+                                        ],
+                                    },
+                                ].map(block => {
+                                    const filled = block.fields.filter(([, v]) => v !== null && v !== undefined && v !== '')
+                                    if (filled.length === 0) return null
+                                    return (
+                                        <div key={block.title}>
+                                            <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-3">{block.title}</h3>
+                                            <div className="grid md:grid-cols-2 gap-3">
+                                                {filled.map(([label, value]) => (
+                                                    <div key={label as string} className="bg-bg-elevated rounded-xl p-3">
+                                                        <p className="text-xs text-text-muted mb-1">{label as string}</p>
+                                                        <p className="text-white text-sm">{String(value)}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        ) : (
+                            <div className="text-center py-12">
+                                <Apple className="w-16 h-16 text-text-muted mx-auto mb-4" />
+                                <h3 className="text-xl font-display font-bold text-white mb-2">Анкета питания не заполнена</h3>
+                                <p className="text-text-secondary">Клиент ещё не заполнил анкету по питанию</p>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* Программы */}
                 {activeTab === 'programs' && (
                     <div>
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-xl font-display font-bold text-white">
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+                            <h2 className="text-lg font-display font-bold text-white">
                                 Программы ({programs.length})
                             </h2>
-                            <button onClick={() => setShowUploadModal(true)} className="glass-button flex items-center gap-2">
+                            <button onClick={() => setShowUploadModal(true)} className="glass-button flex items-center gap-2 text-sm">
                                 <Plus className="w-4 h-4" />
                                 Загрузить программу
                             </button>
@@ -1183,13 +1370,13 @@ export default function AdminClientDetailPage() {
                         </div>
 
                         <div className="space-y-6">
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-sm text-text-secondary mb-2">Номер недели</label>
+                                    <label className="block text-sm text-text-secondary mb-2">Неделя №</label>
                                     <input type="number" value={weekNumber} onChange={e => setWeekNumber(parseInt(e.target.value))} className="glass-input w-full" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm text-text-secondary mb-2">Тренировочных дней</label>
+                                    <label className="block text-sm text-text-secondary mb-2">Дней тренировок</label>
                                     <input type="number" min="2" max="7" value={trainingDays} onChange={e => setTrainingDays(parseInt(e.target.value))} className="glass-input w-full" />
                                 </div>
                                 <div>
@@ -1197,7 +1384,7 @@ export default function AdminClientDetailPage() {
                                     <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="glass-input w-full" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm text-text-secondary mb-2">Дата окончания</label>
+                                    <label className="block text-sm text-text-secondary mb-2">Дата конца</label>
                                     <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="glass-input w-full" />
                                 </div>
                             </div>

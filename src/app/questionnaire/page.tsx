@@ -63,6 +63,19 @@ export default function QuestionnairePage() {
         const checkCompleted = async () => {
             const completed = await isQuestionnaireCompleted()
             if (completed) {
+                // Если нужно заполнить анкету питания — ведём туда
+                try {
+                    const { isNutritionQuestionnaireRequired, isNutritionQuestionnaireCompleted } =
+                        await import('@/lib/services/nutrition')
+                    const needsNutrition = await isNutritionQuestionnaireRequired()
+                    if (needsNutrition) {
+                        const nutritionDone = await isNutritionQuestionnaireCompleted()
+                        if (!nutritionDone) {
+                            router.replace('/questionnaire/nutrition')
+                            return
+                        }
+                    }
+                } catch {}
                 router.replace('/dashboard')
             }
         }
@@ -170,6 +183,21 @@ export default function QuestionnairePage() {
             }
 
             await upsertQuestionnaire(formData as QuestionnaireFormData)
+            // Если у клиента куплен план питания — направляем на анкету по питанию
+            try {
+                const { isNutritionQuestionnaireRequired, isNutritionQuestionnaireCompleted } =
+                    await import('@/lib/services/nutrition')
+                const needsNutrition = await isNutritionQuestionnaireRequired()
+                if (needsNutrition) {
+                    const nutritionDone = await isNutritionQuestionnaireCompleted()
+                    if (!nutritionDone) {
+                        router.push('/questionnaire/nutrition')
+                        return
+                    }
+                }
+            } catch (err) {
+                console.warn('[Questionnaire] Nutrition check failed, going to dashboard', err)
+            }
             router.push('/dashboard')
         } catch (e: any) {
             console.error('Submit error:', e)

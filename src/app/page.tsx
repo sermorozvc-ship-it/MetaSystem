@@ -274,7 +274,24 @@ export default function LandingPage() {
                         return
                     }
                     const done = await isQuestionnaireCompleted()
-                    window.location.href = done ? '/dashboard' : '/questionnaire'
+                    if (!done) {
+                        window.location.href = '/questionnaire'
+                        return
+                    }
+                    // Проверяем анкету питания при необходимости
+                    try {
+                        const { isNutritionQuestionnaireRequired, isNutritionQuestionnaireCompleted } =
+                            await import('@/lib/services/nutrition')
+                        const needsNutrition = await isNutritionQuestionnaireRequired()
+                        if (needsNutrition) {
+                            const nutritionDone = await isNutritionQuestionnaireCompleted()
+                            if (!nutritionDone) {
+                                window.location.href = '/questionnaire/nutrition'
+                                return
+                            }
+                        }
+                    } catch {}
+                    window.location.href = '/dashboard'
                 } catch {
                     window.location.href = '/payment'
                 }

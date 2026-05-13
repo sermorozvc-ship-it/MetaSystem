@@ -14,12 +14,30 @@ export default function OnboardingPage() {
     useEffect(() => {
         if (isLoading) return
         if (!user) return
-        // Авторизован — проверяем анкету
-        isQuestionnaireCompleted().then(done => {
-            window.location.href = done ? '/dashboard' : '/questionnaire'
-        }).catch(() => {
-            window.location.href = '/questionnaire'
-        })
+        // Авторизован — проверяем анкеты
+        const go = async () => {
+            try {
+                const done = await isQuestionnaireCompleted()
+                if (!done) {
+                    window.location.href = '/questionnaire'
+                    return
+                }
+                const { isNutritionQuestionnaireRequired, isNutritionQuestionnaireCompleted } =
+                    await import('@/lib/services/nutrition')
+                const needsNutrition = await isNutritionQuestionnaireRequired()
+                if (needsNutrition) {
+                    const nutritionDone = await isNutritionQuestionnaireCompleted()
+                    if (!nutritionDone) {
+                        window.location.href = '/questionnaire/nutrition'
+                        return
+                    }
+                }
+                window.location.href = '/dashboard'
+            } catch {
+                window.location.href = '/questionnaire'
+            }
+        }
+        go()
     }, [user, isLoading])
 
     return (

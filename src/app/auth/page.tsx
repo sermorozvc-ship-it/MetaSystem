@@ -64,7 +64,18 @@ function AuthContent() {
             const payment = await getUserPayment()
             if (!payment || payment.status !== 'confirmed') return '/payment'
             const done = await isQuestionnaireCompleted()
-            return done ? '/dashboard' : '/questionnaire'
+            if (!done) return '/questionnaire'
+            // Анкета тренировок заполнена — проверяем питание
+            try {
+                const { isNutritionQuestionnaireRequired, isNutritionQuestionnaireCompleted } =
+                    await import('@/lib/services/nutrition')
+                const needsNutrition = await isNutritionQuestionnaireRequired()
+                if (needsNutrition) {
+                    const nutritionDone = await isNutritionQuestionnaireCompleted()
+                    if (!nutritionDone) return '/questionnaire/nutrition'
+                }
+            } catch {}
+            return '/dashboard'
         } catch {
             return returnTo
         }

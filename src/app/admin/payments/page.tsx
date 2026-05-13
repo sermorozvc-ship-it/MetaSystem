@@ -114,17 +114,17 @@ export default function AdminPaymentsPage() {
                 </div>
 
                 {/* Статистика */}
-                <div className="grid grid-cols-3 gap-4 mb-6">
-                    <div className="glass-card p-5">
-                        <p className="text-sm text-text-muted mb-1">Всего платежей</p>
+                <div className="grid grid-cols-3 gap-3 mb-6">
+                    <div className="glass-card p-4">
+                        <p className="text-xs text-text-muted mb-1 leading-tight">Всего</p>
                         <p className="text-2xl font-display font-bold text-white">{payments.length}</p>
                     </div>
-                    <div className="glass-card p-5">
-                        <p className="text-sm text-text-muted mb-1">Ожидают подтверждения</p>
+                    <div className="glass-card p-4">
+                        <p className="text-xs text-text-muted mb-1 leading-tight">Ожидают</p>
                         <p className="text-2xl font-display font-bold text-warning">{totalPending}</p>
                     </div>
-                    <div className="glass-card p-5">
-                        <p className="text-sm text-text-muted mb-1">Сумма оплачено</p>
+                    <div className="glass-card p-4">
+                        <p className="text-xs text-text-muted mb-1 leading-tight">Оплачено</p>
                         <p className="text-2xl font-display font-bold text-success">
                             {totalConfirmed.toLocaleString('ru-RU')} ₽
                         </p>

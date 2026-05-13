@@ -4,11 +4,15 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
     Dumbbell, TrendingUp, Calendar, MessageCircle,
-    ChevronRight, Loader2, Zap
+    ChevronRight, Loader2, Zap, Apple
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { getCurrentProgram, type TrainingProgram } from '@/lib/services/training'
 import { getLatestMetric, type ClientMetric } from '@/lib/services/metrics'
+import {
+    isNutritionQuestionnaireRequired,
+    isNutritionQuestionnaireCompleted,
+} from '@/lib/services/nutrition'
 
 export default function DashboardPage() {
     const { user, isLoading: authLoading } = useAuth()
@@ -18,6 +22,7 @@ export default function DashboardPage() {
     const [latestMetric, setLatestMetric] = useState<ClientMetric | null>(null)
     const [isLoading, setIsLoading] = useState(true)
     const [subscriptionDaysLeft, setSubscriptionDaysLeft] = useState<number | null>(null)
+    const [nutritionPending, setNutritionPending] = useState(false)
 
     useEffect(() => {
         if (!authLoading && !user) {
@@ -30,13 +35,16 @@ export default function DashboardPage() {
 
         const loadDashboardData = async () => {
             try {
-                const [program, metric] = await Promise.all([
+                const [program, metric, needsNutrition, nutritionDone] = await Promise.all([
                     getCurrentProgram(),
                     getLatestMetric(),
+                    isNutritionQuestionnaireRequired(),
+                    isNutritionQuestionnaireCompleted(),
                 ])
 
                 setCurrentProgram(program)
                 setLatestMetric(metric)
+                setNutritionPending(needsNutrition && !nutritionDone)
 
                 // Calculate subscription days left
                 // This would come from user profile in real implementation
@@ -68,6 +76,25 @@ export default function DashboardPage() {
                     </h1>
                     <p className="text-text-secondary text-sm">Добро пожаловать в MetaSystem</p>
                 </div>
+
+                {/* Nutrition questionnaire banner */}
+                {nutritionPending && (
+                    <button
+                        onClick={() => router.push('/questionnaire/nutrition')}
+                        className="w-full mb-6 rounded-2xl border border-accent/40 bg-accent/10 p-5 flex items-center gap-4 text-left hover:bg-accent/15 transition-colors"
+                    >
+                        <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center">
+                            <Apple className="w-6 h-6 text-accent" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-white font-semibold mb-1">Заполните анкету по питанию</p>
+                            <p className="text-text-secondary text-sm">
+                                Нужно, чтобы тренер составил индивидуальный план питания. Займёт 5–7 минут.
+                            </p>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-accent flex-shrink-0" />
+                    </button>
+                )}
 
                 {/* Quick Stats */}
                 <div className="grid md:grid-cols-3 gap-4 mb-8">
