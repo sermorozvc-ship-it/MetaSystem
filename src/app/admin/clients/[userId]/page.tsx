@@ -6,7 +6,7 @@ import {
     ArrowLeft, Dumbbell, TrendingUp, FileText, Plus,
     Loader2, Upload, X, Check, ChevronDown, ChevronUp,
     Download, CheckCircle2, Clock, Pencil, Archive, ArchiveRestore,
-    Apple, Copy
+    Apple, Copy, Calendar
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { isAdmin, getUserDetails, archiveUser, unarchiveUser } from '@/lib/services/admin'
@@ -761,6 +761,7 @@ export default function AdminClientDetailPage() {
     const [nutritionAccess, setNutritionAccess] = useState(false)
     const [programs, setPrograms] = useState<TrainingProgram[]>([])
     const [isArchiving, setIsArchiving] = useState(false)
+    const [clientPayment, setClientPayment] = useState<any>(null)
 
     // Upload modal state
     const [showUploadModal, setShowUploadModal] = useState(false)
@@ -808,6 +809,25 @@ export default function AdminClientDetailPage() {
                 setPrograms(progs.status === 'fulfilled' ? progs.value : [])
                 setNutritionQ(nutQ.status === 'fulfilled' ? nutQ.value : null)
                 setNutritionAccess(nutAccess.status === 'fulfilled' ? nutAccess.value : false)
+
+                // Загружаем платёж клиента для отображения подписки
+                try {
+                    const { createClient: createDirectClient } = await import('@supabase/supabase-js')
+                    const db = createDirectClient(
+                        'https://bzyypoyvihqhrbllgffh.supabase.co',
+                        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
+                        { auth: { persistSession: false } }
+                    )
+                    const { data: paymentData } = await db
+                        .from('payments')
+                        .select('plan_type, plan_months, confirmed_at, status, includes_nutrition')
+                        .eq('user_id', userId)
+                        .eq('status', 'confirmed')
+                        .order('confirmed_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle()
+                    setClientPayment(paymentData)
+                } catch {}
             } catch (e) {
                 console.error('Error loading client data:', e)
             } finally {
@@ -944,6 +964,51 @@ export default function AdminClientDetailPage() {
                         </span>
                     </button>
                 </div>
+
+                {/* Блок подписки */}
+                {clientPayment && clientPayment.confirmed_at && clientPayment.plan_months && (() => {
+                    const planLabels: Record<string, string> = { '1_month': '1 месяц', '3_months': '3 месяца', '6_months': '6 месяцев' }
+                    const totalDays = clientPayment.plan_months * 30
+                    const endDate = new Date(clientPayment.confirmed_at)
+                    endDate.setMonth(endDate.getMonth() + clientPayment.plan_months)
+                    const daysLeft = Math.ceil((endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                    const daysLeftClamped = Math.max(0, daysLeft)
+                    const pct = Math.min(100, Math.max(0, (daysLeftClamped / totalDays) * 100))
+                    const isExpiring = daysLeftClamped <= 14
+                    const isWarning = daysLeftClamped <= 30 && daysLeftClamped > 14
+                    const barColor = isExpiring ? 'bg-danger' : isWarning ? 'bg-warning' : 'bg-accent'
+                    const textColor = isExpiring ? 'text-danger' : isWarning ? 'text-warning' : 'text-accent'
+
+                    return (
+                        <div className="glass-card p-4 mb-4">
+                            <div className="flex items-center justify-between gap-4 mb-2">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <Calendar className="w-4 h-4 text-text-muted flex-shrink-0" />
+                                    <div className="min-w-0">
+                                        <span className="text-sm text-text-muted">Тариф: </span>
+                                        <span className="text-sm font-semibold text-white">{planLabels[clientPayment.plan_type] || clientPayment.plan_type}</span>
+                                        {clientPayment.includes_nutrition && (
+                                            <span className="ml-2 text-xs text-accent">+ питание</span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="text-right flex-shrink-0">
+                                    <span className={`text-xl font-display font-bold ${textColor}`}>{daysLeftClamped}</span>
+                                    <span className="text-sm text-text-muted ml-1">дн.</span>
+                                </div>
+                            </div>
+                            <div className="h-2 bg-bg-elevated rounded-full overflow-hidden mb-1.5">
+                                <div className={`h-full ${barColor} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                            </div>
+                            <div className="flex justify-between text-xs text-text-muted">
+                                <span>с {new Date(clientPayment.confirmed_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</span>
+                                <span className={isExpiring ? 'text-danger font-semibold' : ''}>
+                                    до {endDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                </span>
+                            </div>
+                        </div>
+                    )
+                })()}
 
                 {/* Tabs */}
                 <div className="-mx-4 px-4 flex gap-2 mb-6 overflow-x-auto pb-1" style={{scrollbarWidth: 'none'}}>

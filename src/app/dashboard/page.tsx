@@ -22,6 +22,8 @@ export default function DashboardPage() {
     const [latestMetric, setLatestMetric] = useState<ClientMetric | null>(null)
     const [isLoading, setIsLoading] = useState(true)
     const [subscriptionDaysLeft, setSubscriptionDaysLeft] = useState<number | null>(null)
+    const [subscriptionEndDate, setSubscriptionEndDate] = useState<Date | null>(null)
+    const [subscriptionPlanLabel, setSubscriptionPlanLabel] = useState<string | null>(null)
     const [nutritionPending, setNutritionPending] = useState(false)
 
     useEffect(() => {
@@ -56,6 +58,13 @@ export default function DashboardPage() {
                         endDate.setMonth(endDate.getMonth() + payment.plan_months)
                         const daysLeft = Math.ceil((endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
                         setSubscriptionDaysLeft(Math.max(0, daysLeft))
+                        setSubscriptionEndDate(endDate)
+                        const planLabels: Record<string, string> = {
+                            '1_month': '1 месяц',
+                            '3_months': '3 месяца',
+                            '6_months': '6 месяцев',
+                        }
+                        setSubscriptionPlanLabel(payment.plan_type ? planLabels[payment.plan_type] || null : null)
                     }
                 } catch {}
             } catch (e) {
@@ -106,18 +115,44 @@ export default function DashboardPage() {
 
                 {/* Quick Stats */}
                 <div className="grid md:grid-cols-3 gap-4 mb-8">
+                    {/* Карточка подписки с прогресс-баром */}
                     <div className="glass-card p-6">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="w-10 h-10 rounded-xl bg-accent/20 flex items-center justify-center">
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="w-10 h-10 rounded-xl bg-accent/20 flex items-center justify-center flex-shrink-0">
                                 <Calendar className="w-5 h-5 text-accent" />
                             </div>
-                            <div>
-                                <p className="text-sm text-text-muted">Подписка</p>
-                                <p className="text-xl font-display font-bold text-white">
-                                    {subscriptionDaysLeft ? `${subscriptionDaysLeft} дней` : 'Неактивна'}
+                            <div className="min-w-0">
+                                <p className="text-xs text-text-muted">Подписка{subscriptionPlanLabel ? ` · ${subscriptionPlanLabel}` : ''}</p>
+                                <p className="text-xl font-display font-bold text-white leading-tight">
+                                    {subscriptionDaysLeft !== null
+                                        ? subscriptionDaysLeft > 0
+                                            ? <><span className={subscriptionDaysLeft <= 14 ? 'text-danger' : subscriptionDaysLeft <= 30 ? 'text-warning' : 'text-accent'}>{subscriptionDaysLeft}</span> дн.</>
+                                            : <span className="text-danger">Истекла</span>
+                                        : '—'
+                                    }
                                 </p>
                             </div>
                         </div>
+                        {subscriptionDaysLeft !== null && subscriptionEndDate && (
+                            <>
+                                {/* Прогресс-бар */}
+                                {(() => {
+                                    const totalDays = subscriptionPlanLabel?.includes('6') ? 180 : subscriptionPlanLabel?.includes('3') ? 90 : 30
+                                    const pct = Math.min(100, Math.max(0, (subscriptionDaysLeft / totalDays) * 100))
+                                    const color = subscriptionDaysLeft <= 14 ? 'bg-danger' : subscriptionDaysLeft <= 30 ? 'bg-warning' : 'bg-accent'
+                                    return (
+                                        <div className="mb-2">
+                                            <div className="h-1.5 bg-bg-elevated rounded-full overflow-hidden">
+                                                <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                                            </div>
+                                        </div>
+                                    )
+                                })()}
+                                <p className="text-xs text-text-muted">
+                                    до {subscriptionEndDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                </p>
+                            </>
+                        )}
                     </div>
 
                     <div className="glass-card p-6">
