@@ -31,9 +31,10 @@ export interface NutritionDish {
 }
 
 export interface NutritionDay {
-  dayNumber: number
+  dayNumber: number      // Сквозная нумерация: 1–28/30
+  weekNumber: number     // Номер недели: 1–4
   dayOfWeek: string      // monday, tuesday, ...
-  title: string          // "День 1: Тренировочный день" или "День 2: День отдыха"
+  title: string          // "День 1: Тренировочный день"
   totalKcal?: number
   totalProtein?: number
   totalFat?: number
@@ -43,16 +44,40 @@ export interface NutritionDay {
   waterGoal?: string     // "2.5 л"
 }
 
+export interface NutritionWeek {
+  weekNumber: number
+  title: string          // "Неделя 1: Адаптация"
+  weeklyNote?: string    // Рекомендация тренера на неделю
+  days: NutritionDay[]
+}
+
+export interface NutritionRecipe {
+  id: string
+  name: string
+  category?: string      // "Завтраки" / "Обеды" / "Ужины" / "Перекусы"
+  kcal?: number
+  protein?: number
+  fat?: number
+  carbs?: number
+  servings?: string      // "1 порция (250 г)"
+  ingredients: string[]  // ["200 г куриной грудки", "100 г гречки"]
+  steps: string[]        // ["Отварить курицу", "Сварить гречку"]
+  note?: string
+}
+
 export interface NutritionPlanData {
   planNumber: number
   startDate: string
   endDate: string
+  weeks: NutritionWeek[]
+  // Для обратной совместимости — плоский список дней
   days: NutritionDay[]
-  weeklyNote?: string    // Общая рекомендация тренера
+  weeklyNote?: string    // Общая рекомендация тренера (для однонедельных планов)
   dailyKcal?: number     // Целевые калории
-  dailyProtein?: number  // Целевой белок
+  dailyProtein?: number
   dailyFat?: number
   dailyCarbs?: number
+  recipes?: NutritionRecipe[]  // Рецепты
 }
 
 export interface NutritionProgram {
