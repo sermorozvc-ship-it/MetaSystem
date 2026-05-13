@@ -46,10 +46,18 @@ export default function DashboardPage() {
                 setLatestMetric(metric)
                 setNutritionPending(needsNutrition && !nutritionDone)
 
-                // Calculate subscription days left
-                // This would come from user profile in real implementation
-                // For now, mock it
-                setSubscriptionDaysLeft(45)
+                // Считаем дни подписки из платежа
+                try {
+                    const { getUserPayment } = await import('@/lib/services/payment')
+                    const payment = await getUserPayment()
+                    if (payment?.status === 'confirmed' && payment.confirmed_at && payment.plan_months) {
+                        const startDate = new Date(payment.confirmed_at)
+                        const endDate = new Date(startDate)
+                        endDate.setMonth(endDate.getMonth() + payment.plan_months)
+                        const daysLeft = Math.ceil((endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                        setSubscriptionDaysLeft(Math.max(0, daysLeft))
+                    }
+                } catch {}
             } catch (e) {
                 console.error('Error loading dashboard:', e)
             } finally {
