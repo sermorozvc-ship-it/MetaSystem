@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
 // Обработчик продления тарифа
 // ──────────────────────────────────────────────────────────────────────────
 async function handleRenewalPayment(
-    supabase: ReturnType<typeof createSupabaseAdmin>,
+    supabase: ReturnType<typeof getAdminClient>,
     userId: string,
     paymentId: string,
     amount: number
@@ -283,7 +283,7 @@ async function handleRenewalPayment(
 // Обработчик докупки питания
 // ──────────────────────────────────────────────────────────────────────────
 async function handleNutritionUpgrade(
-    supabase: ReturnType<typeof createSupabaseAdmin>,
+    supabase: ReturnType<typeof getAdminClient>,
     userId: string,
     paymentId: string
 ) {
