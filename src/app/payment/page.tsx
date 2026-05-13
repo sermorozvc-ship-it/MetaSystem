@@ -157,8 +157,14 @@ export default function PaymentPage() {
                 )
 
                 if (paymentError) {
-                    setError(paymentError)
                     yooWindow?.close()
+                    // Сессия протухла — отправляем на авторизацию
+                    if (paymentError === 'Пользователь не авторизован') {
+                        const returnTo = encodeURIComponent(window.location.pathname + window.location.search)
+                        window.location.href = `/auth?returnTo=${returnTo}`
+                        return
+                    }
+                    setError(paymentError)
                     return
                 }
                 setPayment(newPayment)
