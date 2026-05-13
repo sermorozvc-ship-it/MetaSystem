@@ -17,12 +17,13 @@ export default function NutritionPage() {
     }, [user, authLoading, router])
 
     useEffect(() => {
+        if (authLoading) return
         if (!user) return
         getMyNutritionPrograms()
             .then(setPlans)
             .catch(console.error)
             .finally(() => setIsLoading(false))
-    }, [user])
+    }, [user, authLoading])
 
     if (authLoading || isLoading) {
         return (

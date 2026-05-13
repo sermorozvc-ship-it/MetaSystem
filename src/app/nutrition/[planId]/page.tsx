@@ -140,7 +140,8 @@ export default function NutritionPlanDetailPage() {
     }, [user, authLoading, router])
 
     useEffect(() => {
-        if (!user || !planId) return
+        if (authLoading) return   // ждём завершения проверки авторизации
+        if (!user) return
         getNutritionProgramById(planId)
             .then(data => {
                 if (!data) { router.replace('/nutrition'); return }
@@ -160,8 +161,7 @@ export default function NutritionPlanDetailPage() {
             })
             .catch(console.error)
             .finally(() => setIsLoading(false))
-    }, [user, planId, router])
-
+    }, [user, authLoading, planId, router])
     if (authLoading || isLoading || !plan) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">

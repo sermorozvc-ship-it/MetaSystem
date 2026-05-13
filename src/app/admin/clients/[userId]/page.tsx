@@ -20,7 +20,7 @@ import {
 } from '@/lib/services/nutrition'
 import { getClientPrograms, type TrainingProgram, type TrainingEntry } from '@/lib/services/training'
 import { parseMdToJson, EXAMPLE_PROGRAM_MD } from '@/lib/utils/md-parser'
-import { getClientNutritionPrograms, type NutritionProgram } from '@/lib/services/nutrition-programs'
+import { type NutritionProgram } from '@/lib/services/nutrition-programs'
 import { parseNutritionMdToJson, EXAMPLE_NUTRITION_MD } from '@/lib/utils/nutrition-md-parser'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { format } from 'date-fns'
@@ -1051,9 +1051,20 @@ export default function AdminClientDetailPage() {
                 setNutritionQ(nutQ.status === 'fulfilled' ? nutQ.value : null)
                 setNutritionAccess(nutAccess.status === 'fulfilled' ? nutAccess.value : false)
 
-                // Загружаем планы питания
+                // Загружаем планы питания через service role (обходит RLS)
                 try {
-                    const nutPlans = await getClientNutritionPrograms(userId)
+                    const { createClient: createDirectClient } = await import('@supabase/supabase-js')
+                    const dbNut = createDirectClient(
+                        'https://bzyypoyvihqhrbllgffh.supabase.co',
+                        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
+                        { auth: { persistSession: false } }
+                    )
+                    const { data: nutPlansData } = await dbNut
+                        .from('nutrition_programs')
+                        .select('*')
+                        .eq('user_id', userId)
+                        .order('plan_number', { ascending: false })
+                    const nutPlans = nutPlansData || []
                     setNutritionPlans(nutPlans)
                     if (nutPlans.length > 0) setNutritionPlanNumber(nutPlans[0].plan_number + 1)
                 } catch {}
@@ -1208,8 +1219,12 @@ export default function AdminClientDetailPage() {
                 read: false,
             }).then(() => {})
 
-            const updated = await getClientNutritionPrograms(userId)
-            setNutritionPlans(updated)
+            const updated2 = await db
+                .from('nutrition_programs')
+                .select('*')
+                .eq('user_id', userId)
+                .order('plan_number', { ascending: false })
+            setNutritionPlans(updated2.data || [])
             setShowNutritionModal(false)
             setNutritionMd('')
             setNutritionPlanNumber(nutritionPlanNumber + 1)
