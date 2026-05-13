@@ -23,6 +23,7 @@ export default function NewClientPage() {
     const [password, setPassword] = useState('')
     const [amount, setAmount] = useState('')
     const [planMonths, setPlanMonths] = useState('1')
+    const [includesNutrition, setIncludesNutrition] = useState(false)
     const [subscriptionStart, setSubscriptionStart] = useState(() => new Date().toISOString().split('T')[0])
     const [subscriptionEnd, setSubscriptionEnd] = useState(() => {
         const d = new Date()
@@ -66,6 +67,7 @@ export default function NewClientPage() {
             full_name: fullName.trim(),
             amount: Number(amount) || 0,
             plan_months: Number(planMonths),
+            includes_nutrition: includesNutrition,
             subscription_start: subscriptionStart,
             subscription_end: subscriptionEnd,
         })
@@ -109,7 +111,7 @@ export default function NewClientPage() {
                             onClick={() => {
                                 setSuccess(null)
                                 setFullName(''); setEmail(''); setPassword('')
-                                setAmount(''); setPlanMonths('1')
+                                setAmount(''); setPlanMonths('1'); setIncludesNutrition(false)
                             }}
                             className="glass-button-secondary w-full"
                         >
@@ -280,6 +282,26 @@ export default function NewClientPage() {
                                 }
                             </span>
                             {planMonths && <span className="text-text-muted ml-2">({planMonths} мес.)</span>}
+                        </div>
+
+                        {/* Питание */}
+                        <div>
+                            <label className="flex items-start gap-3 cursor-pointer p-4 rounded-xl border border-transparent hover:border-border transition-colors">
+                                <div className="relative mt-0.5">
+                                    <input
+                                        type="checkbox"
+                                        checked={includesNutrition}
+                                        onChange={e => setIncludesNutrition(e.target.checked)}
+                                        className="w-4 h-4 accent-accent"
+                                    />
+                                </div>
+                                <div>
+                                    <p className="text-white font-semibold text-sm">Включить план питания</p>
+                                    <p className="text-text-muted text-xs mt-0.5">
+                                        Клиент попадёт в ветку с питанием — после анкеты тренировок ему будет предложена анкета по питанию
+                                    </p>
+                                </div>
+                            </label>
                         </div>
                     </div>
 

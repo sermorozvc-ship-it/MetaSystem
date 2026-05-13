@@ -500,6 +500,7 @@ export async function createClientManually(params: {
     full_name: string
     amount: number
     plan_months: number
+    includes_nutrition: boolean
     subscription_start: string
     subscription_end: string
 }): Promise<{ success: boolean; userId?: string; error?: string }> {
@@ -537,6 +538,7 @@ export async function createClientManually(params: {
         is_blocked: false,
         subscription_status: 'active',
         subscription_end_date: params.subscription_end,
+        has_nutrition_plan: params.includes_nutrition,
         questionnaire_completed: false,
     })
 
@@ -553,11 +555,13 @@ export async function createClientManually(params: {
             status: 'confirmed',
             payment_method: 'manual',
             plan_months: params.plan_months,
+            includes_nutrition: params.includes_nutrition,
             confirmed_by: session.user.id,
             confirmed_at: new Date().toISOString(),
             cohort_start: params.subscription_start,
             base_amount: params.amount,
-            nutrition_amount: 0,
+            nutrition_amount: params.includes_nutrition ? 3000 : 0,
+            renewal_type: 'initial',
         })
 
         if (paymentError) {
@@ -808,5 +812,130 @@ export async function refundPayment(paymentId: string): Promise<{ success: boole
         return { success: false, error: error.message }
     }
 
+    return { success: true }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Ручное продление подписки клиента (для админа)
+// ──────────────────────────────────────────────────────────────────────────
+
+export async function renewClientSubscription(params: {
+    userId: string
+    planMonths: number
+    planType: '1_month' | '3_months' | '6_months'
+    includesNutrition: boolean
+    amount: number
+}): Promise<{ success: boolean; newEndDate?: string; error?: string }> {
+    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA'
+
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return { success: false, error: 'Не авторизован' }
+
+    const { createClient: createDirectClient } = await import('@supabase/supabase-js')
+    const db = createDirectClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+
+    // Получаем текущую дату окончания подписки
+    const { data: profile } = await db
+        .from('profiles')
+        .select('subscription_end_date, has_nutrition_plan')
+        .eq('id', params.userId)
+        .single()
+
+    const currentEnd = profile?.subscription_end_date
+    let newStart: Date
+    let newEnd: Date
+
+    if (currentEnd) {
+        const endDate = new Date(currentEnd)
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        newStart = endDate >= today
+            ? new Date(endDate.getTime() + 24 * 60 * 60 * 1000)
+            : today
+    } else {
+        newStart = new Date()
+    }
+
+    newEnd = new Date(newStart)
+    newEnd.setMonth(newEnd.getMonth() + params.planMonths)
+    newEnd.setDate(newEnd.getDate() - 1)
+
+    const newEndStr = newEnd.toISOString().split('T')[0]
+
+    // Создаём платёж
+    const { data: payment, error: paymentError } = await db
+        .from('payments')
+        .insert({
+            user_id: params.userId,
+            amount: params.amount,
+            currency: 'RUB',
+            status: 'confirmed',
+            payment_method: 'manual',
+            plan_type: params.planType,
+            plan_months: params.planMonths,
+            includes_nutrition: params.includesNutrition,
+            base_amount: params.amount,
+            nutrition_amount: params.includesNutrition ? 3000 : 0,
+            confirmed_by: session.user.id,
+            confirmed_at: new Date().toISOString(),
+            renewal_type: 'renewal',
+        })
+        .select('id')
+        .single()
+
+    if (paymentError || !payment) {
+        return { success: false, error: 'Ошибка создания платежа: ' + paymentError?.message }
+    }
+
+    // Создаём запись о продлении
+    await db.from('subscription_renewals').insert({
+        user_id: params.userId,
+        previous_end_date: currentEnd ?? null,
+        previous_had_nutrition: profile?.has_nutrition_plan ?? false,
+        new_plan_type: params.planType,
+        new_plan_months: params.planMonths,
+        includes_nutrition: params.includesNutrition,
+        payment_id: payment.id,
+        amount: params.amount,
+        renewal_type: 'renewal',
+        status: 'confirmed',
+        new_start_date: newStart.toISOString().split('T')[0],
+        new_end_date: newEndStr,
+    })
+
+    // Обновляем профиль
+    const { error: profileError } = await db
+        .from('profiles')
+        .update({
+            subscription_status: 'active',
+            subscription_end_date: newEndStr,
+            has_nutrition_plan: params.includesNutrition ? true : (profile?.has_nutrition_plan ?? false),
+            renewal_pending: false,
+        })
+        .eq('id', params.userId)
+
+    if (profileError) {
+        return { success: false, error: 'Ошибка обновления профиля: ' + profileError.message }
+    }
+
+    return { success: true, newEndDate: newEndStr }
+}
+
+/**
+ * Ручное подключение питания клиенту (без оплаты)
+ */
+export async function enableNutritionForClient(
+    userId: string
+): Promise<{ success: boolean; error?: string }> {
+    const supabase = createClient()
+
+    const { error } = await supabase
+        .from('profiles')
+        .update({ has_nutrition_plan: true })
+        .eq('id', userId)
+
+    if (error) return { success: false, error: error.message }
     return { success: true }
 }

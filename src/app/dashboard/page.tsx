@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
     Dumbbell, TrendingUp, Calendar, MessageCircle,
-    ChevronRight, Loader2, Zap, Apple
+    ChevronRight, Loader2, Zap, Apple, RefreshCw,
+    AlertTriangle, CheckCircle2, Plus
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { getCurrentProgram, type TrainingProgram } from '@/lib/services/training'
@@ -15,6 +16,7 @@ import {
 } from '@/lib/services/nutrition'
 import { getCurrentNutritionProgram, type NutritionProgram } from '@/lib/services/nutrition-programs'
 import { getMyQuestionnaire } from '@/lib/services/questionnaire'
+import { getMySubscriptionInfo, type SubscriptionInfo } from '@/lib/services/renewal'
 
 export default function DashboardPage() {
     const { user, isLoading: authLoading } = useAuth()
@@ -29,6 +31,8 @@ export default function DashboardPage() {
     const [subscriptionEndDate, setSubscriptionEndDate] = useState<Date | null>(null)
     const [subscriptionPlanLabel, setSubscriptionPlanLabel] = useState<string | null>(null)
     const [nutritionPending, setNutritionPending] = useState(false)
+    const [subInfo, setSubInfo] = useState<SubscriptionInfo | null>(null)
+    const [renewedBanner, setRenewedBanner] = useState(false)
 
     useEffect(() => {
         if (!authLoading && !user) {
@@ -36,21 +40,41 @@ export default function DashboardPage() {
         }
     }, [user, authLoading, router])
 
+    // Показываем баннер "продлено" если пришли с ?renewed=true
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search)
+            if (params.get('renewed') === 'true') {
+                setRenewedBanner(true)
+                // Убираем параметр из URL без перезагрузки
+                window.history.replaceState({}, '', '/dashboard')
+            }
+        }
+    }, [])
+
     useEffect(() => {
         if (!user) return
 
         const loadDashboardData = async () => {
             try {
-                const [program, metric, needsNutrition, nutritionDone] = await Promise.all([
+                const [program, metric, needsNutrition, nutritionDone, subInfoData] = await Promise.all([
                     getCurrentProgram(),
                     getLatestMetric(),
                     isNutritionQuestionnaireRequired(),
                     isNutritionQuestionnaireCompleted(),
+                    getMySubscriptionInfo(),
                 ])
 
                 setCurrentProgram(program)
                 setLatestMetric(metric)
                 setNutritionPending(needsNutrition && !nutritionDone)
+                setSubInfo(subInfoData)
+
+                // Данные подписки из subInfo
+                if (subInfoData.endDate) {
+                    setSubscriptionEndDate(new Date(subInfoData.endDate))
+                    setSubscriptionDaysLeft(subInfoData.daysLeft)
+                }
 
                 // Если нет замеров — берём вес из анкеты как fallback
                 if (!metric?.weight_kg) {
@@ -66,25 +90,15 @@ export default function DashboardPage() {
                     setCurrentNutritionPlan(nutPlan)
                 } catch {}
 
-                // Считаем дни подписки из платежа
-                try {
-                    const { getUserPayment } = await import('@/lib/services/payment')
-                    const payment = await getUserPayment()
-                    if (payment?.status === 'confirmed' && payment.confirmed_at && payment.plan_months) {
-                        const startDate = new Date(payment.confirmed_at)
-                        const endDate = new Date(startDate)
-                        endDate.setMonth(endDate.getMonth() + payment.plan_months)
-                        const daysLeft = Math.ceil((endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-                        setSubscriptionDaysLeft(Math.max(0, daysLeft))
-                        setSubscriptionEndDate(endDate)
-                        const planLabels: Record<string, string> = {
-                            '1_month': '1 месяц',
-                            '3_months': '3 месяца',
-                            '6_months': '6 месяцев',
-                        }
-                        setSubscriptionPlanLabel(payment.plan_type ? planLabels[payment.plan_type] || null : null)
-                    }
-                } catch {}
+                // Лейбл тарифа
+                const planLabels: Record<string, string> = {
+                    '1_month': '1 месяц',
+                    '3_months': '3 месяца',
+                    '6_months': '6 месяцев',
+                }
+                if (subInfoData.planType) {
+                    setSubscriptionPlanLabel(planLabels[subInfoData.planType] ?? null)
+                }
             } catch (e) {
                 console.error('Error loading dashboard:', e)
             } finally {
@@ -128,6 +142,90 @@ export default function DashboardPage() {
                             </p>
                         </div>
                         <ChevronRight className="w-5 h-5 text-accent flex-shrink-0" />
+                    </button>
+                )}
+
+                {/* Баннер: тариф успешно продлён */}
+                {renewedBanner && (
+                    <div className="w-full mb-6 rounded-2xl border border-success/40 bg-success/10 p-5 flex items-center gap-4">
+                        <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-success/20 flex items-center justify-center">
+                            <CheckCircle2 className="w-6 h-6 text-success" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-white font-semibold mb-1">Тариф успешно продлён!</p>
+                            <p className="text-text-secondary text-sm">
+                                Все ваши данные сохранены. Продолжайте работу.
+                            </p>
+                        </div>
+                        <button
+                            onClick={() => setRenewedBanner(false)}
+                            className="text-text-muted hover:text-white transition-colors text-lg leading-none flex-shrink-0"
+                        >×</button>
+                    </div>
+                )}
+
+                {/* Баннер: тариф истёк */}
+                {subInfo?.isExpired && !renewedBanner && (
+                    <button
+                        onClick={() => router.push('/renew?expired=true')}
+                        className="w-full mb-6 rounded-2xl border border-danger/40 bg-danger/10 p-5 flex items-center gap-4 text-left hover:bg-danger/15 transition-colors"
+                    >
+                        <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-danger/20 flex items-center justify-center">
+                            <AlertTriangle className="w-6 h-6 text-danger" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-white font-semibold mb-1">Ваш тариф истёк</p>
+                            <p className="text-text-secondary text-sm">
+                                Продлите подписку, чтобы продолжить работу. Все данные сохранены.
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className="text-danger font-semibold text-sm">Продлить</span>
+                            <ChevronRight className="w-5 h-5 text-danger" />
+                        </div>
+                    </button>
+                )}
+
+                {/* Баннер: тариф скоро истекает */}
+                {subInfo?.isExpiringSoon && !subInfo.isExpired && !renewedBanner && (
+                    <button
+                        onClick={() => router.push('/renew')}
+                        className="w-full mb-6 rounded-2xl border border-warning/40 bg-warning/10 p-5 flex items-center gap-4 text-left hover:bg-warning/15 transition-colors"
+                    >
+                        <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-warning/20 flex items-center justify-center">
+                            <RefreshCw className="w-6 h-6 text-warning" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-white font-semibold mb-1">
+                                Тариф истекает через {subInfo.daysLeft} {subInfo.daysLeft === 1 ? 'день' : subInfo.daysLeft! <= 4 ? 'дня' : 'дней'}
+                            </p>
+                            <p className="text-text-secondary text-sm">
+                                Продлите сейчас, чтобы не прерывать работу. Данные сохранятся.
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className="text-warning font-semibold text-sm">Продлить</span>
+                            <ChevronRight className="w-5 h-5 text-warning" />
+                        </div>
+                    </button>
+                )}
+
+                {/* Баннер: докупить питание */}
+                {subInfo && !subInfo.isExpired && !subInfo.hasNutrition && subInfo.status === 'active' && !nutritionPending && (
+                    <button
+                        onClick={() => router.push('/add-nutrition')}
+                        className="w-full mb-6 rounded-2xl border border-border bg-bg-elevated/50 p-5 flex items-center gap-4 text-left hover:border-accent/40 transition-colors"
+                    >
+                        <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center">
+                            <Plus className="w-6 h-6 text-accent" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-white font-semibold mb-1">Добавить план питания</p>
+                            <p className="text-text-secondary text-sm">
+                                Подключите индивидуальный план питания к вашей подписке — всего 3 000 ₽
+                            </p>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-text-muted flex-shrink-0" />
                     </button>
                 )}
 

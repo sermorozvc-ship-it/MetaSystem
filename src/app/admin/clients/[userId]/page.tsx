@@ -6,7 +6,7 @@ import {
     ArrowLeft, Dumbbell, TrendingUp, FileText, Plus,
     Loader2, Upload, X, Check, ChevronDown, ChevronUp,
     Download, CheckCircle2, Clock, Pencil, Archive, ArchiveRestore,
-    Apple, Copy, Calendar
+    Apple, Copy, Calendar, RefreshCw
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { isAdmin, getUserDetails, archiveUser, unarchiveUser } from '@/lib/services/admin'
@@ -1014,6 +1014,15 @@ export default function AdminClientDetailPage() {
     const [isUploading, setIsUploading] = useState(false)
     const [uploadError, setUploadError] = useState('')
 
+    // Renew modal state
+    const [showRenewModal, setShowRenewModal] = useState(false)
+    const [renewPlanMonths, setRenewPlanMonths] = useState(1)
+    const [renewPlanType, setRenewPlanType] = useState<'1_month' | '3_months' | '6_months'>('1_month')
+    const [renewIncludesNutrition, setRenewIncludesNutrition] = useState(false)
+    const [renewAmount, setRenewAmount] = useState('')
+    const [isRenewing, setIsRenewing] = useState(false)
+    const [renewError, setRenewError] = useState('')
+
     useEffect(() => {
         if (!authLoading && !user) {
             window.location.href = '/auth'
@@ -1326,6 +1335,36 @@ export default function AdminClientDetailPage() {
                                 <span className={isExpiring ? 'text-danger font-semibold' : ''}>
                                     до {endDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
                                 </span>
+                            </div>
+
+                            {/* Кнопки управления подпиской */}
+                            <div className="flex gap-2 mt-3 pt-3 border-t border-border">
+                                <button
+                                    onClick={() => setShowRenewModal(true)}
+                                    className="glass-button-secondary flex items-center gap-1.5 text-xs py-1.5 px-3"
+                                >
+                                    <RefreshCw className="w-3.5 h-3.5" />
+                                    Продлить
+                                </button>
+                                {!clientPayment.includes_nutrition && (
+                                    <button
+                                        onClick={async () => {
+                                            if (!confirm('Подключить план питания клиенту бесплатно?')) return
+                                            const { enableNutritionForClient } = await import('@/lib/services/admin')
+                                            const result = await enableNutritionForClient(userId)
+                                            if (result.success) {
+                                                setClientPayment((prev: any) => prev ? { ...prev, includes_nutrition: true } : prev)
+                                                alert('Питание подключено!')
+                                            } else {
+                                                alert('Ошибка: ' + result.error)
+                                            }
+                                        }}
+                                        className="glass-button-secondary flex items-center gap-1.5 text-xs py-1.5 px-3"
+                                    >
+                                        <Apple className="w-3.5 h-3.5" />
+                                        Подключить питание
+                                    </button>
+                                )}
                             </div>
                         </div>
                     )
@@ -1924,6 +1963,119 @@ export default function AdminClientDetailPage() {
                                     )}
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Модальное окно продления подписки ── */}
+            {showRenewModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="glass-card w-full max-w-md p-6 space-y-5">
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-xl font-display font-bold text-white flex items-center gap-2">
+                                <RefreshCw className="w-5 h-5 text-accent" />
+                                Продлить подписку
+                            </h2>
+                            <button onClick={() => setShowRenewModal(false)} className="text-text-muted hover:text-white">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <p className="text-sm text-text-secondary">
+                            Ручное продление без оплаты через сервис. Подписка продлится от текущей даты окончания.
+                        </p>
+
+                        <div>
+                            <label className="block text-sm text-text-secondary mb-2">Тариф</label>
+                            <select
+                                value={renewPlanType}
+                                onChange={e => {
+                                    const pt = e.target.value as '1_month' | '3_months' | '6_months'
+                                    setRenewPlanType(pt)
+                                    setRenewPlanMonths(pt === '1_month' ? 1 : pt === '3_months' ? 3 : 6)
+                                }}
+                                className="glass-input w-full"
+                            >
+                                <option value="1_month">1 месяц</option>
+                                <option value="3_months">3 месяца</option>
+                                <option value="6_months">6 месяцев</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="flex items-center gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={renewIncludesNutrition}
+                                    onChange={e => setRenewIncludesNutrition(e.target.checked)}
+                                    className="w-4 h-4 accent-accent"
+                                />
+                                <span className="text-sm text-white">Включить план питания</span>
+                            </label>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm text-text-secondary mb-2">Сумма оплаты (₽)</label>
+                            <input
+                                type="number"
+                                value={renewAmount}
+                                onChange={e => setRenewAmount(e.target.value)}
+                                placeholder="0 — если не нужно фиксировать"
+                                className="glass-input w-full"
+                                min="0"
+                            />
+                        </div>
+
+                        {renewError && (
+                            <div className="p-3 rounded-xl bg-danger/10 border border-danger/30 text-sm text-danger">
+                                {renewError}
+                            </div>
+                        )}
+
+                        <div className="flex gap-3">
+                            <button onClick={() => setShowRenewModal(false)} className="glass-button-secondary flex-1">
+                                Отмена
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    setRenewError('')
+                                    setIsRenewing(true)
+                                    try {
+                                        const { renewClientSubscription } = await import('@/lib/services/admin')
+                                        const result = await renewClientSubscription({
+                                            userId,
+                                            planMonths: renewPlanMonths,
+                                            planType: renewPlanType,
+                                            includesNutrition: renewIncludesNutrition,
+                                            amount: Number(renewAmount) || 0,
+                                        })
+                                        if (result.success) {
+                                            setClientPayment((prev: any) => prev ? {
+                                                ...prev,
+                                                includes_nutrition: renewIncludesNutrition || prev.includes_nutrition,
+                                                plan_type: renewPlanType,
+                                                plan_months: renewPlanMonths,
+                                            } : prev)
+                                            setShowRenewModal(false)
+                                            alert(`Подписка продлена до ${result.newEndDate ? new Date(result.newEndDate).toLocaleDateString('ru-RU') : '—'}`)
+                                        } else {
+                                            setRenewError(result.error ?? 'Ошибка продления')
+                                        }
+                                    } catch (e: any) {
+                                        setRenewError(e.message || 'Ошибка')
+                                    } finally {
+                                        setIsRenewing(false)
+                                    }
+                                }}
+                                disabled={isRenewing}
+                                className="glass-button flex-1 flex items-center justify-center gap-2"
+                            >
+                                {isRenewing
+                                    ? <><Loader2 className="w-4 h-4 animate-spin" />Продление...</>
+                                    : <><Check className="w-4 h-4" />Продлить</>
+                                }
+                            </button>
                         </div>
                     </div>
                 </div>
