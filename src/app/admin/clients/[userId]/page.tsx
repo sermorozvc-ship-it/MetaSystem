@@ -1141,17 +1141,17 @@ export default function AdminClientDetailPage() {
 
                 {/* Питание */}
                 {activeTab === 'nutrition' && (
-                    <div className="glass-card p-8">
+                    <div className="glass-card p-4 sm:p-8">
                         {nutritionQ ? (
                             <div className="space-y-6">
                                 {/* Шапка с кнопкой копирования */}
-                                <div className="flex items-center justify-between">
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                                     <div>
-                                        <h2 className="text-xl font-display font-bold text-white flex items-center gap-2">
-                                            <Apple className="w-5 h-5 text-accent" />
+                                        <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
+                                            <Apple className="w-5 h-5 text-accent flex-shrink-0" />
                                             Анкета питания
                                         </h2>
-                                        <p className="text-sm text-text-muted mt-1">
+                                        <p className="text-xs text-text-muted mt-1">
                                             Заполнена {new Date(nutritionQ.created_at).toLocaleDateString('ru-RU')}
                                             {nutritionQ.updated_at !== nutritionQ.created_at && (
                                                 <> · обновлена {new Date(nutritionQ.updated_at).toLocaleDateString('ru-RU')}</>
@@ -1168,7 +1168,7 @@ export default function AdminClientDetailPage() {
                                                 .then(() => alert('Анкета питания скопирована в буфер обмена'))
                                                 .catch(() => alert('Не удалось скопировать'))
                                         }}
-                                        className="glass-button-secondary flex items-center gap-2 text-sm"
+                                        className="glass-button-secondary flex items-center gap-2 text-sm self-start sm:self-auto"
                                     >
                                         <Copy className="w-4 h-4" />
                                         Скопировать анкету
