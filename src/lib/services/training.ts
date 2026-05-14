@@ -401,6 +401,67 @@ export async function getClientPrograms(userId: string): Promise<TrainingProgram
 }
 
 /**
+ * Получить все записи тренировок пользователя (для статистики прогресса)
+ * Возвращает записи вместе с данными программы (start_date, program_data)
+ */
+export async function getAllMyTrainingData(): Promise<{
+  programs: TrainingProgram[]
+  entries: TrainingEntry[]
+}> {
+  const supabase = createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const [programsRes, entriesRes] = await Promise.all([
+    supabase
+      .from('training_programs')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('week_number', { ascending: true }),
+    supabase
+      .from('training_entries')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true }),
+  ])
+
+  return {
+    programs: programsRes.data || [],
+    entries: entriesRes.data || [],
+  }
+}
+
+/**
+ * Получить все записи тренировок клиента (для админа, через service role)
+ */
+export async function getAllClientTrainingData(
+  userId: string,
+  supabaseAdmin: any
+): Promise<{
+  programs: TrainingProgram[]
+  entries: TrainingEntry[]
+}> {
+  const [programsRes, entriesRes] = await Promise.all([
+    supabaseAdmin
+      .from('training_programs')
+      .select('*')
+      .eq('user_id', userId)
+      .order('week_number', { ascending: true }),
+    supabaseAdmin
+      .from('training_entries')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true }),
+  ])
+
+  return {
+    programs: programsRes.data || [],
+    entries: entriesRes.data || [],
+  }
+}
+
+/**
  * Экспортировать программу в Markdown
  */
 export function exportProgramToMarkdown(program: TrainingProgram): string {

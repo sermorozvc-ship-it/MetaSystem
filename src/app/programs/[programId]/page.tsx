@@ -19,6 +19,7 @@ interface SetData {
     weight: string
     reps: string
     rir: string
+    setComment?: string
 }
 
 interface ExerciseClientData {
@@ -144,15 +145,15 @@ function ExerciseCard({
 
     const updateSet = (setIdx: number, field: keyof SetData, value: string) => {
         const newSets = [...data.sets]
-        while (newSets.length <= setIdx) newSets.push({ weight: '', reps: '', rir: '' })
+        while (newSets.length <= setIdx) newSets.push({ weight: '', reps: '', rir: '', setComment: '' })
         newSets[setIdx] = { ...newSets[setIdx], [field]: value }
         onChange({ ...data, sets: newSets })
     }
 
     const addSet = () => {
         const newSets = [...data.sets]
-        while (newSets.length < totalSets) newSets.push({ weight: '', reps: '', rir: '' })
-        newSets.push({ weight: '', reps: '', rir: '' })
+        while (newSets.length < totalSets) newSets.push({ weight: '', reps: '', rir: '', setComment: '' })
+        newSets.push({ weight: '', reps: '', rir: '', setComment: '' })
         onChange({ ...data, sets: newSets })
     }
 
@@ -212,21 +213,23 @@ function ExerciseCard({
                 <div className="px-5 pb-5">
                     {/* Таблица подходов */}
                     <div className="space-y-2">
-                        <div className="grid grid-cols-4 gap-2 text-xs text-text-muted px-1">
-                            <div>Подход</div>
+                        <div className="grid grid-cols-[auto_1fr_1fr_1fr_2fr] gap-2 text-xs text-text-muted px-1">
+                            <div className="min-w-[48px]">Подход</div>
                             <div>Вес (кг)</div>
                             <div>Повт.</div>
-                            <div>RIR</div>
+                            <div>RIR <span className="text-text-muted/60">(запас повт.)</span></div>
+                            <div>Комментарий</div>
                         </div>
 
                         {Array.from({ length: totalSets }).map((_, setIdx) => {
-                            const setData = data.sets[setIdx] || { weight: '', reps: '', rir: '' }
+                            const setData = data.sets[setIdx] || { weight: '', reps: '', rir: '', setComment: '' }
                             const plannedWeight = targetWeights[setIdx] ?? 0
                             const isExtra = setIdx >= plannedSets
 
                             return (
-                                <div key={setIdx} className="grid grid-cols-4 gap-2 items-center">
-                                    <div className="flex flex-col">
+                                <div key={setIdx} className="grid grid-cols-[auto_1fr_1fr_1fr_2fr] gap-2 items-center">
+                                    {/* Номер подхода */}
+                                    <div className="flex flex-col min-w-[48px]">
                                         <div className="flex items-center gap-1">
                                             <span className={`text-sm font-semibold ${isExtra ? 'text-accent' : 'text-white'}`}>
                                                 {setIdx + 1}
@@ -253,6 +256,13 @@ function ExerciseCard({
                                         onChange={e => updateSet(setIdx, 'rir', e.target.value)}
                                         className="glass-input text-sm py-2 px-3 text-center"
                                         placeholder="2" />
+                                    <input
+                                        type="text"
+                                        value={setData.setComment || ''}
+                                        onChange={e => updateSet(setIdx, 'setComment', e.target.value)}
+                                        className="glass-input text-sm py-2 px-3"
+                                        placeholder="Комментарий..."
+                                    />
                                 </div>
                             )
                         })}
@@ -615,9 +625,59 @@ export default function ProgramDetailPage() {
                     ))}
                 </div>
 
+                {/* Статистика сессии */}
+                {(() => {
+                    let totalTonnage = 0
+                    let totalSetsCount = 0
+                    let totalRepsCount = 0
+                    const exercisesWithData: string[] = []
+
+                    currentDay.exercises.forEach(ex => {
+                        const exData = exerciseData[ex.id]
+                        if (!exData?.sets?.length) return
+                        const filledSets = exData.sets.filter(s => s.weight || s.reps)
+                        if (filledSets.length === 0) return
+                        exercisesWithData.push(ex.id)
+                        filledSets.forEach(s => {
+                            const w = parseFloat(s.weight) || 0
+                            const r = parseInt(s.reps) || 0
+                            totalTonnage += w * r
+                            totalSetsCount += 1
+                            totalRepsCount += r
+                        })
+                    })
+
+                    if (exercisesWithData.length === 0) return null
+
+                    return (
+                        <div className="glass-card p-5 mb-5 border border-accent/20">
+                            <h3 className="text-base font-display font-bold text-white mb-4 flex items-center gap-2">
+                                <span className="text-accent">📊</span> Статистика сессии
+                            </h3>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                <div className="rounded-xl bg-bg-elevated p-3 text-center">
+                                    <p className="text-2xl font-display font-bold text-accent">{totalTonnage.toLocaleString('ru-RU')}</p>
+                                    <p className="text-xs text-text-muted mt-0.5">Тоннаж (кг)</p>
+                                </div>
+                                <div className="rounded-xl bg-bg-elevated p-3 text-center">
+                                    <p className="text-2xl font-display font-bold text-white">{exercisesWithData.length}</p>
+                                    <p className="text-xs text-text-muted mt-0.5">Упражнений</p>
+                                </div>
+                                <div className="rounded-xl bg-bg-elevated p-3 text-center">
+                                    <p className="text-2xl font-display font-bold text-white">{totalSetsCount}</p>
+                                    <p className="text-xs text-text-muted mt-0.5">Подходов</p>
+                                </div>
+                                <div className="rounded-xl bg-bg-elevated p-3 text-center">
+                                    <p className="text-2xl font-display font-bold text-white">{totalRepsCount}</p>
+                                    <p className="text-xs text-text-muted mt-0.5">Повторений</p>
+                                </div>
+                            </div>
+                        </div>
+                    )
+                })()}
+
                 {/* Кардио */}
-                {currentDay.cardio && (
-                    <div className="glass-card p-5 mb-5">
+                {currentDay.cardio && (                    <div className="glass-card p-5 mb-5">
                         <h3 className="text-base font-display font-bold text-white mb-1">Кардио</h3>
                         <p className="text-text-secondary text-sm">{currentDay.cardio}</p>
                     </div>

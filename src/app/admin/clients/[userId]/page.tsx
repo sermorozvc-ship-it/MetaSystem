@@ -19,6 +19,7 @@ import {
     type NutritionQuestionnaire,
 } from '@/lib/services/nutrition'
 import { getClientPrograms, type TrainingProgram, type TrainingEntry } from '@/lib/services/training'
+import ExerciseProgressView from '@/components/ExerciseProgressView'
 import { parseMdToJson, EXAMPLE_PROGRAM_MD } from '@/lib/utils/md-parser'
 import { type NutritionProgram } from '@/lib/services/nutrition-programs'
 import { parseNutritionMdToJson, EXAMPLE_NUTRITION_MD } from '@/lib/utils/nutrition-md-parser'
@@ -26,7 +27,7 @@ import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 
-type Tab = 'questionnaire' | 'nutrition' | 'programs' | 'nutrition_plans' | 'metrics'
+type Tab = 'questionnaire' | 'nutrition' | 'programs' | 'nutrition_plans' | 'metrics' | 'exercise_stats'
 
 // ─── Просмотр метрик клиента (для админа) ───────────────────────────────────
 function ClientMetricsView({ userId }: { userId: string }) {
@@ -274,6 +275,12 @@ function buildFilledMd(program: TrainingProgram, entries: TrainingEntry[]): stri
         if (day.coachNote) lines.push(`**Рекомендация дня:** ${day.coachNote}`)
         lines.push('')
 
+        // Статистика дня
+        let dayTonnage = 0
+        let dayExercisesCount = 0
+        let daySetsCount = 0
+        let dayRepsCount = 0
+
         for (const ex of day.exercises) {
             lines.push(`### ${ex.name}`)
             if (ex.videoUrl) lines.push(`[Видео](${ex.videoUrl})`)
@@ -286,19 +293,40 @@ function buildFilledMd(program: TrainingProgram, entries: TrainingEntry[]): stri
             if (clientData) {
                 // Новый формат — данные по подходам
                 if (clientData.sets && Array.isArray(clientData.sets)) {
-                    clientData.sets.forEach((s: any, i: number) => {
-                        const w = s.weight ? `${s.weight} кг` : '—'
-                        const r = s.reps ? `${s.reps} повт.` : '—'
-                        const rir = s.rir !== undefined && s.rir !== '' ? `RIR ${s.rir}` : ''
-                        lines.push(`- **Подход ${i + 1}:** ${w} × ${r}${rir ? ` • ${rir}` : ''}`)
-                    })
+                    const filledSets = clientData.sets.filter((s: any) => s.weight || s.reps)
+                    if (filledSets.length > 0) {
+                        dayExercisesCount++
+                        clientData.sets.forEach((s: any, i: number) => {
+                            const w = s.weight ? `${s.weight} кг` : '—'
+                            const r = s.reps ? `${s.reps} повт.` : '—'
+                            const rir = s.rir !== undefined && s.rir !== '' ? `RIR ${s.rir}` : ''
+                            const setLine = `- **Подход ${i + 1}:** ${w} × ${r}${rir ? ` • ${rir}` : ''}${s.setComment ? ` _(${s.setComment})_` : ''}`
+                            lines.push(setLine)
+                            // Считаем статистику
+                            const wNum = parseFloat(s.weight) || 0
+                            const rNum = parseInt(s.reps) || 0
+                            if (wNum || rNum) {
+                                dayTonnage += wNum * rNum
+                                daySetsCount++
+                                dayRepsCount += rNum
+                            }
+                        })
+                    } else {
+                        lines.push(`- **Факт:** не заполнено`)
+                    }
                 } else {
                     // Старый формат
                     const w = clientData.actualWeight ? `${clientData.actualWeight} кг` : '—'
                     const r = clientData.actualReps ? `${clientData.actualReps} повт.` : '—'
                     lines.push(`- **Факт:** ${w} × ${r}${clientData.rpe ? ` • RPE ${clientData.rpe}` : ''}`)
+                    if (clientData.actualWeight && clientData.actualReps) {
+                        dayExercisesCount++
+                        dayTonnage += (parseFloat(clientData.actualWeight) || 0) * (parseInt(clientData.actualReps) || 0)
+                        daySetsCount += ex.sets
+                        dayRepsCount += (parseInt(clientData.actualReps) || 0) * ex.sets
+                    }
                 }
-                if (clientData.comment) lines.push(`- **Комментарий:** ${clientData.comment}`)
+                if (clientData.comment) lines.push(`- **Комментарий к упражнению:** ${clientData.comment}`)
             } else {
                 lines.push(`- **Факт:** не заполнено`)
             }
@@ -306,6 +334,18 @@ function buildFilledMd(program: TrainingProgram, entries: TrainingEntry[]): stri
         }
 
         if (day.cardio) { lines.push(`**Кардио:** ${day.cardio}`); lines.push('') }
+
+        // Статистика сессии
+        if (dayExercisesCount > 0) {
+            lines.push(`### 📊 Статистика сессии`)
+            lines.push(`| Показатель | Значение |`)
+            lines.push(`|---|---|`)
+            lines.push(`| Общий тоннаж | **${dayTonnage.toLocaleString('ru-RU')} кг** |`)
+            lines.push(`| Упражнений | ${dayExercisesCount} |`)
+            lines.push(`| Подходов | ${daySetsCount} |`)
+            lines.push(`| Повторений | ${dayRepsCount} |`)
+            lines.push('')
+        }
 
         if (entry) {
             lines.push(`**Самочувствие:**`)
@@ -319,6 +359,51 @@ function buildFilledMd(program: TrainingProgram, entries: TrainingEntry[]): stri
         }
 
         lines.push(''); lines.push('---'); lines.push('')
+    }
+
+    // Итоговая статистика недели
+    const allEntries = [...entriesMap.values()]
+    let weekTonnage = 0
+    let weekExercises = 0
+    let weekSets = 0
+    let weekReps = 0
+
+    for (const day of days) {
+        const entry = entriesMap.get(day.dayNumber)
+        if (!entry) continue
+        for (const ex of day.exercises) {
+            const cd = entry.entry_data?.[ex.id]
+            if (!cd) continue
+            if (cd.sets && Array.isArray(cd.sets)) {
+                const filled = cd.sets.filter((s: any) => s.weight || s.reps)
+                if (filled.length > 0) {
+                    weekExercises++
+                    cd.sets.forEach((s: any) => {
+                        const w = parseFloat(s.weight) || 0
+                        const r = parseInt(s.reps) || 0
+                        if (w || r) { weekTonnage += w * r; weekSets++; weekReps += r }
+                    })
+                }
+            } else if (cd.actualWeight && cd.actualReps) {
+                weekExercises++
+                weekTonnage += (parseFloat(cd.actualWeight) || 0) * (parseInt(cd.actualReps) || 0)
+                weekSets += ex.sets
+                weekReps += (parseInt(cd.actualReps) || 0) * ex.sets
+            }
+        }
+    }
+
+    if (weekExercises > 0) {
+        lines.push(`## 📊 Итоговая статистика недели`)
+        lines.push('')
+        lines.push(`| Показатель | Значение |`)
+        lines.push(`|---|---|`)
+        lines.push(`| Общий тоннаж за неделю | **${weekTonnage.toLocaleString('ru-RU')} кг** |`)
+        lines.push(`| Всего упражнений | ${weekExercises} |`)
+        lines.push(`| Всего подходов | ${weekSets} |`)
+        lines.push(`| Всего повторений | ${weekReps} |`)
+        lines.push(`| Завершено тренировок | ${allEntries.filter(e => !!e.completed_at).length}/${days.length} |`)
+        lines.push('')
     }
 
     return lines.join('\n')
@@ -634,6 +719,7 @@ function ProgramCard({ program, onDelete, onUpdate }: {
                                                                         {cd.sets.map((s: any, i: number) => (
                                                                             <div key={i} className="text-xs text-accent">
                                                                                 Подход {i + 1}: {s.weight ? `${s.weight} кг` : '—'} × {s.reps ? `${s.reps} повт.` : '—'}{s.rir !== undefined && s.rir !== '' ? ` • RIR ${s.rir}` : ''}
+                                                                                {s.setComment && <span className="text-text-muted ml-1">— {s.setComment}</span>}
                                                                             </div>
                                                                         ))}
                                                                     </div>
@@ -654,12 +740,57 @@ function ProgramCard({ program, onDelete, onUpdate }: {
                                         </div>
 
                                         {entry && (
+                                            <>
+                                            {/* Статистика сессии */}
+                                            {(() => {
+                                                let tonnage = 0, setsCount = 0, repsCount = 0, exCount = 0
+                                                day.exercises.forEach(ex => {
+                                                    const cd = entry.entry_data?.[ex.id]
+                                                    if (!cd) return
+                                                    if (cd.sets && Array.isArray(cd.sets)) {
+                                                        const filled = cd.sets.filter((s: any) => s.weight || s.reps)
+                                                        if (filled.length > 0) {
+                                                            exCount++
+                                                            cd.sets.forEach((s: any) => {
+                                                                const w = parseFloat(s.weight) || 0
+                                                                const r = parseInt(s.reps) || 0
+                                                                if (w || r) { tonnage += w * r; setsCount++; repsCount += r }
+                                                            })
+                                                        }
+                                                    } else if (cd.actualWeight && cd.actualReps) {
+                                                        exCount++
+                                                        tonnage += (parseFloat(cd.actualWeight) || 0) * (parseInt(cd.actualReps) || 0)
+                                                        setsCount += ex.sets
+                                                        repsCount += (parseInt(cd.actualReps) || 0) * ex.sets
+                                                    }
+                                                })
+                                                if (exCount === 0) return null
+                                                return (
+                                                    <div className="mt-3 pt-3 border-t border-border/40">
+                                                        <p className="text-xs text-text-muted mb-2 font-semibold">📊 Статистика сессии</p>
+                                                        <div className="grid grid-cols-4 gap-2">
+                                                            {[
+                                                                { label: 'Тоннаж', value: `${tonnage.toLocaleString('ru-RU')} кг`, color: 'text-accent' },
+                                                                { label: 'Упражнений', value: exCount, color: 'text-white' },
+                                                                { label: 'Подходов', value: setsCount, color: 'text-white' },
+                                                                { label: 'Повторений', value: repsCount, color: 'text-white' },
+                                                            ].map(stat => (
+                                                                <div key={stat.label} className="rounded-lg bg-bg-main p-2 text-center">
+                                                                    <p className={`text-sm font-bold ${stat.color}`}>{stat.value}</p>
+                                                                    <p className="text-xs text-text-muted">{stat.label}</p>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })()}
                                             <div className="mt-3 pt-3 border-t border-border/40 flex flex-wrap gap-4 text-xs text-text-secondary">
                                                 <span>⚡ Энергия: <strong className="text-white">{entry.energy_level ?? '—'}/10</strong></span>
                                                 <span>😊 Настроение: <strong className="text-white">{entry.mood ?? '—'}/5</strong></span>
                                                 <span>🏋️ RPE: <strong className="text-white">{entry.sleep_quality ?? '—'}/10</strong></span>
                                                 {entry.notes && <span className="w-full text-text-muted">💬 {entry.notes}</span>}
                                             </div>
+                                            </>
                                         )}
 
                                         {!entry && (
@@ -971,6 +1102,52 @@ function NutritionPlanCard({ plan, onDelete, onUpdate }: {
             </div>
         )}
         </>
+    )
+}
+
+// ─── Прогресс упражнений для админа ─────────────────────────────────────────
+function AdminExerciseStats({ userId }: { userId: string }) {
+    const [programs, setPrograms] = useState<TrainingProgram[]>([])
+    const [entries, setEntries] = useState<TrainingEntry[]>([])
+    const [loading, setLoading] = useState(true)
+
+    useEffect(() => {
+        const load = async () => {
+            try {
+                const { createClient: createDirectClient } = await import('@supabase/supabase-js')
+                const db = createDirectClient(
+                    'https://bzyypoyvihqhrbllgffh.supabase.co',
+                    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
+                    { auth: { persistSession: false } }
+                )
+                const [progsRes, entriesRes] = await Promise.all([
+                    db.from('training_programs').select('*').eq('user_id', userId).order('week_number', { ascending: true }),
+                    db.from('training_entries').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
+                ])
+                setPrograms(progsRes.data || [])
+                setEntries(entriesRes.data || [])
+            } catch (e) {
+                console.error('AdminExerciseStats load error:', e)
+            } finally {
+                setLoading(false)
+            }
+        }
+        load()
+    }, [userId])
+
+    if (loading) return (
+        <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 text-accent animate-spin" />
+        </div>
+    )
+
+    return (
+        <div>
+            <h2 className="text-lg font-display font-bold text-white mb-4">
+                📊 Прогресс упражнений
+            </h2>
+            <ExerciseProgressView programs={programs} entries={entries} />
+        </div>
     )
 }
 
@@ -1372,7 +1549,7 @@ export default function AdminClientDetailPage() {
 
                 {/* Tabs */}
                 <div className="-mx-4 px-4 flex gap-2 mb-6 overflow-x-auto pb-1" style={{scrollbarWidth: 'none'}}>
-                    {(['questionnaire', 'nutrition', 'programs', 'nutrition_plans', 'metrics'] as Tab[]).map(tab => {
+                    {(['questionnaire', 'nutrition', 'programs', 'nutrition_plans', 'metrics', 'exercise_stats'] as Tab[]).map(tab => {
                         if (tab === 'nutrition' && !nutritionAccess) return null
                         return (
                             <button
@@ -1387,6 +1564,7 @@ export default function AdminClientDetailPage() {
                                 {tab === 'programs' && <><Dumbbell className="w-4 h-4 inline mr-1" />Программы</>}
                                 {tab === 'nutrition_plans' && <><Apple className="w-4 h-4 inline mr-1" />Планы питания</>}
                                 {tab === 'metrics' && <><TrendingUp className="w-4 h-4 inline mr-1" />Метрики</>}
+                                {tab === 'exercise_stats' && <>📊 Прогресс</>}
                             </button>
                         )
                     })}
@@ -1394,88 +1572,236 @@ export default function AdminClientDetailPage() {
 
                 {/* Анкета */}
                 {activeTab === 'questionnaire' && (
-                    <div className="glass-card p-8">
+                    <div className="glass-card p-4 sm:p-8">
                         {questionnaire ? (
                             <div className="space-y-8">
 
-                                {/* Кнопка копирования */}
-                                <div className="flex justify-end">
+                                {/* Шапка: дата + кнопка копирования */}
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                    <div>
+                                        <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
+                                            <FileText className="w-5 h-5 text-accent flex-shrink-0" />
+                                            Анкета тренировок
+                                        </h2>
+                                        <p className="text-xs text-text-muted mt-1">
+                                            Заполнена {new Date(questionnaire.created_at).toLocaleDateString('ru-RU')}
+                                        </p>
+                                    </div>
                                     <button
-                                        onClick={() => {
-                                            const q = questionnaire
-                                            const expMap: Record<string, string> = { beginner: 'Новичок (менее 6 мес)', intermediate: 'Средний (6 мес – 2 года)', advanced: 'Продвинутый (более 2 лет)' }
-                                            const actMap: Record<string, string> = { sedentary: 'Сидячий', light: 'Лёгкая активность', moderate: 'Умеренная', high: 'Высокая' }
-                                            const lines = [
-                                                `👤 АНКЕТА КЛИЕНТА: ${clientProfile?.full_name || '—'} (${clientProfile?.email || '—'})`,
-                                                `Дата заполнения: ${new Date(q.created_at).toLocaleDateString('ru-RU')}`,
-                                                '',
-                                                '📋 ОСНОВНАЯ ИНФОРМАЦИЯ',
-                                                `Возраст: ${q.age || '—'}`,
-                                                `Пол: ${q.gender === 'male' ? 'Мужской' : q.gender === 'female' ? 'Женский' : '—'}`,
-                                                `Рост: ${q.height_cm ? q.height_cm + ' см' : '—'}`,
-                                                `Вес: ${q.weight_kg ? q.weight_kg + ' кг' : '—'}`,
-                                                '',
-                                                '🎯 ЦЕЛИ И ОПЫТ',
-                                                `Цель: ${q.goal || '—'}`,
-                                                `Опыт тренировок: ${expMap[q.training_experience || ''] || q.training_experience || '—'}`,
-                                                `Дней тренировок: ${q.preferred_training_days ? q.preferred_training_days + ' дней/нед' : '—'}`,
-                                                `Место тренировок: ${q.available_equipment?.join(', ') || '—'}`,
-                                                '',
-                                                '❤️ ЗДОРОВЬЕ И ОБРАЗ ЖИЗНИ',
-                                                `Травмы/ограничения: ${q.injuries || 'нет'}`,
-                                                `Хронические заболевания: ${q.health_conditions || 'нет'}`,
-                                                `Сон: ${q.sleep_hours_avg ? q.sleep_hours_avg + ' ч' : '—'}`,
-                                                `Уровень стресса: ${q.stress_level ? q.stress_level + '/10' : '—'}`,
-                                                `Уровень активности: ${actMap[q.activity_level || ''] || q.activity_level || '—'}`,
-                                                ...(q.waist_cm || q.hips_cm || q.chest_cm || q.arm_cm || q.thigh_cm ? [
-                                                    '',
-                                                    '📏 НАЧАЛЬНЫЕ ЗАМЕРЫ',
-                                                    ...(q.waist_cm ? [`Талия: ${q.waist_cm} см`] : []),
-                                                    ...(q.hips_cm ? [`Бёдра: ${q.hips_cm} см`] : []),
-                                                    ...(q.chest_cm ? [`Грудь: ${q.chest_cm} см`] : []),
-                                                    ...(q.arm_cm ? [`Рука: ${q.arm_cm} см`] : []),
-                                                    ...(q.thigh_cm ? [`Бедро: ${q.thigh_cm} см`] : []),
-                                                ] : []),
-                                                ...(q.additional_notes ? ['', '💬 ДОПОЛНИТЕЛЬНО', q.additional_notes] : []),
-                                            ]
-                                            navigator.clipboard.writeText(lines.join('\n'))
-                                                .then(() => alert('Данные скопированы в буфер обмена'))
+                                        onClick={async () => {
+                                            const { formatQuestionnaireForAdmin } = await import('@/lib/services/questionnaire')
+                                            const text = formatQuestionnaireForAdmin(questionnaire, {
+                                                full_name: clientProfile?.full_name,
+                                                email: clientProfile?.email,
+                                            })
+                                            navigator.clipboard.writeText(text)
+                                                .then(() => alert('Анкета скопирована в буфер обмена'))
                                                 .catch(() => alert('Не удалось скопировать'))
                                         }}
-                                        className="glass-button-secondary flex items-center gap-2 text-sm"
+                                        className="glass-button-secondary flex items-center gap-2 text-sm self-start sm:self-auto"
                                     >
-                                        📋 Скопировать анкету
+                                        <Copy className="w-4 h-4" />
+                                        Скопировать анкету
                                     </button>
                                 </div>
                                 <div>
-                                    <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Основная информация</h3>
-                                    <div className="grid md:grid-cols-2 gap-4">
-                                        <div><label className="text-xs text-text-muted">Возраст</label><p className="text-white font-semibold">{questionnaire.age || '—'}</p></div>
-                                        <div><label className="text-xs text-text-muted">Пол</label><p className="text-white font-semibold">{questionnaire.gender === 'male' ? 'Мужской' : questionnaire.gender === 'female' ? 'Женский' : '—'}</p></div>
-                                        <div><label className="text-xs text-text-muted">Рост</label><p className="text-white font-semibold">{questionnaire.height_cm ? `${questionnaire.height_cm} см` : '—'}</p></div>
-                                        <div><label className="text-xs text-text-muted">Вес</label><p className="text-white font-semibold">{questionnaire.weight_kg ? `${questionnaire.weight_kg} кг` : '—'}</p></div>
+                                    <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Блок 1 · Основные данные</h3>
+                                    <div className="grid md:grid-cols-3 gap-4">
+                                        <div><p className="text-xs text-text-muted">Имя</p><p className="text-white font-semibold">{questionnaire.full_name || clientProfile?.full_name || '—'}</p></div>
+                                        <div><p className="text-xs text-text-muted">Возраст</p><p className="text-white font-semibold">{questionnaire.age || '—'}</p></div>
+                                        <div><p className="text-xs text-text-muted">Пол</p><p className="text-white font-semibold">{questionnaire.gender === 'male' ? 'Мужской' : questionnaire.gender === 'female' ? 'Женский' : '—'}</p></div>
+                                        <div><p className="text-xs text-text-muted">Вес</p><p className="text-white font-semibold">{questionnaire.weight_kg ? `${questionnaire.weight_kg} кг` : '—'}</p></div>
+                                        <div><p className="text-xs text-text-muted">Рост</p><p className="text-white font-semibold">{questionnaire.height_cm ? `${questionnaire.height_cm} см` : '—'}</p></div>
+                                        {questionnaire.gender === 'female' && (
+                                            <div><p className="text-xs text-text-muted">Цикл</p><p className="text-white text-sm">{
+                                                questionnaire.female_cycle === 'regular' ? 'Регулярный' :
+                                                questionnaire.female_cycle === 'hormonal' ? 'Гормональные контрацептивы' :
+                                                questionnaire.female_cycle === 'irregular' ? 'Нерегулярный / отсутствует' :
+                                                questionnaire.female_cycle === 'menopause' ? 'Менопауза / перименопауза' : '—'
+                                            }</p></div>
+                                        )}
                                     </div>
                                 </div>
 
-                                {/* Цели и опыт */}
+                                {/* Блок 2: Цель */}
                                 <div>
-                                    <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Цели и опыт</h3>
+                                    <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Блок 2 · Цель</h3>
                                     <div className="space-y-3">
-                                        <div><label className="text-xs text-text-muted">Цель</label><p className="text-white">{questionnaire.goal || '—'}</p></div>
-                                        <div><label className="text-xs text-text-muted">Опыт тренировок</label>
-                                            <p className="text-white">{
-                                                questionnaire.training_experience === 'beginner' ? 'Новичок (менее 6 мес)' :
-                                                questionnaire.training_experience === 'intermediate' ? 'Средний (6 мес – 2 года)' :
-                                                questionnaire.training_experience === 'advanced' ? 'Продвинутый (более 2 лет)' :
+                                        <div><p className="text-xs text-text-muted">Главная цель</p><p className="text-white font-semibold">{
+                                            questionnaire.goal === 'muscle_gain' ? 'Набор мышечной массы' :
+                                            questionnaire.goal === 'fat_loss' ? 'Похудение / снижение % жира' :
+                                            questionnaire.goal === 'strength' ? 'Развитие силы' :
+                                            questionnaire.goal === 'general_fitness' ? 'Улучшение общей физической формы' :
+                                            questionnaire.goal === 'competition' ? 'Подготовка к соревнованиям' :
+                                            questionnaire.goal === 'rehabilitation' ? 'Реабилитация и восстановление' :
+                                            questionnaire.goal || '—'
+                                        }</p></div>
+                                        {questionnaire.goal_deadline && (
+                                            <div><p className="text-xs text-text-muted">Дата / событие</p><p className="text-white">{questionnaire.goal_deadline}</p></div>
+                                        )}
+                                        {questionnaire.goal_motivation && (
+                                            <div>
+                                                <p className="text-xs text-text-muted mb-1">Важность результата</p>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex-1 h-2 bg-bg-elevated rounded-full overflow-hidden">
+                                                        <div className="h-full bg-accent rounded-full" style={{ width: `${(questionnaire.goal_motivation / 10) * 100}%` }} />
+                                                    </div>
+                                                    <span className="text-white font-bold text-sm w-8">{questionnaire.goal_motivation}/10</span>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Блок 3: Тренировочный опыт */}
+                                <div>
+                                    <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Блок 3 · Тренировочный опыт</h3>
+                                    <div className="space-y-3">
+                                        <div className="grid md:grid-cols-2 gap-4">
+                                            <div><p className="text-xs text-text-muted">Стаж тренировок</p><p className="text-white">{
+                                                questionnaire.training_experience === 'none' ? 'Никогда / перерыв > года' :
+                                                questionnaire.training_experience === 'under_1' ? 'До 1 года' :
+                                                questionnaire.training_experience === '1_3' ? '1–3 года' :
+                                                questionnaire.training_experience === 'over_3' ? 'Более 3 лет' :
                                                 questionnaire.training_experience || '—'
-                                            }</p>
+                                            }</p></div>
+                                            <div><p className="text-xs text-text-muted">Уровень подготовки</p><p className="text-white">{
+                                                questionnaire.fitness_level === 'beginner' ? 'Новичок' :
+                                                questionnaire.fitness_level === 'intermediate' ? 'Средний' :
+                                                questionnaire.fitness_level === 'advanced' ? 'Продвинутый' :
+                                                questionnaire.fitness_level || '—'
+                                            }</p></div>
+                                            <div><p className="text-xs text-text-muted">Перерывы за год</p><p className="text-white">{
+                                                questionnaire.training_breaks === 'none' ? 'Нет, стабильно' :
+                                                questionnaire.training_breaks === '1_3' ? 'Перерыв 1–3 мес' :
+                                                questionnaire.training_breaks === 'over_3' ? 'Перерыв > 3 мес' :
+                                                questionnaire.training_breaks || '—'
+                                            }</p></div>
                                         </div>
-                                        <div><label className="text-xs text-text-muted">Дней тренировок в неделю</label><p className="text-white font-semibold">{questionnaire.preferred_training_days ? `${questionnaire.preferred_training_days} дней` : '—'}</p></div>
-                                        {questionnaire.available_equipment && questionnaire.available_equipment.length > 0 && (
-                                            <div><label className="text-xs text-text-muted">Оборудование</label>
-                                                <div className="flex flex-wrap gap-2 mt-1">
-                                                    {questionnaire.available_equipment.map(eq => (
-                                                        <span key={eq} className="px-2 py-0.5 rounded-full bg-accent/20 text-accent text-xs">{eq}</span>
+                                        {questionnaire.previous_training_types && questionnaire.previous_training_types.length > 0 && (
+                                            <div>
+                                                <p className="text-xs text-text-muted mb-2">Виды тренировок раньше</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {questionnaire.previous_training_types.map(t => (
+                                                        <span key={t} className="px-2 py-0.5 rounded-full bg-accent/20 text-accent text-xs">{
+                                                            t === 'weights' ? 'Силовые' : t === 'machines' ? 'Тренажёры' :
+                                                            t === 'crossfit' ? 'Кроссфит' : t === 'cardio' ? 'Кардио' :
+                                                            t === 'martial_arts' ? 'Единоборства' : t === 'none' ? 'Ничего' : t
+                                                        }</span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {questionnaire.previous_program && (
+                                            <div><p className="text-xs text-text-muted">Предыдущая программа</p><p className="text-white bg-bg-elevated p-3 rounded-xl text-sm">{questionnaire.previous_program}</p></div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Блок 4: Показатели силы */}
+                                {(questionnaire.strength_squat || questionnaire.strength_bench || questionnaire.strength_deadlift || questionnaire.strength_pullups !== undefined || questionnaire.strength_pushups !== undefined) && (
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Блок 4 · Текущие показатели силы</h3>
+                                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                                            {[
+                                                { label: 'Присед', value: questionnaire.strength_squat, unit: 'кг' },
+                                                { label: 'Жим лёжа', value: questionnaire.strength_bench, unit: 'кг' },
+                                                { label: 'Становая', value: questionnaire.strength_deadlift, unit: 'кг' },
+                                                { label: 'Подтягивания', value: questionnaire.strength_pullups, unit: 'раз' },
+                                                { label: 'Отжимания', value: questionnaire.strength_pushups, unit: 'раз' },
+                                            ].map(({ label, value, unit }) => (
+                                                <div key={label} className="text-center p-3 rounded-xl bg-bg-elevated">
+                                                    <p className="text-xs text-text-muted mb-1">{label}</p>
+                                                    <p className="text-xl font-display font-bold text-accent">{value ?? '—'}</p>
+                                                    {value !== undefined && value !== null && <p className="text-xs text-text-muted">{unit}</p>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Блок 5: Условия тренировок */}
+                                <div>
+                                    <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Блок 5 · Условия тренировок</h3>
+                                    <div className="grid md:grid-cols-2 gap-4">
+                                        <div><p className="text-xs text-text-muted">Место тренировок</p><p className="text-white">{
+                                            questionnaire.training_location === 'gym' ? 'Тренажёрный зал' :
+                                            questionnaire.training_location === 'home_equipment' ? 'Дома с оборудованием' :
+                                            questionnaire.training_location === 'home_bodyweight' ? 'Дома без оборудования' :
+                                            questionnaire.training_location === 'mixed' ? 'Смешанно (зал + дома)' :
+                                            questionnaire.training_location || '—'
+                                        }</p></div>
+                                        {questionnaire.home_equipment && (
+                                            <div><p className="text-xs text-text-muted">Оборудование дома</p><p className="text-white">{questionnaire.home_equipment}</p></div>
+                                        )}
+                                        <div><p className="text-xs text-text-muted">Дней в неделю</p><p className="text-white font-bold text-lg">{questionnaire.preferred_training_days ?? '—'}</p></div>
+                                        <div><p className="text-xs text-text-muted">Длительность тренировки</p><p className="text-white">{
+                                            questionnaire.session_duration === 'under_45' ? 'До 45 минут' :
+                                            questionnaire.session_duration === '45_60' ? '45–60 минут' :
+                                            questionnaire.session_duration === '60_90' ? '60–90 минут' :
+                                            questionnaire.session_duration === 'over_90' ? 'Более 90 минут' :
+                                            questionnaire.session_duration || '—'
+                                        }</p></div>
+                                        <div><p className="text-xs text-text-muted">Время тренировок</p><p className="text-white">{
+                                            questionnaire.training_time === 'morning' ? 'Утро (6:00–10:00)' :
+                                            questionnaire.training_time === 'day' ? 'День (10:00–16:00)' :
+                                            questionnaire.training_time === 'evening' ? 'Вечер (16:00–21:00)' :
+                                            questionnaire.training_time === 'varies' ? 'По-разному' :
+                                            questionnaire.training_time || '—'
+                                        }</p></div>
+                                    </div>
+                                </div>
+
+                                {/* Блок 6: Здоровье */}
+                                <div>
+                                    <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Блок 6 · Здоровье и ограничения</h3>
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`w-2 h-2 rounded-full ${questionnaire.has_injuries ? 'bg-danger' : 'bg-success'}`} />
+                                            <p className="text-white text-sm">{questionnaire.has_injuries ? 'Есть травмы / боли' : 'Травм нет'}</p>
+                                        </div>
+                                        {questionnaire.has_injuries && (
+                                            <>
+                                                {questionnaire.injury_zones && questionnaire.injury_zones.length > 0 && (
+                                                    <div>
+                                                        <p className="text-xs text-text-muted mb-2">Зоны</p>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {questionnaire.injury_zones.map(z => (
+                                                                <span key={z} className="px-2 py-0.5 rounded-full bg-danger/20 text-danger text-xs">{
+                                                                    z === 'lower_back' ? 'Поясница' : z === 'knees' ? 'Колени' :
+                                                                    z === 'shoulders' ? 'Плечи' : z === 'neck' ? 'Шея' :
+                                                                    z === 'elbows' ? 'Локти / запястья' : z === 'hips' ? 'Тазобедренный' : z
+                                                                }</span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {questionnaire.injuries && (
+                                                    <div><p className="text-xs text-text-muted">Описание</p><p className="text-white bg-bg-elevated p-3 rounded-xl text-sm">{questionnaire.injuries}</p></div>
+                                                )}
+                                                <div><p className="text-xs text-text-muted">Влияние на тренировки</p><p className="text-white">{
+                                                    questionnaire.injury_impact === 'mild' ? 'Лёгкий дискомфорт' :
+                                                    questionnaire.injury_impact === 'avoid' ? 'Избегаю упражнений' :
+                                                    questionnaire.injury_impact === 'severe' ? 'Серьёзно ограничивает' :
+                                                    questionnaire.injury_impact || '—'
+                                                }</p></div>
+                                            </>
+                                        )}
+                                        <div className="grid md:grid-cols-2 gap-4">
+                                            <div><p className="text-xs text-text-muted">Операции</p><p className="text-white">{questionnaire.surgeries || '—'}</p></div>
+                                            <div><p className="text-xs text-text-muted">Препараты</p><p className="text-white">{questionnaire.medications || '—'}</p></div>
+                                        </div>
+                                        {questionnaire.chronic_conditions && questionnaire.chronic_conditions.length > 0 && !questionnaire.chronic_conditions.includes('none') && (
+                                            <div>
+                                                <p className="text-xs text-text-muted mb-2">Хронические заболевания</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {questionnaire.chronic_conditions.map(c => (
+                                                        <span key={c} className="px-2 py-0.5 rounded-full bg-warning/20 text-warning text-xs">{
+                                                            c === 'cardiovascular' ? 'Сердечно-сосудистые' :
+                                                            c === 'diabetes' ? 'Диабет / обмен веществ' :
+                                                            c === 'hypertension' ? 'Гипертония' :
+                                                            c === 'spine' ? 'Позвоночник (грыжа, сколиоз)' : c
+                                                        }</span>
                                                     ))}
                                                 </div>
                                             </div>
@@ -1483,27 +1809,67 @@ export default function AdminClientDetailPage() {
                                     </div>
                                 </div>
 
-                                {/* Здоровье и образ жизни */}
+                                {/* Блок 7: Восстановление */}
                                 <div>
-                                    <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Здоровье и образ жизни</h3>
+                                    <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Блок 7 · Восстановление и образ жизни</h3>
                                     <div className="grid md:grid-cols-2 gap-4">
-                                        <div><label className="text-xs text-text-muted">Травмы/ограничения</label><p className="text-white">{questionnaire.injuries || '—'}</p></div>
-                                        <div><label className="text-xs text-text-muted">Хронические заболевания</label><p className="text-white">{questionnaire.health_conditions || '—'}</p></div>
-                                        <div><label className="text-xs text-text-muted">Сон (часов)</label><p className="text-white font-semibold">{questionnaire.sleep_hours_avg ? `${questionnaire.sleep_hours_avg} ч` : '—'}</p></div>
-                                        <div><label className="text-xs text-text-muted">Уровень стресса</label><p className="text-white font-semibold">{questionnaire.stress_level ? `${questionnaire.stress_level}/10` : '—'}</p></div>
-                                        <div><label className="text-xs text-text-muted">Уровень активности</label>
-                                            <p className="text-white">{
-                                                questionnaire.activity_level === 'sedentary' ? 'Сидячий' :
-                                                questionnaire.activity_level === 'light' ? 'Лёгкая активность' :
-                                                questionnaire.activity_level === 'moderate' ? 'Умеренная' :
-                                                questionnaire.activity_level === 'high' ? 'Высокая' :
-                                                questionnaire.activity_level || '—'
-                                            }</p>
+                                        <div><p className="text-xs text-text-muted">Сон</p><p className="text-white font-semibold">{questionnaire.sleep_hours_avg ? `${questionnaire.sleep_hours_avg} ч` : '—'}</p></div>
+                                        <div><p className="text-xs text-text-muted">Качество сна</p><p className="text-white">{
+                                            questionnaire.sleep_quality === 'good' ? 'Хорошее' :
+                                            questionnaire.sleep_quality === 'hard_to_fall' ? 'Проблемы с засыпанием' :
+                                            questionnaire.sleep_quality === 'wake_up' ? 'Часто просыпаюсь' :
+                                            questionnaire.sleep_quality === 'bad' ? 'Плохой регулярно' :
+                                            questionnaire.sleep_quality || '—'
+                                        }</p></div>
+                                        <div><p className="text-xs text-text-muted">Стресс</p><p className="text-white">{
+                                            String(questionnaire.stress_level) === 'low' ? 'Низкий' :
+                                            String(questionnaire.stress_level) === 'medium' ? 'Средний' :
+                                            String(questionnaire.stress_level) === 'high' ? 'Высокий' :
+                                            questionnaire.stress_level ? String(questionnaire.stress_level) : '—'
+                                        }</p></div>
+                                        <div><p className="text-xs text-text-muted">Деятельность</p><p className="text-white">{
+                                            questionnaire.activity_level === 'sedentary' ? 'Сидячая' :
+                                            questionnaire.activity_level === 'mixed' ? 'Смешанная' :
+                                            questionnaire.activity_level === 'active' ? 'Активная' :
+                                            questionnaire.activity_level === 'physical' ? 'Физически тяжёлая' :
+                                            questionnaire.activity_level || '—'
+                                        }</p></div>
+                                    </div>
+                                    {questionnaire.supplements && questionnaire.supplements.length > 0 && !questionnaire.supplements.includes('none') && (
+                                        <div className="mt-3">
+                                            <p className="text-xs text-text-muted mb-2">Спортивное питание</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {questionnaire.supplements.map(s => (
+                                                    <span key={s} className="px-2 py-0.5 rounded-full bg-info/20 text-info text-xs">{
+                                                        s === 'protein' ? 'Протеин' : s === 'creatine' ? 'Креатин' :
+                                                        s === 'vitamins' ? 'Витамины / омега-3' : s
+                                                    }</span>
+                                                ))}
+                                            </div>
                                         </div>
+                                    )}
+                                </div>
+
+                                {/* Блок 8: Дополнительно */}
+                                <div>
+                                    <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Блок 8 · Дополнительно</h3>
+                                    <div className="space-y-3">
+                                        <div><p className="text-xs text-text-muted">Питание</p><p className="text-white">{
+                                            questionnaire.nutrition_style === 'healthy' ? 'Стараюсь питаться правильно' :
+                                            questionnaire.nutrition_style === 'chaotic' ? 'Питаюсь хаотично' :
+                                            questionnaire.nutrition_style === 'tracking' ? 'Слежу за калориями и белком' :
+                                            questionnaire.nutrition_style === 'restricted' ? 'Есть ограничения (вегетарианство, аллергии)' :
+                                            questionnaire.nutrition_style || '—'
+                                        }</p></div>
+                                        {questionnaire.additional_notes && (
+                                            <div><p className="text-xs text-text-muted">Дополнительная информация</p>
+                                                <p className="text-white bg-bg-elevated p-4 rounded-xl text-sm">{questionnaire.additional_notes}</p>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
-                                {/* Замеры */}
+                                {/* Начальные замеры */}
                                 {(questionnaire.waist_cm || questionnaire.hips_cm || questionnaire.chest_cm || questionnaire.arm_cm || questionnaire.thigh_cm) && (
                                     <div>
                                         <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Начальные замеры</h3>
@@ -1525,15 +1891,51 @@ export default function AdminClientDetailPage() {
                                     </div>
                                 )}
 
-                                {/* Доп. информация */}
-                                {questionnaire.additional_notes && (
+                                {/* Стартовые фото */}
+                                {(questionnaire.photo_front || questionnaire.photo_side || questionnaire.photo_back) && (
                                     <div>
-                                        <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Дополнительно</h3>
-                                        <p className="text-white bg-bg-elevated p-4 rounded-xl">{questionnaire.additional_notes}</p>
+                                        <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Стартовые фото</h3>
+                                        <div className="grid grid-cols-3 gap-4">
+                                            {[
+                                                { label: 'Спереди', url: questionnaire.photo_front },
+                                                { label: 'Сбоку', url: questionnaire.photo_side },
+                                                { label: 'Сзади', url: questionnaire.photo_back },
+                                            ].map(({ label, url }) => url ? (
+                                                <div key={label} className="text-center">
+                                                    <p className="text-xs text-text-muted mb-2">{label}</p>
+                                                    <a href={url} target="_blank" rel="noopener noreferrer">
+                                                        <img src={url} alt={label}
+                                                            className="w-full h-64 object-contain rounded-xl bg-bg-elevated hover:opacity-90 transition-opacity cursor-pointer" />
+                                                    </a>
+                                                </div>
+                                            ) : null)}
+                                        </div>
                                     </div>
                                 )}
 
-                                {/* Фото */}
+                                {/* Начальные замеры */}
+                                {(questionnaire.waist_cm || questionnaire.hips_cm || questionnaire.chest_cm || questionnaire.arm_cm || questionnaire.thigh_cm) && (
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Начальные замеры</h3>
+                                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                                            {[
+                                                { label: 'Талия', value: questionnaire.waist_cm },
+                                                { label: 'Бёдра', value: questionnaire.hips_cm },
+                                                { label: 'Грудь', value: questionnaire.chest_cm },
+                                                { label: 'Рука', value: questionnaire.arm_cm },
+                                                { label: 'Бедро', value: questionnaire.thigh_cm },
+                                            ].map(({ label, value }) => value ? (
+                                                <div key={label} className="text-center p-3 rounded-xl bg-bg-elevated">
+                                                    <p className="text-xs text-text-muted mb-1">{label}</p>
+                                                    <p className="text-lg font-display font-bold text-white">{value}</p>
+                                                    <p className="text-xs text-text-muted">см</p>
+                                                </div>
+                                            ) : null)}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Стартовые фото */}
                                 {(questionnaire.photo_front || questionnaire.photo_side || questionnaire.photo_back) && (
                                     <div>
                                         <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Стартовые фото</h3>
@@ -1819,6 +2221,11 @@ export default function AdminClientDetailPage() {
                 {/* Метрики */}
                 {activeTab === 'metrics' && (
                     <ClientMetricsView userId={userId} />
+                )}
+
+                {/* Прогресс упражнений */}
+                {activeTab === 'exercise_stats' && (
+                    <AdminExerciseStats userId={userId} />
                 )}            </div>
 
             {/* Модал загрузки программы */}
