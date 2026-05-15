@@ -52,20 +52,30 @@ export async function createNotification(
 
     if (error) throw error
 
-    // Отправляем Web Push параллельно (не блокируем если не получится)
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || ''
-      if (baseUrl) {
-        fetch(`${baseUrl}/api/push/send`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-          },
-          body: JSON.stringify({ userId, title, body: message, url: link }),
-        }).catch(() => {}) // fire-and-forget
-      }
-    } catch {}
+    // Отправляем Web Push параллельно (fire-and-forget, не блокируем основной поток).
+    // - На сервере (webhook'и, API routes): шлём напрямую через push-server (без HTTP).
+    // - На клиенте: шлём через /api/push/send, который авторизуется по cookie-сессии
+    //   и пушит ТОЛЬКО текущему пользователю — поэтому fetch имеет смысл лишь когда
+    //   уведомление адресовано самому себе.
+    if (typeof window === 'undefined') {
+      // Серверный путь — динамический импорт, чтобы webpush не попал в клиентский бандл
+      import('./push-server')
+        .then(({ sendPushToUser }) => sendPushToUser(userId, title, message, link || '/dashboard'))
+        .catch((e) => console.warn('[Notifications] server push failed:', e))
+    } else {
+      try {
+        const supabaseClient = createClient()
+        const { data: { user } } = await supabaseClient.auth.getUser()
+        if (user && user.id === userId) {
+          fetch('/api/push/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ title, body: message, url: link }),
+          }).catch(() => {})
+        }
+      } catch {}
+    }
 
     return { notification: data, error: null }
   } catch (e: any) {

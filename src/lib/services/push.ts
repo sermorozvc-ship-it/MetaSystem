@@ -135,28 +135,3 @@ export async function isPushSubscribed(): Promise<boolean> {
     return false
   }
 }
-
-/**
- * Отправить push конкретному пользователю (вызывается с сервера)
- * Используется внутри API routes и server actions
- */
-export async function sendPushToUser(
-  userId: string,
-  title: string,
-  body: string,
-  url?: string
-): Promise<void> {
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    await fetch(`${baseUrl}/api/push/send`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-      body: JSON.stringify({ userId, title, body, url }),
-    })
-  } catch (e) {
-    console.error('[Push] sendPushToUser error:', e)
-  }
-}

@@ -1,5 +1,5 @@
 // MetaSystem Service Worker — Web Push Notifications
-// v2.0
+// v2.1
 
 self.addEventListener('install', (event) => {
   self.skipWaiting()
@@ -11,26 +11,36 @@ self.addEventListener('activate', (event) => {
 
 // Получение push-уведомления
 self.addEventListener('push', (event) => {
-  if (!event.data) return
-
   let data = {}
-  try {
-    data = event.data.json()
-  } catch {
-    data = { title: 'MetaSystem', body: event.data.text() }
+  if (event.data) {
+    try {
+      data = event.data.json()
+    } catch {
+      try {
+        data = { title: 'MetaSystem', body: event.data.text() }
+      } catch {
+        data = {}
+      }
+    }
   }
 
   const title = data.title || 'MetaSystem'
   const options = {
     body: data.body || '',
-    icon: '/icons/icon-192x192.png',
-    badge: '/icons/badge-72x72.png',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
     data: { url: data.url || '/dashboard' },
     vibrate: [100, 50, 100],
     requireInteraction: false,
+    tag: data.tag || 'metasystem-notification',
+    renotify: true,
   }
 
-  event.waitUntil(self.registration.showNotification(title, options))
+  event.waitUntil(
+    self.registration.showNotification(title, options).catch((err) => {
+      console.error('[SW] showNotification failed:', err)
+    })
+  )
 })
 
 // Клик по уведомлению — открываем нужную страницу
@@ -45,7 +55,9 @@ self.addEventListener('notificationclick', (event) => {
       for (const client of clients) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
           client.focus()
-          client.navigate(url)
+          if ('navigate' in client) {
+            try { client.navigate(url) } catch {}
+          }
           return
         }
       }
