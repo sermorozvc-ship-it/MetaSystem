@@ -1395,15 +1395,30 @@ export default function AdminClientDetailPage() {
 
             if (error) { setNutritionUploadError('Ошибка БД: ' + error.message); return }
 
-            // Уведомление клиенту
+            // Уведомление клиенту (in-app + Web Push)
+            const notifTitle = 'Новый план питания! 🥗'
+            const notifMessage = `Тренер загрузил план питания №${nutritionPlanNumber}.`
             db.from('notifications').insert({
                 user_id: userId,
                 type: 'nutrition_plan_uploaded',
-                title: 'Новый план питания! 🥗',
-                message: `Тренер загрузил план питания №${nutritionPlanNumber}.`,
+                title: notifTitle,
+                message: notifMessage,
                 link: '/nutrition',
                 read: false,
             }).then(() => {})
+
+            // Web Push
+            fetch('/api/push/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    userId,
+                    title: notifTitle,
+                    body: notifMessage,
+                    url: '/nutrition',
+                }),
+            }).catch(() => {})
 
             const updated2 = await db
                 .from('nutrition_programs')

@@ -26,22 +26,15 @@ export interface ChatMessage {
  * Клиент отправляет сообщение тренеру
  */
 export async function sendMessageToTrainer(message: string): Promise<{ success: boolean; error?: string }> {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { success: false, error: 'Не авторизован' }
-
-    const db = getServiceClient()
-    const { error } = await db.from('admin_messages').insert({
-        from_user_id: user.id,
-        to_user_id: TRAINER_ID,
-        message,
-        message_type: 'message',
-        is_read: false,
+    const res = await fetch('/api/messages/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ toUserId: TRAINER_ID, message }),
     })
-
-    if (error) {
-        console.error('[messages] sendMessageToTrainer error:', error)
-        return { success: false, error: error.message }
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        return { success: false, error: data.error || 'Ошибка отправки' }
     }
     return { success: true }
 }
@@ -50,18 +43,15 @@ export async function sendMessageToTrainer(message: string): Promise<{ success: 
  * Тренер отправляет сообщение клиенту
  */
 export async function sendMessageToClient(clientId: string, message: string): Promise<{ success: boolean; error?: string }> {
-    const db = getServiceClient()
-    const { error } = await db.from('admin_messages').insert({
-        from_user_id: TRAINER_ID,
-        to_user_id: clientId,
-        message,
-        message_type: 'message',
-        is_read: false,
+    const res = await fetch('/api/messages/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ toUserId: clientId, message }),
     })
-
-    if (error) {
-        console.error('[messages] sendMessageToClient error:', error)
-        return { success: false, error: error.message }
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        return { success: false, error: data.error || 'Ошибка отправки' }
     }
     return { success: true }
 }

@@ -61,8 +61,24 @@ export async function POST(req: NextRequest) {
       if (!user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
-      // Пользователь может отправить push только самому себе (для тестов / клиентских триггеров)
-      targetUserId = user.id
+
+      // Если передан userId и это не сам пользователь — проверяем что он админ/тренер
+      if (userId && userId !== user.id) {
+        const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+        const { data: profile } = await db
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+        const allowedRoles = ['admin', 'trainer', 'curator']
+        if (!profile || !allowedRoles.includes(profile.role)) {
+          return NextResponse.json({ error: 'Forbidden: not an admin' }, { status: 403 })
+        }
+        targetUserId = userId
+      } else {
+        // Обычный пользователь — только себе
+        targetUserId = user.id
+      }
     }
 
     if (!targetUserId) {
