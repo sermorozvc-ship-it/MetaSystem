@@ -198,6 +198,7 @@ function ExerciseCard({
                     <button
                         className="glass-button-secondary p-1.5 rounded-lg flex-shrink-0"
                         title={collapsed ? 'Развернуть' : 'Свернуть'}
+                        onClick={e => { e.stopPropagation(); onToggleCollapse() }}
                     >
                         {collapsed
                             ? <ChevronDown className="w-4 h-4 text-text-muted" />
@@ -209,13 +210,17 @@ function ExerciseCard({
                 {/* Строка 2: кнопки Видео и Отдых — только когда развёрнуто */}
                 {!collapsed && (
                     <div className="flex items-center gap-2 pl-9" onClick={e => e.stopPropagation()}>
-                        {exercise.videoUrl && (
-                            <button
-                                onClick={() => onVideoClick(exercise.videoUrl!, exercise.name)}
-                                className="glass-button-secondary flex items-center gap-1.5 text-xs px-3 py-1.5">
-                                <Play className="w-3 h-3" />Видео
-                            </button>
-                        )}
+                        <button
+                            onClick={() => {
+                                if (exercise.videoUrl) {
+                                    onVideoClick(exercise.videoUrl, exercise.name)
+                                } else {
+                                    window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(exercise.name + ' техника')}`, '_blank')
+                                }
+                            }}
+                            className="glass-button-secondary flex items-center gap-1.5 text-xs px-3 py-1.5">
+                            <Play className="w-3 h-3" />Видео
+                        </button>
                         <button
                             onClick={onTimerStart}
                             className="rest-timer-trigger"
