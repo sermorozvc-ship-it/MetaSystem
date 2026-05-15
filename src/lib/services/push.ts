@@ -5,7 +5,7 @@
  * Управление подпиской на браузерные уведомления
  */
 
-const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || ''
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -54,37 +54,58 @@ async function registerSW(): Promise<ServiceWorkerRegistration> {
  * Возвращает true если успешно
  */
 export async function subscribeToPush(): Promise<boolean> {
-  if (!isPushSupported()) return false
+  if (!isPushSupported()) {
+    console.warn('[Push] Not supported in this browser')
+    return false
+  }
+
+  if (!VAPID_PUBLIC_KEY) {
+    console.error('[Push] VAPID_PUBLIC_KEY is not configured!')
+    return false
+  }
 
   try {
     // Запрашиваем разрешение
     const permission = await Notification.requestPermission()
+    console.log('[Push] Permission:', permission)
     if (permission !== 'granted') return false
 
     // Регистрируем SW
     const registration = await registerSW()
     await navigator.serviceWorker.ready
+    console.log('[Push] SW ready')
 
-    // Удаляем старую подписку если есть (force re-subscribe для свежего endpoint)
-    const existingSub = await registration.pushManager.getSubscription()
-    if (existingSub) {
-      const oldEndpoint = existingSub.endpoint
-      await existingSub.unsubscribe()
-      // Удаляем старую подписку с сервера
-      fetch('/api/push/subscribe', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ endpoint: oldEndpoint }),
-      }).catch(() => {})
+    // Удаляем старую подписку если есть (не блокируем основной поток при ошибке)
+    try {
+      const existingSub = await registration.pushManager.getSubscription()
+      if (existingSub) {
+        const oldEndpoint = existingSub.endpoint
+        console.log('[Push] Removing old subscription:', oldEndpoint.substring(0, 50))
+        try {
+          await existingSub.unsubscribe()
+        } catch (unsubErr) {
+          console.warn('[Push] Old unsubscribe failed (non-critical):', unsubErr)
+        }
+        // Удаляем старую подписку с сервера (fire-and-forget)
+        fetch('/api/push/subscribe', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint: oldEndpoint }),
+        }).catch(() => {})
+      }
+    } catch (e) {
+      console.warn('[Push] getSubscription check failed (non-critical):', e)
     }
 
     // Создаём новую подписку
+    console.log('[Push] Creating new subscription...')
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
     })
 
     const subJson = subscription.toJSON()
+    console.log('[Push] New endpoint:', subJson.endpoint?.substring(0, 60))
 
     // Сохраняем на сервере
     const res = await fetch('/api/push/subscribe', {
@@ -96,11 +117,14 @@ export async function subscribeToPush(): Promise<boolean> {
       }),
     })
 
-    if (res.ok) {
-      console.log('[Push] Subscribed successfully, endpoint:', subJson.endpoint?.substring(0, 60))
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '')
+      console.error('[Push] Server save failed:', res.status, errText)
+      return false
     }
 
-    return res.ok
+    console.log('[Push] Subscribed successfully!')
+    return true
   } catch (e) {
     console.error('[Push] Subscribe error:', e)
     return false
