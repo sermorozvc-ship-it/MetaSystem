@@ -1337,15 +1337,30 @@ export default function AdminClientDetailPage() {
 
             if (error) { setUploadError('Ошибка БД: ' + error.message); return }
 
-            // Уведомление клиенту
+            // Уведомление клиенту (in-app)
+            const notifTitle = 'Новая программа! 💪'
+            const notifMessage = `Тренер загрузил программу на неделю ${weekNumber}.`
             db.from('notifications').insert({
                 user_id: userId,
                 type: 'program_uploaded',
-                title: 'Новая программа! 💪',
-                message: `Тренер загрузил программу на неделю ${weekNumber}.`,
+                title: notifTitle,
+                message: notifMessage,
                 link: '/programs',
                 read: false,
             }).then(() => {})
+
+            // Web Push — через серверный API (поддерживает отправку другому пользователю)
+            fetch('/api/push/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    userId,
+                    title: notifTitle,
+                    body: notifMessage,
+                    url: '/programs',
+                }),
+            }).catch(() => {})
 
             const updated = await getClientPrograms(userId)
             setPrograms(updated)
