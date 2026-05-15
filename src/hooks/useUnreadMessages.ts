@@ -1,25 +1,35 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { usePathname } from 'next/navigation'
 
 const TRAINER_ID = '2c87d862-8f21-4ca0-ac69-eafe5a343ee1'
 
 /**
  * Хук для получения количества непрочитанных сообщений.
- * Работает для клиента (сообщения от тренера) и для тренера/админа (сообщения от всех клиентов).
- * Обновляется в реальном времени через Supabase Realtime.
+ * - Обновляется через Supabase Realtime (INSERT новых сообщений)
+ * - Принудительно сбрасывается в 0 когда пользователь на /messages
+ * - Polling каждые 5 секунд как fallback если Realtime не работает
  */
 export function useUnreadMessages(userId: string | undefined, isAdmin: boolean) {
   const [unreadCount, setUnreadCount] = useState(0)
+  const pathname = usePathname()
+  const isOnMessages = pathname === '/messages' || pathname.startsWith('/messages/')
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchUnread = useCallback(async () => {
     if (!userId) return
 
+    // Если на странице чата — сразу 0, не делаем запрос
+    if (isOnMessages) {
+      setUnreadCount(0)
+      return
+    }
+
     const supabase = createClient()
 
     if (isAdmin) {
-      // Для тренера: считаем непрочитанные сообщения от клиентов (to_user_id = TRAINER_ID)
       const { count } = await supabase
         .from('admin_messages')
         .select('*', { count: 'exact', head: true })
@@ -27,7 +37,6 @@ export function useUnreadMessages(userId: string | undefined, isAdmin: boolean) 
         .eq('is_read', false)
       setUnreadCount(count ?? 0)
     } else {
-      // Для клиента: считаем непрочитанные сообщения от тренера (from_user_id = TRAINER_ID, to_user_id = userId)
       const { count } = await supabase
         .from('admin_messages')
         .select('*', { count: 'exact', head: true })
@@ -36,34 +45,39 @@ export function useUnreadMessages(userId: string | undefined, isAdmin: boolean) 
         .eq('is_read', false)
       setUnreadCount(count ?? 0)
     }
-  }, [userId, isAdmin])
+  }, [userId, isAdmin, isOnMessages])
+
+  // Сбрасываем мгновенно при переходе на /messages
+  useEffect(() => {
+    if (isOnMessages) {
+      setUnreadCount(0)
+    }
+  }, [isOnMessages])
 
   useEffect(() => {
     if (!userId) return
 
     fetchUnread()
 
+    // Realtime подписка
     const supabase = createClient()
-
-    // Подписываемся на новые сообщения через Realtime
     const channel = supabase
-      .channel(`unread-messages-${userId}`)
+      .channel(`unread-messages-${userId}-${isAdmin}`)
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'admin_messages',
-        },
-        () => {
-          // При любом изменении в таблице — пересчитываем
-          fetchUnread()
-        }
+        { event: '*', schema: 'public', table: 'admin_messages' },
+        () => { fetchUnread() }
       )
       .subscribe()
 
+    // Polling каждые 5 секунд как fallback (Realtime может не работать на Vercel)
+    pollingRef.current = setInterval(() => {
+      fetchUnread()
+    }, 5000)
+
     return () => {
       supabase.removeChannel(channel)
+      if (pollingRef.current) clearInterval(pollingRef.current)
     }
   }, [userId, isAdmin, fetchUnread])
 
