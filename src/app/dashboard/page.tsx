@@ -17,6 +17,7 @@ import {
 import { getCurrentNutritionProgram, type NutritionProgram } from '@/lib/services/nutrition-programs'
 import { getMyQuestionnaire } from '@/lib/services/questionnaire'
 import { getMySubscriptionInfo, type SubscriptionInfo } from '@/lib/services/renewal'
+import InstallPWABanner from '@/components/InstallPWABanner'
 
 export default function DashboardPage() {
     const { user, isLoading: authLoading } = useAuth()
@@ -125,6 +126,9 @@ export default function DashboardPage() {
                     </h1>
                     <p className="text-text-secondary text-sm">Добро пожаловать в MetaSystem</p>
                 </div>
+
+                {/* PWA Install Banner */}
+                <InstallPWABanner />
 
                 {/* Nutrition questionnaire banner */}
                 {nutritionPending && (

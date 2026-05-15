@@ -1,29 +1,28 @@
 {
-    "name": "MetaSystem - Метаболический Запуск",
+    "name": "MetaSystem",
     "short_name": "MetaSystem",
-    "description": "7-дневный курс для перезагрузки метаболизма",
-    "start_url": "/",
+    "description": "Персональная платформа онлайн-ведения тренировок",
+    "start_url": "/dashboard",
     "display": "standalone",
-    "background_color": "#0A0A0A",
-    "theme_color": "#FF6B00",
+    "background_color": "#0d0d0d",
+    "theme_color": "#c8f542",
     "icons": [
         {
             "src": "/icon-192.png",
             "sizes": "192x192",
-            "type": "image/png"
+            "type": "image/png",
+            "purpose": "any maskable"
         },
         {
             "src": "/icon-512.png",
             "sizes": "512x512",
-            "type": "image/png"
+            "type": "image/png",
+            "purpose": "any maskable"
         }
     ],
     "id": "metasystem-app",
     "dir": "ltr",
     "lang": "ru-RU",
     "orientation": "portrait-primary",
-    "categories": [
-        "fitness",
-        "health"
-    ]
+    "categories": ["fitness", "health"]
 }
