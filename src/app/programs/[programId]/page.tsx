@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Play, CheckCircle2, Loader2, ChevronLeft, ChevronRight, X, Maximize2, Minimize2, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowLeft, Play, CheckCircle2, Loader2, ChevronLeft, ChevronRight, X, Maximize2, Minimize2, ChevronDown, ChevronUp, Timer } from 'lucide-react'
+import RestTimer from '@/components/RestTimer'
 import { useAuth } from '@/lib/auth'
 import {
     getProgramById,
@@ -123,6 +124,7 @@ function ExerciseCard({
     data,
     onChange,
     onVideoClick,
+    onTimerStart,
     collapsed,
     onToggleCollapse,
 }: {
@@ -131,6 +133,7 @@ function ExerciseCard({
     data: ExerciseClientData
     onChange: (d: ExerciseClientData) => void
     onVideoClick: (url: string, title: string) => void
+    onTimerStart: () => void
     collapsed: boolean
     onToggleCollapse: () => void
 }) {
@@ -199,6 +202,16 @@ function ExerciseCard({
                             <Play className="w-3 h-3" />Видео
                         </button>
                     )}
+                    {!collapsed && (
+                        <button
+                            onClick={e => { e.stopPropagation(); onTimerStart() }}
+                            className="rest-timer-trigger"
+                            title="Таймер отдыха"
+                        >
+                            <Timer className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Отдых</span>
+                        </button>
+                    )}
                     <button className="glass-button-secondary p-1.5 rounded-lg" title={collapsed ? 'Развернуть' : 'Свернуть'}>
                         {collapsed
                             ? <ChevronDown className="w-4 h-4 text-text-muted" />
@@ -213,12 +226,13 @@ function ExerciseCard({
                 <div className="px-5 pb-5">
                     {/* Таблица подходов */}
                     <div className="space-y-2">
-                        <div className="grid grid-cols-[auto_1fr_1fr_1fr_2fr] gap-2 text-xs text-text-muted px-1">
-                            <div className="min-w-[48px]">Подход</div>
+                        {/* Заголовок — на мобиле без колонки комментария */}
+                        <div className="grid grid-cols-[auto_1fr_1fr_1fr_2fr] sm:grid-cols-[auto_1fr_1fr_1fr_2fr] max-[480px]:grid-cols-[auto_1fr_1fr_1fr] gap-2 text-xs text-text-muted px-1">
+                            <div className="min-w-[44px]">Подход</div>
                             <div>Вес (кг)</div>
                             <div>Повт.</div>
-                            <div>RIR <span className="text-text-muted/60">(запас повт.)</span></div>
-                            <div>Комментарий</div>
+                            <div>RIR</div>
+                            <div className="hidden min-[481px]:block">Комментарий</div>
                         </div>
 
                         {Array.from({ length: totalSets }).map((_, setIdx) => {
@@ -227,40 +241,52 @@ function ExerciseCard({
                             const isExtra = setIdx >= plannedSets
 
                             return (
-                                <div key={setIdx} className="grid grid-cols-[auto_1fr_1fr_1fr_2fr] gap-2 items-center">
-                                    {/* Номер подхода */}
-                                    <div className="flex flex-col min-w-[48px]">
-                                        <div className="flex items-center gap-1">
-                                            <span className={`text-sm font-semibold ${isExtra ? 'text-accent' : 'text-white'}`}>
-                                                {setIdx + 1}
-                                                {isExtra && <span className="text-xs ml-0.5">+</span>}
-                                            </span>
-                                            {isExtra && (
-                                                <button onClick={() => removeExtraSet(setIdx)}
-                                                    className="text-text-muted hover:text-danger text-xs ml-1 leading-none">✕</button>
+                                <div key={setIdx} className="space-y-1.5">
+                                    {/* Основная строка: номер + вес + повт + RIR + комментарий (десктоп) */}
+                                    <div className="grid grid-cols-[auto_1fr_1fr_1fr_2fr] max-[480px]:grid-cols-[auto_1fr_1fr_1fr] gap-2 items-center">
+                                        {/* Номер подхода */}
+                                        <div className="flex flex-col min-w-[44px]">
+                                            <div className="flex items-center gap-1">
+                                                <span className={`text-sm font-semibold ${isExtra ? 'text-accent' : 'text-white'}`}>
+                                                    {setIdx + 1}
+                                                    {isExtra && <span className="text-xs ml-0.5">+</span>}
+                                                </span>
+                                                {isExtra && (
+                                                    <button onClick={() => removeExtraSet(setIdx)}
+                                                        className="text-text-muted hover:text-danger text-xs ml-1 leading-none">✕</button>
+                                                )}
+                                            </div>
+                                            {plannedWeight > 0 && (
+                                                <span className="text-xs text-text-muted">{plannedWeight} кг</span>
                                             )}
                                         </div>
-                                        {plannedWeight > 0 && (
-                                            <span className="text-xs text-text-muted">{plannedWeight} кг</span>
-                                        )}
+                                        <input type="number" step="0.5" value={setData.weight}
+                                            onChange={e => updateSet(setIdx, 'weight', e.target.value)}
+                                            className="glass-input text-sm py-2 px-2 text-center min-w-0"
+                                            placeholder={plannedWeight > 0 ? String(plannedWeight) : '—'} />
+                                        <input type="number" value={setData.reps}
+                                            onChange={e => updateSet(setIdx, 'reps', e.target.value)}
+                                            className="glass-input text-sm py-2 px-2 text-center min-w-0"
+                                            placeholder={exercise.reps.split('-')[0] || '—'} />
+                                        <input type="number" min="0" max="5" value={setData.rir}
+                                            onChange={e => updateSet(setIdx, 'rir', e.target.value)}
+                                            className="glass-input text-sm py-2 px-2 text-center min-w-0"
+                                            placeholder="2" />
+                                        {/* Комментарий — только на широких экранах в этой строке */}
+                                        <input
+                                            type="text"
+                                            value={setData.setComment || ''}
+                                            onChange={e => updateSet(setIdx, 'setComment', e.target.value)}
+                                            className="glass-input text-sm py-2 px-3 hidden min-[481px]:block min-w-0"
+                                            placeholder="Комментарий..."
+                                        />
                                     </div>
-                                    <input type="number" step="0.5" value={setData.weight}
-                                        onChange={e => updateSet(setIdx, 'weight', e.target.value)}
-                                        className="glass-input text-sm py-2 px-3 text-center"
-                                        placeholder={plannedWeight > 0 ? String(plannedWeight) : '—'} />
-                                    <input type="number" value={setData.reps}
-                                        onChange={e => updateSet(setIdx, 'reps', e.target.value)}
-                                        className="glass-input text-sm py-2 px-3 text-center"
-                                        placeholder={exercise.reps.split('-')[0] || '—'} />
-                                    <input type="number" min="0" max="5" value={setData.rir}
-                                        onChange={e => updateSet(setIdx, 'rir', e.target.value)}
-                                        className="glass-input text-sm py-2 px-3 text-center"
-                                        placeholder="2" />
+                                    {/* Комментарий — отдельная строка на мобиле */}
                                     <input
                                         type="text"
                                         value={setData.setComment || ''}
                                         onChange={e => updateSet(setIdx, 'setComment', e.target.value)}
-                                        className="glass-input text-sm py-2 px-3"
+                                        className="glass-input text-sm py-2 px-3 w-full min-[481px]:hidden"
                                         placeholder="Комментарий..."
                                     />
                                 </div>
@@ -309,6 +335,7 @@ export default function ProgramDetailPage() {
     const [completedDays, setCompletedDays] = useState<Set<number>>(new Set())
     const [videoModal, setVideoModal] = useState<{ url: string; title: string } | null>(null)
     const [collapsedExercises, setCollapsedExercises] = useState<Set<string>>(new Set())
+    const [restTimerVisible, setRestTimerVisible] = useState(false)
 
     // Сворачиваем все упражнения при смене дня
     useEffect(() => {
@@ -614,6 +641,7 @@ export default function ProgramDetailPage() {
                             data={exerciseData[exercise.id] || { sets: [], comment: '' }}
                             onChange={d => updateExercise(exercise.id, d)}
                             onVideoClick={(url, title) => setVideoModal({ url, title })}
+                            onTimerStart={() => setRestTimerVisible(true)}
                             collapsed={collapsedExercises.has(exercise.id)}
                             onToggleCollapse={() => setCollapsedExercises(prev => {
                                 const next = new Set(prev)
@@ -741,6 +769,11 @@ export default function ProgramDetailPage() {
                 title={videoModal.title}
                 onClose={() => setVideoModal(null)}
             />
+        )}
+
+        {/* Таймер отдыха */}
+        {restTimerVisible && (
+            <RestTimer onClose={() => setRestTimerVisible(false)} />
         )}
         </>
     )

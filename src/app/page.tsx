@@ -396,7 +396,7 @@ export default function LandingPage() {
             </section>
 
             {/* ВИДЕО */}
-            <section className="bg-section">
+            <section className="bg-section" style={{ display: 'none' }}>
                 <div className="landing-container fade-in">
                     <h2 className="section-title">Посмотрите видео и я всё расскажу за 5 минут</h2>
                     <p className="section-subtitle">
