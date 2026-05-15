@@ -70,7 +70,9 @@ export async function POST(req: NextRequest) {
       `Новое сообщение от ${senderName} 💬`,
       preview,
       '/messages'
-    ).catch((e) => console.warn('[messages/send] push failed:', e))
+    ).then((result) => {
+      console.log(`[messages/send] push result for ${toUserId}:`, result)
+    }).catch((e) => console.warn('[messages/send] push failed:', e))
 
     return NextResponse.json({ success: true })
   } catch (e: any) {

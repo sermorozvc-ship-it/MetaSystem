@@ -14,6 +14,16 @@ if (VAPID_SUBJECT && VAPID_PUBLIC && VAPID_PRIVATE) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE)
 }
 
+export async function GET(req: NextRequest) {
+  // Диагностика — проверяем env и подписки текущего пользователя
+  const logs: string[] = []
+  logs.push(`VAPID_SUBJECT: ${VAPID_SUBJECT ? 'OK' : 'MISSING'}`)
+  logs.push(`VAPID_PUBLIC: ${VAPID_PUBLIC ? VAPID_PUBLIC.substring(0, 20) + '...' : 'MISSING'}`)
+  logs.push(`VAPID_PRIVATE: ${VAPID_PRIVATE ? 'OK (hidden)' : 'MISSING'}`)
+  logs.push(`SERVICE_KEY: ${SERVICE_KEY ? 'OK (hidden)' : 'MISSING'}`)
+  return NextResponse.json({ logs })
+}
+
 export async function POST(req: NextRequest) {
   try {
     if (!VAPID_SUBJECT || !VAPID_PUBLIC || !VAPID_PRIVATE) {
