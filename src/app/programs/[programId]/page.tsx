@@ -226,13 +226,12 @@ function ExerciseCard({
                 <div className="px-5 pb-5">
                     {/* Таблица подходов */}
                     <div className="space-y-2">
-                        {/* Заголовок — на мобиле без колонки комментария */}
-                        <div className="grid grid-cols-[auto_1fr_1fr_1fr_2fr] sm:grid-cols-[auto_1fr_1fr_1fr_2fr] max-[480px]:grid-cols-[auto_1fr_1fr_1fr] gap-2 text-xs text-text-muted px-1">
+                        {/* Заголовок */}
+                        <div className="grid grid-cols-[auto_1fr_1fr_1fr] gap-2 text-xs text-text-muted px-1">
                             <div className="min-w-[44px]">Подход</div>
                             <div>Вес (кг)</div>
                             <div>Повт.</div>
                             <div>RIR</div>
-                            <div className="hidden min-[481px]:block">Комментарий</div>
                         </div>
 
                         {Array.from({ length: totalSets }).map((_, setIdx) => {
@@ -241,54 +240,35 @@ function ExerciseCard({
                             const isExtra = setIdx >= plannedSets
 
                             return (
-                                <div key={setIdx} className="space-y-1.5">
-                                    {/* Основная строка: номер + вес + повт + RIR + комментарий (десктоп) */}
-                                    <div className="grid grid-cols-[auto_1fr_1fr_1fr_2fr] max-[480px]:grid-cols-[auto_1fr_1fr_1fr] gap-2 items-center">
-                                        {/* Номер подхода */}
-                                        <div className="flex flex-col min-w-[44px]">
-                                            <div className="flex items-center gap-1">
-                                                <span className={`text-sm font-semibold ${isExtra ? 'text-accent' : 'text-white'}`}>
-                                                    {setIdx + 1}
-                                                    {isExtra && <span className="text-xs ml-0.5">+</span>}
-                                                </span>
-                                                {isExtra && (
-                                                    <button onClick={() => removeExtraSet(setIdx)}
-                                                        className="text-text-muted hover:text-danger text-xs ml-1 leading-none">✕</button>
-                                                )}
-                                            </div>
-                                            {plannedWeight > 0 && (
-                                                <span className="text-xs text-text-muted">{plannedWeight} кг</span>
+                                <div key={setIdx} className="grid grid-cols-[auto_1fr_1fr_1fr] gap-2 items-center">
+                                    {/* Номер подхода */}
+                                    <div className="flex flex-col min-w-[44px]">
+                                        <div className="flex items-center gap-1">
+                                            <span className={`text-sm font-semibold ${isExtra ? 'text-accent' : 'text-white'}`}>
+                                                {setIdx + 1}
+                                                {isExtra && <span className="text-xs ml-0.5">+</span>}
+                                            </span>
+                                            {isExtra && (
+                                                <button onClick={() => removeExtraSet(setIdx)}
+                                                    className="text-text-muted hover:text-danger text-xs ml-1 leading-none">✕</button>
                                             )}
                                         </div>
-                                        <input type="number" step="0.5" value={setData.weight}
-                                            onChange={e => updateSet(setIdx, 'weight', e.target.value)}
-                                            className="glass-input text-sm py-2 px-2 text-center min-w-0"
-                                            placeholder={plannedWeight > 0 ? String(plannedWeight) : '—'} />
-                                        <input type="number" value={setData.reps}
-                                            onChange={e => updateSet(setIdx, 'reps', e.target.value)}
-                                            className="glass-input text-sm py-2 px-2 text-center min-w-0"
-                                            placeholder={exercise.reps.split('-')[0] || '—'} />
-                                        <input type="number" min="0" max="5" value={setData.rir}
-                                            onChange={e => updateSet(setIdx, 'rir', e.target.value)}
-                                            className="glass-input text-sm py-2 px-2 text-center min-w-0"
-                                            placeholder="2" />
-                                        {/* Комментарий — только на широких экранах в этой строке */}
-                                        <input
-                                            type="text"
-                                            value={setData.setComment || ''}
-                                            onChange={e => updateSet(setIdx, 'setComment', e.target.value)}
-                                            className="glass-input text-sm py-2 px-3 hidden min-[481px]:block min-w-0"
-                                            placeholder="Комментарий..."
-                                        />
+                                        {plannedWeight > 0 && (
+                                            <span className="text-xs text-text-muted">{plannedWeight} кг</span>
+                                        )}
                                     </div>
-                                    {/* Комментарий — отдельная строка на мобиле */}
-                                    <input
-                                        type="text"
-                                        value={setData.setComment || ''}
-                                        onChange={e => updateSet(setIdx, 'setComment', e.target.value)}
-                                        className="glass-input text-sm py-2 px-3 w-full min-[481px]:hidden"
-                                        placeholder="Комментарий..."
-                                    />
+                                    <input type="number" step="0.5" value={setData.weight}
+                                        onChange={e => updateSet(setIdx, 'weight', e.target.value)}
+                                        className="glass-input text-sm py-2 px-2 text-center min-w-0"
+                                        placeholder={plannedWeight > 0 ? String(plannedWeight) : '—'} />
+                                    <input type="number" value={setData.reps}
+                                        onChange={e => updateSet(setIdx, 'reps', e.target.value)}
+                                        className="glass-input text-sm py-2 px-2 text-center min-w-0"
+                                        placeholder={exercise.reps.split('-')[0] || '—'} />
+                                    <input type="number" min="0" max="5" value={setData.rir}
+                                        onChange={e => updateSet(setIdx, 'rir', e.target.value)}
+                                        className="glass-input text-sm py-2 px-2 text-center min-w-0"
+                                        placeholder="2" />
                                 </div>
                             )
                         })}

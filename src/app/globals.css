@@ -334,6 +334,16 @@ h1, h2, h3, h4, h5, h6 {
     min-height: 44px;
   }
 
+  /* Navbar CTA — не растягиваем */
+  .landing-nav-cta {
+    min-height: unset;
+  }
+
+  /* Инпуты в таблице подходов — не растягиваем */
+  .glass-input {
+    min-height: unset;
+  }
+
   /* Prevent zoom on input focus */
   input,
   select,
@@ -499,6 +509,7 @@ input[type="range"]::-webkit-slider-thumb {
 .landing-logo-text {
   font-family: var(--font-display); font-size: 13px;
   font-weight: 600; color: var(--text-primary);
+  white-space: nowrap;
 }
 .landing-nav-cta {
   background: var(--accent); color: #0d0d0d; font-weight: 700;
@@ -520,6 +531,13 @@ input[type="range"]::-webkit-slider-thumb {
     linear-gradient(rgba(200,245,66,0.025) 1px, transparent 1px),
     linear-gradient(90deg, rgba(200,245,66,0.025) 1px, transparent 1px);
   background-size: 44px 44px;
+}
+@media (max-width: 640px) {
+  .landing-hero {
+    min-height: unset;
+    justify-content: flex-start;
+    padding: 32px 20px 56px !important;
+  }
 }
 .landing-hero::before {
   content: ''; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
@@ -543,7 +561,7 @@ input[type="range"]::-webkit-slider-thumb {
 .landing-h1 {
   font-family: var(--font-display);
   font-weight: 900;
-  font-size: clamp(30px, 6vw, 56px);
+  font-size: clamp(24px, 7vw, 56px);
   letter-spacing: -0.025em;
   line-height: 1.1;
   color: var(--text-primary);
@@ -1099,6 +1117,46 @@ input[type="range"]::-webkit-slider-thumb {
   padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0.5rem));
 }
 
+/* ============================================
+   Extra-small screens (≤ 360px)
+   ============================================ */
+@media (max-width: 360px) {
+  /* Navbar */
+  .landing-navbar { padding: 12px 16px; }
+  .landing-logo-text { font-size: 11px; }
+  .landing-logo-mark { width: 32px; height: 32px; font-size: 12px; border-radius: 7px; }
+  .landing-nav-cta { padding: 8px 14px; font-size: 12px; }
+
+  /* Hero h1 */
+  .landing-h1 { font-size: 26px; }
+
+  /* Badge */
+  .badge { font-size: 11px; padding: 5px 12px; }
+
+  /* Sections padding */
+  .landing-root section { padding: 44px 16px; }
+
+  /* Buttons */
+  .btn-primary, .btn-outline { padding: 13px 24px; font-size: 14px; }
+
+  /* Compare table */
+  .compare-cell { padding: 10px 14px; font-size: 13px; }
+
+  /* Pricing */
+  .pricing-card { padding: 24px 14px; padding-top: 40px; }
+  .pricing-price { font-size: 26px; }
+
+  /* Timeline */
+  .timeline { padding-left: 28px; }
+  .timeline-dot { left: -32px; width: 20px; height: 20px; font-size: 10px; }
+
+  /* Author stats */
+  .author-stats { gap: 16px; }
+  .author-stat-value { font-size: 28px; }
+
+  /* Urgency timer */
+  .urgency-timer { font-size: 36px; }
+}
 /* ============================================
    Rest Timer — floating panel
    ============================================ */
