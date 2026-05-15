@@ -67,6 +67,10 @@ export interface AdminPayment {
 
 // --- SERVICES ---
 
+// Кеш результата isAdmin — чтобы не делать запрос при каждой навигации
+let adminCacheResult: boolean | null = null
+let adminCacheUserId: string | null = null
+
 // Check if current user is admin
 // Принимает user параметром чтобы не делать лишний getSession()
 export async function isAdmin(userParam?: { id?: string; email?: string | null; user_metadata?: any } | null): Promise<boolean> {
@@ -82,17 +86,28 @@ export async function isAdmin(userParam?: { id?: string; email?: string | null; 
         return false
     }
 
+    // Кеш — если тот же пользователь, возвращаем мгновенно
+    if (adminCacheResult !== null && adminCacheUserId === (user.id ?? user.email)) {
+        return adminCacheResult
+    }
+
+    const setCache = (result: boolean) => {
+        adminCacheResult = result
+        adminCacheUserId = user.id ?? user.email ?? null
+        return result
+    }
+
     // 1. Check Owner Emails (Hardcoded bypass — самый быстрый путь, без сетевых запросов)
     const owners = ['dgmukhin@gmail.com']
     if (owners.includes(user.email?.toLowerCase() || '')) {
         console.log('[isAdmin] Emergency admin access granted for owner:', user.email)
-        return true
+        return setCache(true)
     }
 
     // 2. Check User Metadata в JWT токене (без запроса к БД)
     if (user.user_metadata?.role === 'admin' || user.user_metadata?.role === 'curator') {
         console.log('[isAdmin] Access granted via token metadata')
-        return true
+        return setCache(true)
     }
 
     // 3. Проверяем через RPC с таймаутом (SECURITY DEFINER — надёжно)
@@ -102,7 +117,7 @@ export async function isAdmin(userParam?: { id?: string; email?: string | null; 
         const rpcResult = await Promise.race([
             supabase.rpc('is_admin'),
             new Promise<{ data: null; error: { code: string; message: string } }>((resolve) =>
-                setTimeout(() => resolve({ data: null, error: { code: 'TIMEOUT', message: 'RPC timeout 5s' } }), 5000)
+                setTimeout(() => resolve({ data: null, error: { code: 'TIMEOUT', message: 'RPC timeout 2s' } }), 2000)
             )
         ])
 
@@ -110,7 +125,7 @@ export async function isAdmin(userParam?: { id?: string; email?: string | null; 
 
         if (!rpcError && isRpcAdmin === true) {
             console.log('[isAdmin] RPC check successful: IS ADMIN')
-            return true
+            return setCache(true)
         }
 
         if (rpcError) {
@@ -127,7 +142,7 @@ export async function isAdmin(userParam?: { id?: string; email?: string | null; 
         const profileResult = await Promise.race([
             supabase.from('profiles').select('role').eq('id', user.id).single(),
             new Promise<{ data: null; error: { message: string } }>((resolve) =>
-                setTimeout(() => resolve({ data: null, error: { message: 'Profile query timeout 5s' } }), 5000)
+                setTimeout(() => resolve({ data: null, error: { message: 'Profile query timeout 2s' } }), 2000)
             )
         ])
 
@@ -135,15 +150,15 @@ export async function isAdmin(userParam?: { id?: string; email?: string | null; 
 
         if (profileError) {
             console.error('[isAdmin] Profile query failed:', profileError.message)
-            return false
+            return setCache(false)
         }
 
         const hasAccess = profile?.role === 'admin' || profile?.role === 'curator'
         console.log('[isAdmin] Profile role check result:', profile?.role, '-> Access:', hasAccess)
-        return hasAccess
+        return setCache(hasAccess)
     } catch (e: any) {
         console.error('[isAdmin] Profile query exception:', e.message)
-        return false
+        return setCache(false)
     }
 }
 
@@ -709,6 +724,100 @@ export async function getPendingPayments(): Promise<AdminPayment[]> {
         ...p,
         user: p.user
     }))
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Агрегация платежей по месяцам для CRM-графика
+// ──────────────────────────────────────────────────────────────────────────
+
+export interface MonthlyPaymentStat {
+    month: string        // 'YYYY-MM'
+    label: string        // 'Янв 2026'
+    revenue: number      // сумма confirmed
+    count: number        // кол-во confirmed
+    refunded: number     // сумма refunded
+    refundCount: number  // кол-во refunded
+    new_clients: number  // уникальных клиентов с первым платежом в этом месяце
+}
+
+export async function getPaymentsByMonth(monthsBack: number = 12): Promise<MonthlyPaymentStat[]> {
+    const supabase = createClient()
+
+    const since = new Date()
+    since.setMonth(since.getMonth() - monthsBack + 1)
+    since.setDate(1)
+    since.setHours(0, 0, 0, 0)
+
+    const { data, error } = await supabase
+        .from('payments')
+        .select('id, user_id, amount, status, created_at, confirmed_at')
+        .in('status', ['confirmed', 'refunded'])
+        .gte('created_at', since.toISOString())
+        .order('created_at', { ascending: true })
+
+    if (error || !data) return []
+
+    // Получаем первый платёж каждого клиента (для подсчёта новых)
+    const { data: allFirstPayments } = await supabase
+        .from('payments')
+        .select('user_id, created_at')
+        .eq('status', 'confirmed')
+        .order('created_at', { ascending: true })
+
+    // Строим карту: user_id → первый месяц оплаты
+    const firstPaymentMonth = new Map<string, string>()
+    ;(allFirstPayments || []).forEach((p: any) => {
+        if (!firstPaymentMonth.has(p.user_id)) {
+            const d = new Date(p.created_at)
+            firstPaymentMonth.set(p.user_id, `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+        }
+    })
+
+    // Генерируем все месяцы в диапазоне
+    const months: string[] = []
+    const cur = new Date(since)
+    const now = new Date()
+    while (cur <= now) {
+        months.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}`)
+        cur.setMonth(cur.getMonth() + 1)
+    }
+
+    const RU_MONTHS = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
+
+    const statsMap = new Map<string, MonthlyPaymentStat>()
+    months.forEach(m => {
+        const [y, mo] = m.split('-')
+        statsMap.set(m, {
+            month: m,
+            label: `${RU_MONTHS[parseInt(mo) - 1]} ${y}`,
+            revenue: 0,
+            count: 0,
+            refunded: 0,
+            refundCount: 0,
+            new_clients: 0,
+        })
+    })
+
+    data.forEach((p: any) => {
+        const d = new Date(p.created_at)
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+        const stat = statsMap.get(key)
+        if (!stat) return
+
+        if (p.status === 'confirmed') {
+            stat.revenue += Number(p.amount)
+            stat.count += 1
+            // Новый клиент — если этот месяц совпадает с его первым платежом
+            if (firstPaymentMonth.get(p.user_id) === key) {
+                stat.new_clients += 1
+            }
+        } else if (p.status === 'refunded') {
+            stat.refunded += Number(p.amount)
+            stat.refundCount += 1
+        }
+    })
+
+    return months.map(m => statsMap.get(m)!)
 }
 
 // Get all payments

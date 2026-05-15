@@ -27,58 +27,40 @@ export default function AdminDashboardPage() {
     })
 
     useEffect(() => {
-        if (!authLoading && !user) {
-            router.replace('/auth')
-        }
-    }, [user, authLoading, router])
+        if (authLoading) return
+        if (!user) { router.replace('/auth'); return }
 
-    useEffect(() => {
-        if (!user) return
+        let cancelled = false
 
-        const checkAdmin = async () => {
+        const load = async () => {
+            // Проверяем admin и грузим данные за один проход
             const admin = await isAdmin(user)
-            if (!admin) {
-                router.replace('/dashboard')
-                return
-            }
+            if (cancelled) return
+            if (!admin) { router.replace('/dashboard'); return }
+
             setIsAdminUser(true)
-        }
 
-        checkAdmin()
-    }, [user, router])
-
-    useEffect(() => {
-        if (!isAdminUser) return
-
-        const loadData = async () => {
             try {
                 const [usersData, statsData] = await Promise.all([
                     getAllUsers(),
                     getAdminStats(),
                 ])
-
+                if (cancelled) return
                 const clientsOnly = usersData.filter((u) => u.role !== 'admin' && u.role !== 'trainer')
                 setClients(clientsOnly)
                 setStats(statsData)
             } catch (e) {
                 console.error('Error loading admin data:', e)
             } finally {
-                setIsLoading(false)
+                if (!cancelled) setIsLoading(false)
             }
         }
 
-        loadData()
-    }, [isAdminUser])
+        load()
+        return () => { cancelled = true }
+    }, [user, authLoading, router])
 
-    if (!authLoading && !user) {
-        return (
-            <div className="min-h-screen bg-bg-main flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-accent animate-spin" />
-            </div>
-        )
-    }
-
-    if (isLoading || !isAdminUser) {
+    if (authLoading || isLoading || !isAdminUser) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />

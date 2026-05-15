@@ -7,7 +7,8 @@ import {
     Loader2, ChevronRight, Search, XCircle
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { isAdmin, getAllPayments, confirmPayment, refundPayment, type AdminPayment } from '@/lib/services/admin'
+import { isAdmin, getAllPayments, confirmPayment, refundPayment, getPaymentsByMonth, type AdminPayment, type MonthlyPaymentStat } from '@/lib/services/admin'
+import PaymentsChart from '@/components/admin/PaymentsChart'
 
 const PLAN_LABELS: Record<string, string> = {
     '1_month': '1 месяц',
@@ -28,29 +29,42 @@ export default function AdminPaymentsPage() {
     const [isAdminUser, setIsAdminUser] = useState(false)
     const [isLoading, setIsLoading] = useState(true)
     const [payments, setPayments] = useState<AdminPayment[]>([])
+    const [monthlyStats, setMonthlyStats] = useState<MonthlyPaymentStat[]>([])
     const [search, setSearch] = useState('')
     const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'confirmed' | 'refunded'>('all')
     const [actionLoading, setActionLoading] = useState<string | null>(null)
 
     useEffect(() => {
-        if (!authLoading && !user) { window.location.href = '/auth'; return }
-    }, [user, authLoading])
+        if (authLoading) return
+        if (!user) { window.location.href = '/auth'; return }
 
-    useEffect(() => {
-        if (!user) return
-        isAdmin(user).then(admin => {
+        let cancelled = false
+
+        const load = async () => {
+            const admin = await isAdmin(user)
+            if (cancelled) return
             if (!admin) { window.location.href = '/admin'; return }
-            setIsAdminUser(true)
-        })
-    }, [user])
 
-    useEffect(() => {
-        if (!isAdminUser) return
-        getAllPayments().then(data => {
-            setPayments(data)
-            setIsLoading(false)
-        }).catch(() => setIsLoading(false))
-    }, [isAdminUser])
+            setIsAdminUser(true)
+
+            try {
+                const [paymentsData, statsData] = await Promise.all([
+                    getAllPayments(),
+                    getPaymentsByMonth(12),
+                ])
+                if (cancelled) return
+                setPayments(paymentsData)
+                setMonthlyStats(statsData)
+            } catch (e) {
+                console.error(e)
+            } finally {
+                if (!cancelled) setIsLoading(false)
+            }
+        }
+
+        load()
+        return () => { cancelled = true }
+    }, [user, authLoading])
 
     const handleConfirm = async (paymentId: string) => {
         setActionLoading(paymentId)
@@ -130,6 +144,9 @@ export default function AdminPaymentsPage() {
                         </p>
                     </div>
                 </div>
+
+                {/* График по месяцам */}
+                <PaymentsChart data={monthlyStats} />
 
                 {/* Фильтры */}
                 <div className="flex flex-col sm:flex-row gap-3 mb-6">

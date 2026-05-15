@@ -21,24 +21,33 @@ export default function AdminClientsPage() {
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
     useEffect(() => {
-        if (!authLoading && !user) router.replace('/auth')
-    }, [user, authLoading, router])
+        if (authLoading) return
+        if (!user) { router.replace('/auth'); return }
 
-    useEffect(() => {
-        if (!user) return
-        isAdmin(user).then(admin => {
+        let cancelled = false
+
+        const load = async () => {
+            const admin = await isAdmin(user)
+            if (cancelled) return
             if (!admin) { router.replace('/dashboard'); return }
-            setIsAdminUser(true)
-        })
-    }, [user, router])
 
-    useEffect(() => {
-        if (!isAdminUser) return
-        getAllUsers().then(data => {
-            const clientsOnly = data.filter(u => u.role !== 'admin' && u.role !== 'trainer')
-            setClients(clientsOnly)
-        }).catch(console.error).finally(() => setIsLoading(false))
-    }, [isAdminUser])
+            setIsAdminUser(true)
+
+            try {
+                const data = await getAllUsers()
+                if (cancelled) return
+                const clientsOnly = data.filter(u => u.role !== 'admin' && u.role !== 'trainer')
+                setClients(clientsOnly)
+            } catch (e) {
+                console.error(e)
+            } finally {
+                if (!cancelled) setIsLoading(false)
+            }
+        }
+
+        load()
+        return () => { cancelled = true }
+    }, [user, authLoading, router])
 
     const activeClients = clients.filter(c => !c.is_archived)
     const archivedClients = clients.filter(c => c.is_archived)

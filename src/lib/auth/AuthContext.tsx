@@ -109,14 +109,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
         )
 
-        // 3. Таймаут-страховка: если что-то пошло не так — снимаем лоадер через 1.5с
+        // 3. Таймаут-страховка: если что-то пошло не так — снимаем лоадер через 800мс
         const timeout = setTimeout(() => {
             if (!hasResolved.current && isMounted) {
                 console.warn('[Auth] Timeout — forcing isLoading=false')
                 hasResolved.current = true
                 setIsLoading(false)
             }
-        }, 1500)
+        }, 800)
 
         return () => {
             isMounted = false
