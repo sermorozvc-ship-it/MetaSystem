@@ -5,28 +5,48 @@ import { X, Plus, RotateCcw, Timer } from 'lucide-react'
 
 const STEP = 30 // секунд за одно нажатие +
 
-function playBeep() {
+// Один короткий пронзительный бип (для обратного отсчёта 3-2-1)
+function playCountdownBeep() {
     try {
         const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
-        // Три коротких бипа
-        const beeps = [0, 0.18, 0.36]
-        beeps.forEach((offset) => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.type = 'square'          // square — резче и пронзительнее sine
+        osc.frequency.value = 1200   // высокая частота — пронзительный звук
+        gain.gain.setValueAtTime(0.9, ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12)
+        osc.start(ctx.currentTime)
+        osc.stop(ctx.currentTime + 0.12)
+        setTimeout(() => ctx.close(), 500)
+    } catch {}
+}
+
+// Тройной пронзительный бип — финал (таймер дошёл до 0)
+function playFinishBeep() {
+    try {
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+        // Три бипа подряд с нарастающей частотой
+        const beeps = [
+            { offset: 0,    freq: 1200 },
+            { offset: 0.18, freq: 1400 },
+            { offset: 0.36, freq: 1600 },
+        ]
+        beeps.forEach(({ offset, freq }) => {
             const osc = ctx.createOscillator()
             const gain = ctx.createGain()
             osc.connect(gain)
             gain.connect(ctx.destination)
-            osc.type = 'sine'
-            osc.frequency.value = 880
-            gain.gain.setValueAtTime(0.4, ctx.currentTime + offset)
-            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.15)
+            osc.type = 'square'
+            osc.frequency.value = freq
+            gain.gain.setValueAtTime(0.9, ctx.currentTime + offset)
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.14)
             osc.start(ctx.currentTime + offset)
-            osc.stop(ctx.currentTime + offset + 0.15)
+            osc.stop(ctx.currentTime + offset + 0.14)
         })
-        // Закрываем контекст после воспроизведения
-        setTimeout(() => ctx.close(), 1500)
-    } catch {
-        // Браузер не поддерживает Web Audio — молча игнорируем
-    }
+        setTimeout(() => ctx.close(), 1000)
+    } catch {}
 }
 
 interface RestTimerProps {
@@ -56,8 +76,12 @@ export default function RestTimer({ onClose }: RestTimerProps) {
                     stop()
                     setRunning(false)
                     setFinished(true)
-                    playBeep()
+                    playFinishBeep()
                     return 0
+                }
+                // Обратный отсчёт 3-2-1: одиночный пронзительный бип
+                if (prev <= 4) {
+                    playCountdownBeep()
                 }
                 return prev - 1
             })
