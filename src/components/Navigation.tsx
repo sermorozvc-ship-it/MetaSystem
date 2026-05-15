@@ -5,6 +5,7 @@ import { Home, Dumbbell, TrendingUp, MessageCircle, LogOut, Apple, BarChart3 } f
 import { useAuth } from '@/lib/auth'
 import NotificationBell from './NotificationBell'
 import PushSubscribeButton from './PushSubscribeButton'
+import { useUnreadMessages } from '@/hooks/useUnreadMessages'
 
 export default function Navigation() {
   const { user, signOut } = useAuth()
@@ -45,6 +46,37 @@ export default function Navigation() {
   }
 
   return (
+    <NavigationInner
+      links={links}
+      pathname={pathname}
+      isAdminUser={isAdminUser}
+      userId={user.id}
+      onNavigate={(href) => router.push(href)}
+      onSignOut={handleSignOut}
+    />
+  )
+}
+
+// Вынесено в отдельный компонент чтобы хуки работали корректно
+function NavigationInner({
+  links,
+  pathname,
+  isAdminUser,
+  userId,
+  onNavigate,
+  onSignOut,
+}: {
+  links: { href: string; icon: React.ElementType; label: string }[]
+  pathname: string
+  isAdminUser: boolean
+  userId: string
+  onNavigate: (href: string) => void
+  onSignOut: () => void
+}) {
+  const unreadCount = useUnreadMessages(userId, isAdminUser)
+  const isOnMessages = pathname === '/messages' || pathname.startsWith('/messages/')
+
+  return (
     <>
       {/* ── Десктоп навбар (md+) ── */}
       <nav className="hidden md:block fixed top-0 left-0 right-0 z-50 glass-sidebar border-b border-border">
@@ -63,17 +95,27 @@ export default function Navigation() {
               {links.map((link) => {
                 const Icon = link.icon
                 const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
+                const isChat = link.href === '/messages'
+                const showBadge = isChat && unreadCount > 0 && !isOnMessages
+
                 return (
                   <button
                     key={link.href}
-                    onClick={() => router.push(link.href)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all text-sm ${
+                    onClick={() => onNavigate(link.href)}
+                    className={`relative flex items-center gap-2 px-4 py-2 rounded-xl transition-all text-sm ${
                       isActive
                         ? 'bg-accent text-bg-main font-semibold'
                         : 'text-text-secondary hover:text-white hover:bg-bg-elevated'
                     }`}
                   >
-                    <Icon className="w-4 h-4" />
+                    <span className="relative">
+                      <Icon className="w-4 h-4" />
+                      {showBadge && (
+                        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+                          {unreadCount > 99 ? '99+' : unreadCount}
+                        </span>
+                      )}
+                    </span>
                     {link.label}
                   </button>
                 )
@@ -84,7 +126,7 @@ export default function Navigation() {
             <div className="flex items-center gap-2">
               <PushSubscribeButton />
               <NotificationBell />
-              <button onClick={handleSignOut} className="glass-button-secondary p-2.5 rounded-xl" title="Выйти">
+              <button onClick={onSignOut} className="glass-button-secondary p-2.5 rounded-xl" title="Выйти">
                 <LogOut className="w-4 h-4" />
               </button>
             </div>
@@ -103,7 +145,7 @@ export default function Navigation() {
           <div className="flex items-center gap-2">
             <PushSubscribeButton />
             <NotificationBell />
-            <button onClick={handleSignOut} className="glass-button-secondary p-2.5 rounded-xl" title="Выйти">
+            <button onClick={onSignOut} className="glass-button-secondary p-2.5 rounded-xl" title="Выйти">
               <LogOut className="w-4 h-4" />
             </button>
           </div>
@@ -116,15 +158,25 @@ export default function Navigation() {
           {links.map((link) => {
             const Icon = link.icon
             const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
+            const isChat = link.href === '/messages'
+            const showBadge = isChat && unreadCount > 0 && !isOnMessages
+
             return (
               <button
                 key={link.href}
-                onClick={() => router.push(link.href)}
+                onClick={() => onNavigate(link.href)}
                 className={`flex flex-col items-center gap-0.5 px-4 py-2 rounded-xl transition-all min-w-0 ${
                   isActive ? 'text-accent' : 'text-text-muted'
                 }`}
               >
-                <Icon className={`w-5 h-5 ${isActive ? 'text-accent' : ''}`} />
+                <span className="relative">
+                  <Icon className={`w-5 h-5 ${isActive ? 'text-accent' : ''}`} />
+                  {showBadge && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
+                </span>
                 <span className="text-[10px] font-medium truncate">{link.label}</span>
               </button>
             )
