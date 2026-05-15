@@ -168,57 +168,64 @@ function ExerciseCard({
 
     return (
         <div className={`glass-card overflow-hidden transition-all duration-200 ${collapsed ? 'opacity-70' : ''}`}>
-            {/* Заголовок — всегда виден, клик сворачивает/разворачивает */}
-            <div
-                className="flex items-center justify-between p-5 cursor-pointer select-none"
-                onClick={onToggleCollapse}
-            >
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <span className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 transition-colors ${
-                        collapsed && filledSets > 0 ? 'bg-success/20 text-success' : 'bg-accent/20 text-accent'
-                    }`}>
-                        {collapsed && filledSets > 0 ? '✓' : index + 1}
-                    </span>
-                    <div className="min-w-0">
-                        <h3 className="text-base font-display font-bold text-white leading-tight truncate">{exercise.name}</h3>
-                        <p className="text-xs text-text-secondary">
-                            {plannedSets} x {exercise.reps}
-                            {targetWeights.some((w: number) => w > 0) && (
-                                <span className="text-accent ml-1">
-                                    • {targetWeights.map((w: number) => w > 0 ? `${w}` : '—').join('/')} кг
-                                </span>
-                            )}
-                            {collapsed && filledSets > 0 && (
-                                <span className="text-success ml-2">· {filledSets}/{totalSets} подх. заполнено</span>
-                            )}
-                        </p>
+            {/* Заголовок — всегда виден */}
+            <div className="p-4 cursor-pointer select-none" onClick={onToggleCollapse}>
+
+                {/* Строка 1: номер + название + кнопка свернуть */}
+                <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex items-start gap-2 flex-1 min-w-0">
+                        <span className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 mt-0.5 transition-colors ${
+                            collapsed && filledSets > 0 ? 'bg-success/20 text-success' : 'bg-accent/20 text-accent'
+                        }`}>
+                            {collapsed && filledSets > 0 ? '✓' : index + 1}
+                        </span>
+                        <div className="min-w-0">
+                            <h3 className="text-base font-display font-bold text-white leading-tight break-words">{exercise.name}</h3>
+                            <p className="text-xs text-text-secondary mt-0.5">
+                                {plannedSets} x {exercise.reps}
+                                {targetWeights.some((w: number) => w > 0) && (
+                                    <span className="text-accent ml-1">
+                                        • {targetWeights.map((w: number) => w > 0 ? `${w}` : '—').join('/')} кг
+                                    </span>
+                                )}
+                                {collapsed && filledSets > 0 && (
+                                    <span className="text-success ml-2">· {filledSets}/{totalSets} подх. заполнено</span>
+                                )}
+                            </p>
+                        </div>
                     </div>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                    {exercise.videoUrl && !collapsed && (
-                        <button
-                            onClick={e => { e.stopPropagation(); onVideoClick(exercise.videoUrl!, exercise.name) }}
-                            className="glass-button-secondary flex items-center gap-1.5 text-xs px-3 py-1.5">
-                            <Play className="w-3 h-3" />Видео
-                        </button>
-                    )}
-                    {!collapsed && (
-                        <button
-                            onClick={e => { e.stopPropagation(); onTimerStart() }}
-                            className="rest-timer-trigger"
-                            title="Таймер отдыха"
-                        >
-                            <Timer className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Отдых</span>
-                        </button>
-                    )}
-                    <button className="glass-button-secondary p-1.5 rounded-lg" title={collapsed ? 'Развернуть' : 'Свернуть'}>
+                    {/* Кнопка свернуть — всегда справа в первой строке */}
+                    <button
+                        className="glass-button-secondary p-1.5 rounded-lg flex-shrink-0"
+                        title={collapsed ? 'Развернуть' : 'Свернуть'}
+                    >
                         {collapsed
                             ? <ChevronDown className="w-4 h-4 text-text-muted" />
                             : <ChevronUp className="w-4 h-4 text-text-muted" />
                         }
                     </button>
                 </div>
+
+                {/* Строка 2: кнопки Видео и Отдых — только когда развёрнуто */}
+                {!collapsed && (
+                    <div className="flex items-center gap-2 pl-9" onClick={e => e.stopPropagation()}>
+                        {exercise.videoUrl && (
+                            <button
+                                onClick={() => onVideoClick(exercise.videoUrl!, exercise.name)}
+                                className="glass-button-secondary flex items-center gap-1.5 text-xs px-3 py-1.5">
+                                <Play className="w-3 h-3" />Видео
+                            </button>
+                        )}
+                        <button
+                            onClick={onTimerStart}
+                            className="rest-timer-trigger"
+                            title="Таймер отдыха"
+                        >
+                            <Timer className="w-3.5 h-3.5" />
+                            <span>Отдых</span>
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Тело — скрывается при свёртывании */}
