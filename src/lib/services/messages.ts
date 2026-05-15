@@ -132,7 +132,7 @@ export async function getClientsWithMessages(): Promise<{ userId: string; lastMe
 }
 
 /**
- * Пометить сообщения как прочитанные
+ * Пометить сообщения как прочитанные (для тренера — от конкретного клиента)
  */
 export async function markConversationRead(clientId: string): Promise<void> {
     const db = getServiceClient()
@@ -141,6 +141,19 @@ export async function markConversationRead(clientId: string): Promise<void> {
         .update({ is_read: true })
         .eq('from_user_id', clientId)
         .eq('to_user_id', TRAINER_ID)
+        .eq('is_read', false)
+}
+
+/**
+ * Пометить сообщения от тренера как прочитанные (для клиента)
+ */
+export async function markTrainerMessagesRead(clientId: string): Promise<void> {
+    const db = getServiceClient()
+    await db
+        .from('admin_messages')
+        .update({ is_read: true })
+        .eq('from_user_id', TRAINER_ID)
+        .eq('to_user_id', clientId)
         .eq('is_read', false)
 }
 

@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth'
 import {
     getMyConversation, sendMessageToTrainer,
     getClientsWithMessages, getConversationWithClient, sendMessageToClient, markConversationRead,
+    markTrainerMessagesRead,
     type ChatMessage
 } from '@/lib/services/messages'
 import { getAllUsers, type UserWithProgress } from '@/lib/services/admin'
@@ -27,6 +28,8 @@ function ClientChat({ user }: { user: any }) {
         const data = await getMyConversation()
         setMessages(data)
         setIsLoading(false)
+        // Помечаем сообщения от тренера как прочитанные
+        markTrainerMessagesRead(user.id).catch(() => {})
         setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
     }
 
