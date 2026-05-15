@@ -49,6 +49,8 @@ async function registerSW(): Promise<ServiceWorkerRegistration> {
 
 /**
  * Подписаться на push-уведомления
+ * Всегда пересоздаёт подписку (unsubscribe + subscribe), чтобы получить свежий endpoint.
+ * Старые FCM-эндпоинты могут протухнуть — force re-subscribe решает эту проблему.
  * Возвращает true если успешно
  */
 export async function subscribeToPush(): Promise<boolean> {
@@ -63,7 +65,20 @@ export async function subscribeToPush(): Promise<boolean> {
     const registration = await registerSW()
     await navigator.serviceWorker.ready
 
-    // Создаём подписку
+    // Удаляем старую подписку если есть (force re-subscribe для свежего endpoint)
+    const existingSub = await registration.pushManager.getSubscription()
+    if (existingSub) {
+      const oldEndpoint = existingSub.endpoint
+      await existingSub.unsubscribe()
+      // Удаляем старую подписку с сервера
+      fetch('/api/push/subscribe', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: oldEndpoint }),
+      }).catch(() => {})
+    }
+
+    // Создаём новую подписку
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
@@ -80,6 +95,10 @@ export async function subscribeToPush(): Promise<boolean> {
         keys: subJson.keys,
       }),
     })
+
+    if (res.ok) {
+      console.log('[Push] Subscribed successfully, endpoint:', subJson.endpoint?.substring(0, 60))
+    }
 
     return res.ok
   } catch (e) {
