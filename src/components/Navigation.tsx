@@ -4,6 +4,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { Home, Dumbbell, TrendingUp, MessageCircle, LogOut, Apple, BarChart3 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import NotificationBell from './NotificationBell'
+import PushSubscribeButton from './PushSubscribeButton'
 
 export default function Navigation() {
   const { user, signOut } = useAuth()
@@ -81,6 +82,7 @@ export default function Navigation() {
 
             {/* Right */}
             <div className="flex items-center gap-2">
+              <PushSubscribeButton />
               <NotificationBell />
               <button onClick={handleSignOut} className="glass-button-secondary p-2.5 rounded-xl" title="Выйти">
                 <LogOut className="w-4 h-4" />
@@ -99,6 +101,7 @@ export default function Navigation() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <PushSubscribeButton />
             <NotificationBell />
             <button onClick={handleSignOut} className="glass-button-secondary p-2.5 rounded-xl" title="Выйти">
               <LogOut className="w-4 h-4" />

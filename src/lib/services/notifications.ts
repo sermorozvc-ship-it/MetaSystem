@@ -52,6 +52,21 @@ export async function createNotification(
 
     if (error) throw error
 
+    // Отправляем Web Push параллельно (не блокируем если не получится)
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || ''
+      if (baseUrl) {
+        fetch(`${baseUrl}/api/push/send`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({ userId, title, body: message, url: link }),
+        }).catch(() => {}) // fire-and-forget
+      }
+    } catch {}
+
     return { notification: data, error: null }
   } catch (e: any) {
     console.error('[Notifications] Create error:', e)

@@ -61,12 +61,9 @@ export default function RootLayout({
                     dangerouslySetInnerHTML={{
                         __html: `
               if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                  registrations.forEach(function(registration) {
-                    registration.unregister();
-                    console.log('SW unregistered');
-                  });
-                });
+                navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                  .then(function(reg) { console.log('[SW] Registered', reg.scope); })
+                  .catch(function(err) { console.warn('[SW] Registration failed', err); });
               }
             `,
                     }}
