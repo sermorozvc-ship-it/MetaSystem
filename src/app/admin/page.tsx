@@ -200,21 +200,18 @@ export default function AdminDashboardPage() {
                                 <div
                                     key={client.id}
                                     onClick={() => router.push(`/admin/clients/${client.id}`)}
-                                    className="flex items-center justify-between p-4 rounded-xl bg-bg-elevated hover:bg-bg-card cursor-pointer transition-all"
+                                    className="flex items-center gap-3 p-4 rounded-xl bg-bg-elevated hover:bg-bg-card cursor-pointer transition-all"
                                 >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center text-accent font-bold">
-                                            {(client.full_name || client.email).charAt(0).toUpperCase()}
-                                        </div>
-                                        <div>
-                                            <p className="font-semibold text-white">{client.full_name || 'Без имени'}</p>
-                                            <p className="text-sm text-text-muted">{client.email}</p>
-                                        </div>
+                                    <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center text-accent font-bold flex-shrink-0">
+                                        {(client.full_name || client.email).charAt(0).toUpperCase()}
                                     </div>
-
-                                    <div className="flex items-center gap-3">
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-semibold text-white truncate">{client.full_name || 'Без имени'}</p>
+                                        <p className="text-sm text-text-muted truncate">{client.email}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-shrink-0">
                                         {client.subscription_status === 'active' && (
-                                            <span className="px-3 py-1 rounded-full bg-success/20 text-success text-xs font-semibold">
+                                            <span className="px-2 py-1 rounded-full bg-success/20 text-success text-xs font-semibold whitespace-nowrap">
                                                 Активна
                                             </span>
                                         )}

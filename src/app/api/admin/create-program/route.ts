@@ -81,15 +81,40 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Ошибка БД: ' + error.message }, { status: 500 })
         }
 
-        // Уведомление клиенту
+        // Уведомление клиенту (in-app + Web Push)
+        const notifTitle = 'Новая программа! 💪'
+        const notifMessage = `Ваш тренер загрузил программу на неделю ${weekNumber}. Приступайте к тренировкам!`
+
         adminClient.from('notifications').insert({
             user_id: userId,
             type: 'program_uploaded',
-            title: 'Новая программа! 💪',
-            message: `Ваш тренер загрузил программу на неделю ${weekNumber}. Приступайте к тренировкам!`,
+            title: notifTitle,
+            message: notifMessage,
             link: '/programs',
             read: false,
-        }).then(({ error: e }) => { if (e) console.warn('[create-program] notification error:', e.message) })
+        }).then(({ error: e }) => {
+            if (e) {
+                console.warn('[create-program] notification error:', e.message)
+                return
+            }
+            // Отправляем Web Push после успешной вставки уведомления
+            const appUrl = process.env.NEXT_PUBLIC_APP_URL || ''
+            if (appUrl) {
+                fetch(`${appUrl}/api/push/send`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                    },
+                    body: JSON.stringify({
+                        userId,
+                        title: notifTitle,
+                        body: notifMessage,
+                        url: '/programs',
+                    }),
+                }).catch((err) => console.warn('[create-program] push send error:', err))
+            }
+        })
 
         return NextResponse.json({ program: data })
     } catch (e: any) {
