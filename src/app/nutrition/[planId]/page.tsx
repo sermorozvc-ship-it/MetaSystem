@@ -4,16 +4,16 @@ import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import {
     ArrowLeft, Loader2, ChevronLeft, ChevronRight,
-    Droplets, Flame, ChevronDown, ChevronUp, BookOpen, Calendar,
+    Droplets, Flame, ChevronDown, ChevronUp, BookOpen, Calendar, Dumbbell,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import {
     getNutritionProgramById,
     type NutritionProgram, type NutritionDay,
-    type NutritionMeal, type NutritionRecipe,
+    type NutritionMeal, type NutritionRecipe, type SportSupplement,
 } from '@/lib/services/nutrition-programs'
 
-type PageTab = 'plan' | 'recipes'
+type PageTab = 'plan' | 'recipes' | 'supplements'
 
 // ─── Иконки приёмов пищи ─────────────────────────────────────────────────────
 
@@ -249,6 +249,73 @@ function RecipesTab({ recipes }: { recipes: NutritionRecipe[] }) {
     )
 }
 
+// ─── Вкладка "Спортивное питание" ────────────────────────────────────────────
+
+function SupplementsTab({ supplements }: { supplements: { coachNote?: string; supplements: SportSupplement[] } }) {
+    if (supplements.supplements.length === 0) {
+        return (
+            <div className="glass-card p-12 text-center">
+                <Dumbbell className="w-16 h-16 text-text-muted mx-auto mb-4" />
+                <p className="text-text-secondary">Рекомендации по спортпиту не добавлены</p>
+            </div>
+        )
+    }
+
+    return (
+        <div className="space-y-4">
+            {supplements.coachNote && (
+                <div className="p-4 rounded-xl bg-accent/10 border border-accent/20 flex gap-3">
+                    <span className="text-accent text-lg flex-shrink-0">💬</span>
+                    <div>
+                        <p className="text-xs text-accent font-semibold mb-0.5">Рекомендация тренера</p>
+                        <p className="text-sm text-text-secondary leading-relaxed">{supplements.coachNote}</p>
+                    </div>
+                </div>
+            )}
+
+            {supplements.supplements.map((supp, idx) => (
+                <div key={supp.id || idx} className="glass-card p-4">
+                    <div className="flex items-start gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-accent/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <Dumbbell className="w-4 h-4 text-accent" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <h3 className="text-base font-display font-bold text-white mb-2">{supp.name}</h3>
+                            <div className="space-y-1.5">
+                                {supp.dose && (
+                                    <div className="flex items-start gap-2">
+                                        <span className="text-xs text-text-muted w-20 flex-shrink-0 pt-0.5">Доза</span>
+                                        <span className="text-sm text-white font-semibold">{supp.dose}</span>
+                                    </div>
+                                )}
+                                {supp.timing && (
+                                    <div className="flex items-start gap-2">
+                                        <span className="text-xs text-text-muted w-20 flex-shrink-0 pt-0.5">Приём</span>
+                                        <span className="text-sm text-text-secondary leading-snug">{supp.timing}</span>
+                                    </div>
+                                )}
+                                {supp.purpose && (
+                                    <div className="flex items-start gap-2">
+                                        <span className="text-xs text-text-muted w-20 flex-shrink-0 pt-0.5">Цель</span>
+                                        <span className="text-sm text-text-secondary leading-snug">{supp.purpose}</span>
+                                    </div>
+                                )}
+                            </div>
+                            {supp.note && (
+                                <div className="mt-3 p-3 rounded-xl bg-bg-elevated border border-border">
+                                    <p className="text-xs text-text-secondary leading-relaxed">
+                                        <span className="text-accent font-semibold">💡 </span>{supp.note}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            ))}
+        </div>
+    )
+}
+
 // ─── Главная страница ─────────────────────────────────────────────────────────
 
 export default function NutritionPlanDetailPage() {
@@ -316,8 +383,10 @@ export default function NutritionPlanDetailPage() {
     const weeks = plan.plan_data?.weeks || []
     const flatDays = plan.plan_data?.days || []
     const recipes = plan.plan_data?.recipes || []
+    const supplements = plan.plan_data?.supplements
     const hasWeeks = weeks.length > 0
     const hasRecipes = recipes.length > 0
+    const hasSupplements = !!(supplements && supplements.supplements.length > 0)
 
     // Если нет структурированных данных — raw markdown
     if (!hasWeeks && flatDays.length === 0) {
@@ -390,8 +459,8 @@ export default function NutritionPlanDetailPage() {
                     )}
                 </div>
 
-                {/* Вкладки: План / Рецепты */}
-                <div className="flex gap-2 mb-5">
+                {/* Вкладки: План / Рецепты / Спортпит */}
+                <div className="flex gap-2 mb-5 flex-wrap">
                     <button
                         onClick={() => setPageTab('plan')}
                         className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all ${
@@ -413,10 +482,24 @@ export default function NutritionPlanDetailPage() {
                             <span className="text-xs opacity-70">({recipes.length})</span>
                         </button>
                     )}
+                    {hasSupplements && (
+                        <button
+                            onClick={() => setPageTab('supplements')}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all ${
+                                pageTab === 'supplements' ? 'bg-accent text-bg-main' : 'glass-button-secondary text-text-secondary'
+                            }`}
+                        >
+                            <Dumbbell className="w-4 h-4" />
+                            Спортпит
+                        </button>
+                    )}
                 </div>
 
                 {/* ── Вкладка Рецепты ── */}
                 {pageTab === 'recipes' && <RecipesTab recipes={recipes} />}
+
+                {/* ── Вкладка Спортпит ── */}
+                {pageTab === 'supplements' && supplements && <SupplementsTab supplements={supplements} />}
 
                 {/* ── Вкладка План ── */}
                 {pageTab === 'plan' && (

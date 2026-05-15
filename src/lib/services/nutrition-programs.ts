@@ -65,6 +65,20 @@ export interface NutritionRecipe {
   note?: string
 }
 
+export interface SportSupplement {
+  id: string
+  name: string           // "Протеин", "Креатин", "Омега-3"
+  dose?: string          // "30 г", "5 г", "2 капсулы"
+  timing?: string        // "После тренировки", "Утром натощак"
+  purpose?: string       // "Добор белка", "Сила и восстановление"
+  note?: string          // Дополнительные инструкции
+}
+
+export interface SportSupplementsSection {
+  coachNote?: string           // Общая рекомендация тренера по спортпиту
+  supplements: SportSupplement[]
+}
+
 export interface NutritionPlanData {
   planNumber: number
   startDate: string
@@ -78,6 +92,7 @@ export interface NutritionPlanData {
   dailyFat?: number
   dailyCarbs?: number
   recipes?: NutritionRecipe[]  // Рецепты
+  supplements?: SportSupplementsSection  // Спортивное питание
 }
 
 export interface NutritionProgram {

@@ -4,6 +4,7 @@
 import type {
   NutritionPlanData, NutritionWeek, NutritionDay,
   NutritionMeal, NutritionDish, NutritionRecipe,
+  SportSupplement, SportSupplementsSection,
 } from '@/lib/services/nutrition-programs'
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -149,19 +150,110 @@ function parseRecipesSection(lines: string[]): NutritionRecipe[] {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Главный парсер
+// Парсер спортивного питания
+// Формат:
+// # Спортивное питание
+// **Рекомендация:** Базовый набор добавок для поддержки тренировочного процесса.
+//
+// ## Протеин
+// **Доза:** 30 г (1 мерная ложка)
+// **Время приёма:** После тренировки, или утром если нет тренировки
+// **Цель:** Добор суточного белка до нормы
+// **Заметка:** Можно смешивать с водой или молоком
+//
+// ## Креатин моногидрат
+// **Доза:** 5 г
+// **Время приёма:** Ежедневно, утром с едой
+// **Цель:** Увеличение силы и мышечной выносливости
 // ──────────────────────────────────────────────────────────────────────────
+
+function parseSupplementsSection(lines: string[]): SportSupplementsSection {
+  const supplements: SportSupplement[] = []
+  let coachNote: string | undefined
+  let current: Partial<SportSupplement> | null = null
+
+  const pushSupplement = () => {
+    if (current?.name) {
+      supplements.push({
+        id: generateId(current.name),
+        name: current.name,
+        dose: current.dose,
+        timing: current.timing,
+        purpose: current.purpose,
+        note: current.note,
+      })
+    }
+    current = null
+  }
+
+  for (const line of lines) {
+    // Общая рекомендация
+    const noteMatch = line.match(/^\*\*Рекомендация[^:]*:\*\*\s*(.+)/i)
+    if (noteMatch && !current) { coachNote = noteMatch[1].trim(); continue }
+
+    // Название добавки: ## Протеин
+    if (line.startsWith('## ')) {
+      pushSupplement()
+      current = { name: line.replace(/^##\s*/, '').trim() }
+      continue
+    }
+
+    if (!current) continue
+
+    const doseMatch = line.match(/^\*\*Доза[^:]*:\*\*\s*(.+)/i)
+    if (doseMatch) { current.dose = doseMatch[1].trim(); continue }
+
+    const timingMatch = line.match(/^\*\*Время[^:]*:\*\*\s*(.+)/i)
+    if (timingMatch) { current.timing = timingMatch[1].trim(); continue }
+
+    const purposeMatch = line.match(/^\*\*Цель[^:]*:\*\*\s*(.+)/i)
+    if (purposeMatch) { current.purpose = purposeMatch[1].trim(); continue }
+
+    const suppNoteMatch = line.match(/^\*\*Заметка[^:]*:\*\*\s*(.+)/i)
+    if (suppNoteMatch) { current.note = suppNoteMatch[1].trim(); continue }
+  }
+
+  pushSupplement()
+  return { coachNote, supplements }
+}
+
+
 
 export function parseNutritionMdToJson(markdown: string): NutritionPlanData {
   const lines = markdown.split('\n').map(l => l.trim())
 
   // Разделяем секцию рецептов от основного плана
   const recipesStartIdx = lines.findIndex(l => l.match(/^#\s+Рецепты/i))
-  const planLines = recipesStartIdx >= 0 ? lines.slice(0, recipesStartIdx) : lines
-  const recipeLines = recipesStartIdx >= 0 ? lines.slice(recipesStartIdx + 1) : []
+  const supplementsStartIdx = lines.findIndex(l => l.match(/^#\s+Спортивное\s+питание/i))
+
+  // Определяем границы каждой секции
+  const sectionStarts = [
+    recipesStartIdx >= 0 ? recipesStartIdx : Infinity,
+    supplementsStartIdx >= 0 ? supplementsStartIdx : Infinity,
+  ]
+  const firstSectionIdx = Math.min(...sectionStarts)
+
+  const planLines = firstSectionIdx < Infinity ? lines.slice(0, firstSectionIdx) : lines
+
+  // Секция рецептов
+  let recipeLines: string[] = []
+  if (recipesStartIdx >= 0) {
+    const nextSection = sectionStarts.filter(s => s > recipesStartIdx)[0] ?? Infinity
+    recipeLines = lines.slice(recipesStartIdx + 1, nextSection < Infinity ? nextSection : undefined)
+  }
+
+  // Секция спортпита
+  let supplementLines: string[] = []
+  if (supplementsStartIdx >= 0) {
+    const nextSection = sectionStarts.filter(s => s > supplementsStartIdx)[0] ?? Infinity
+    supplementLines = lines.slice(supplementsStartIdx + 1, nextSection < Infinity ? nextSection : undefined)
+  }
 
   // Парсим рецепты
   const recipes = recipeLines.length > 0 ? parseRecipesSection(recipeLines) : undefined
+
+  // Парсим спортпит
+  const supplements = supplementLines.length > 0 ? parseSupplementsSection(supplementLines) : undefined
 
   // Номер плана
   const planMatch = planLines.find(l => l.startsWith('# '))
@@ -374,6 +466,7 @@ export function parseNutritionMdToJson(markdown: string): NutritionPlanData {
     dailyFat,
     dailyCarbs,
     recipes: recipes && recipes.length > 0 ? recipes : undefined,
+    supplements: supplements && supplements.supplements.length > 0 ? supplements : undefined,
   }
 }
 
@@ -976,4 +1069,27 @@ export const EXAMPLE_NUTRITION_MD = `# План питания №1
 **Приготовление:**
 1. Ягоды промыть
 2. Добавить в йогурт, перемешать
+
+---
+
+# Спортивное питание
+**Рекомендация:** Базовый набор добавок под твои цели и данные анкеты. Принимай строго по схеме — хаотичный приём не даёт результата.
+
+## Протеин (сывороточный)
+**Доза:** 30 г (1 мерная ложка)
+**Время приёма:** После тренировки в течение 30–60 минут. В дни отдыха — утром с завтраком если не добираешь белок из еды
+**Цель:** Добор суточного белка до нормы 180 г. Ускорение восстановления мышц
+**Заметка:** Смешивать с 250–300 мл воды или молока. Не заменяет полноценные приёмы пищи
+
+## Креатин моногидрат
+**Доза:** 5 г (1 чайная ложка)
+**Время приёма:** Ежедневно, утром с едой. Время приёма не критично — главное регулярность
+**Цель:** Увеличение силовых показателей, объём мышц, восстановление между подходами
+**Заметка:** Принимать каждый день без перерывов, в том числе в дни отдыха. Запивать большим количеством воды
+
+## Омега-3
+**Доза:** 2 капсулы (2 г EPA+DHA)
+**Время приёма:** Во время еды, утром или в обед
+**Цель:** Снижение воспаления, поддержка суставов и сердечно-сосудистой системы
+**Заметка:** Принимать с жирной едой для лучшего усвоения
 `
