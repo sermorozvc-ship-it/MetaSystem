@@ -167,27 +167,25 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Ошибка БД: ' + error.message }, { status: 500 })
         }
 
-        // Уведомление клиенту (in-app + Web Push) — fire-and-forget, не блокируем ответ
+        // Уведомление клиенту (in-app + Web Push) — ждём завершения (Vercel убивает fire-and-forget)
         const notifTitle = 'Новая программа! 💪'
         const notifMessage = `Ваш тренер загрузил программу на неделю ${weekNumber}. Приступайте к тренировкам!`
 
-        Promise.resolve().then(async () => {
-            // 1. In-app уведомление
-            const { error: notifError } = await adminClient.from('notifications').insert({
-                user_id: userId,
-                type: 'program_uploaded',
-                title: notifTitle,
-                message: notifMessage,
-                link: '/programs',
-                read: false,
-            })
-            if (notifError) {
-                console.warn('[create-program] notification insert error:', notifError.message)
-            }
+        // 1. In-app уведомление
+        const { error: notifError } = await adminClient.from('notifications').insert({
+            user_id: userId,
+            type: 'program_uploaded',
+            title: notifTitle,
+            message: notifMessage,
+            link: '/programs',
+            read: false,
+        })
+        if (notifError) {
+            console.warn('[create-program] notification insert error:', notifError.message)
+        }
 
-            // 2. Web Push — напрямую, без HTTP-прыжка
-            await sendPushDirect(userId, notifTitle, notifMessage, '/programs')
-        }).catch((e) => console.error('[create-program] async notification error:', e))
+        // 2. Web Push
+        await sendPushDirect(userId, notifTitle, notifMessage, '/programs')
 
         return NextResponse.json({ program: data })
     } catch (e: any) {

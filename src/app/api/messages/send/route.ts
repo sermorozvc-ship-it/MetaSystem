@@ -64,15 +64,18 @@ export async function POST(req: NextRequest) {
     const senderName = senderProfile?.full_name || 'Тренер'
     const preview = message.trim().substring(0, 80)
 
-    // Отправляем push получателю (fire-and-forget)
-    sendPushToUser(
-      toUserId,
-      `Новое сообщение от ${senderName} 💬`,
-      preview,
-      '/messages'
-    ).then((result) => {
-      console.log(`[messages/send] push result for ${toUserId}:`, result)
-    }).catch((e) => console.warn('[messages/send] push failed:', e))
+    // Отправляем push получателю — ждём результата для логирования
+    try {
+      const pushResult = await sendPushToUser(
+        toUserId,
+        `Новое сообщение от ${senderName} 💬`,
+        preview,
+        '/messages'
+      )
+      console.log(`[messages/send] push to ${toUserId}: sent=${pushResult.sent}/${pushResult.total}`)
+    } catch (e) {
+      console.warn('[messages/send] push error:', e)
+    }
 
     return NextResponse.json({ success: true })
   } catch (e: any) {
