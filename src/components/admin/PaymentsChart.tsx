@@ -243,7 +243,6 @@ export default function PaymentsChart({ data }: PaymentsChartProps) {
                                 radius={[4, 4, 0, 0]}
                                 maxBarSize={48}
                                 fillOpacity={0.85}
-                                cursor={false}
                             />
                             {mode === 'revenue' && (
                                 <Bar
@@ -252,7 +251,6 @@ export default function PaymentsChart({ data }: PaymentsChartProps) {
                                     radius={[4, 4, 0, 0]}
                                     maxBarSize={48}
                                     fillOpacity={0.6}
-                                    cursor={false}
                                 />
                             )}
                         </BarChart>
