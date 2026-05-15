@@ -116,6 +116,8 @@ function AdminChat() {
     const [isLoadingMsgs, setIsLoadingMsgs] = useState(false)
     const [text, setText] = useState('')
     const [sending, setSending] = useState(false)
+    // Мобильный режим: показываем либо список, либо чат
+    const [mobileView, setMobileView] = useState<'list' | 'chat'>('list')
     const bottomRef = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
@@ -123,7 +125,6 @@ function AdminChat() {
             const [allUsers, withMsgs] = await Promise.all([getAllUsers(), getClientsWithMessages()])
             const clientsOnly = allUsers.filter(u => u.role !== 'admin' && u.role !== 'trainer')
             setClients(clientsOnly)
-            // Строим карту непрочитанных
             const map: Record<string, number> = {}
             for (const c of withMsgs) map[c.userId] = c.unread
             setUnreadMap(map)
@@ -135,12 +136,18 @@ function AdminChat() {
     const selectClient = async (client: UserWithProgress) => {
         setSelectedClient(client)
         setIsLoadingMsgs(true)
+        setMobileView('chat')
         const data = await getConversationWithClient(client.id)
         setMessages(data)
         setIsLoadingMsgs(false)
         await markConversationRead(client.id)
         setUnreadMap(prev => ({ ...prev, [client.id]: 0 }))
         setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+    }
+
+    const handleBack = () => {
+        setMobileView('list')
+        setSelectedClient(null)
     }
 
     const handleSend = async () => {
@@ -156,121 +163,145 @@ function AdminChat() {
         setSending(false)
     }
 
-    // Клиенты у которых есть сообщения — сначала
-    const clientsWithMsgs = clients.filter(c => unreadMap[c.id] !== undefined || messages.some(m => m.from_user_id === c.id || m.to_user_id === c.id))
     const sortedClients = [...clients].sort((a, b) => (unreadMap[b.id] || 0) - (unreadMap[a.id] || 0))
 
-    return (
-        <div className="flex h-full">
-            {/* Список клиентов */}
-            <div className="w-72 flex-shrink-0 border-r border-border flex flex-col">
-                <div className="px-4 py-4 border-b border-border">
-                    <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-text-muted" />
-                        <h2 className="font-semibold text-white text-sm">Клиенты</h2>
-                    </div>
-                </div>
-                <div className="flex-1 overflow-y-auto">
-                    {isLoadingClients ? (
-                        <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 text-accent animate-spin" /></div>
-                    ) : sortedClients.length === 0 ? (
-                        <p className="text-text-muted text-sm text-center py-8">Нет клиентов</p>
-                    ) : (
-                        sortedClients.map(client => (
-                            <button key={client.id} onClick={() => selectClient(client)}
-                                className={`w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-bg-elevated transition-colors ${
-                                    selectedClient?.id === client.id ? 'bg-accent/10 border-r-2 border-accent' : ''
-                                }`}>
-                                <div className="w-9 h-9 rounded-full bg-accent/20 flex items-center justify-center text-accent font-bold text-sm flex-shrink-0">
-                                    {(client.full_name || client.email).charAt(0).toUpperCase()}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-white truncate">{client.full_name || 'Без имени'}</p>
-                                    <p className="text-xs text-text-muted truncate">{client.email}</p>
-                                </div>
-                                {(unreadMap[client.id] || 0) > 0 && (
-                                    <span className="w-5 h-5 rounded-full bg-accent text-bg-main text-xs font-bold flex items-center justify-center flex-shrink-0">
-                                        {unreadMap[client.id]}
-                                    </span>
-                                )}
-                            </button>
-                        ))
-                    )}
+    // ── Список клиентов ──
+    const ClientList = (
+        <div className="flex flex-col h-full">
+            <div className="px-4 py-4 border-b border-border flex-shrink-0">
+                <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-text-muted" />
+                    <h2 className="font-semibold text-white text-sm">Клиенты</h2>
                 </div>
             </div>
-
-            {/* Переписка */}
-            <div className="flex-1 flex flex-col min-w-0">
-                {!selectedClient ? (
-                    <div className="flex-1 flex items-center justify-center text-center p-8">
-                        <div>
-                            <MessageCircle className="w-12 h-12 text-text-muted mx-auto mb-3" />
-                            <p className="text-text-secondary">Выберите клиента слева</p>
-                        </div>
-                    </div>
+            <div className="flex-1 overflow-y-auto">
+                {isLoadingClients ? (
+                    <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 text-accent animate-spin" /></div>
+                ) : sortedClients.length === 0 ? (
+                    <p className="text-text-muted text-sm text-center py-8">Нет клиентов</p>
                 ) : (
-                    <>
-                        {/* Header */}
-                        <div className="border-b border-border px-4 py-4 flex items-center gap-3 flex-shrink-0">
-                            <div className="w-9 h-9 rounded-full bg-accent/20 flex items-center justify-center text-accent font-bold text-sm">
-                                {(selectedClient.full_name || selectedClient.email).charAt(0).toUpperCase()}
+                    sortedClients.map(client => (
+                        <button key={client.id} onClick={() => selectClient(client)}
+                            className={`w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-bg-elevated transition-colors ${
+                                selectedClient?.id === client.id ? 'bg-accent/10 border-r-2 border-accent' : ''
+                            }`}>
+                            <div className="w-9 h-9 rounded-full bg-accent/20 flex items-center justify-center text-accent font-bold text-sm flex-shrink-0">
+                                {(client.full_name || client.email).charAt(0).toUpperCase()}
                             </div>
-                            <div>
-                                <p className="font-semibold text-white text-sm">{selectedClient.full_name || 'Без имени'}</p>
-                                <p className="text-xs text-text-muted">{selectedClient.email}</p>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-white truncate">{client.full_name || 'Без имени'}</p>
+                                <p className="text-xs text-text-muted truncate">{client.email}</p>
                             </div>
-                        </div>
-
-                        {/* Messages */}
-                        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-                            {isLoadingMsgs ? (
-                                <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 text-accent animate-spin" /></div>
-                            ) : messages.length === 0 ? (
-                                <div className="text-center py-12">
-                                    <p className="text-text-muted text-sm">Сообщений пока нет</p>
-                                    <p className="text-text-muted text-xs mt-1">Напишите первым</p>
-                                </div>
-                            ) : (
-                                messages.map(msg => {
-                                    const isFromTrainer = msg.from_user_id === TRAINER_ID
-                                    return (
-                                        <div key={msg.id} className={`flex ${isFromTrainer ? 'justify-end' : 'justify-start'}`}>
-                                            <div className={`max-w-[75%] rounded-2xl px-4 py-3 ${
-                                                isFromTrainer ? 'bg-accent text-bg-main rounded-br-sm' : 'bg-bg-elevated text-white rounded-bl-sm'
-                                            }`}>
-                                                <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.message}</p>
-                                                <p className={`text-xs mt-1 ${isFromTrainer ? 'text-bg-main/60' : 'text-text-muted'}`}>
-                                                    {new Date(msg.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    )
-                                })
+                            {(unreadMap[client.id] || 0) > 0 && (
+                                <span className="w-5 h-5 rounded-full bg-accent text-bg-main text-xs font-bold flex items-center justify-center flex-shrink-0">
+                                    {unreadMap[client.id]}
+                                </span>
                             )}
-                            <div ref={bottomRef} />
-                        </div>
-
-                        {/* Input */}
-                        <div className="border-t border-border px-4 py-4 flex-shrink-0">
-                            <div className="flex gap-3 items-end">
-                                <textarea
-                                    value={text}
-                                    onChange={e => setText(e.target.value)}
-                                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
-                                    placeholder="Ответить клиенту... (Enter — отправить)"
-                                    className="glass-input flex-1 resize-none text-sm min-h-[44px] max-h-32 py-3"
-                                    rows={1}
-                                />
-                                <button onClick={handleSend} disabled={!text.trim() || sending}
-                                    className="glass-button p-3 flex-shrink-0 disabled:opacity-40">
-                                    {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                                </button>
-                            </div>
-                        </div>
-                    </>
+                        </button>
+                    ))
                 )}
             </div>
         </div>
+    )
+
+    // ── Переписка ──
+    const ChatPanel = (
+        <div className="flex flex-col h-full">
+            {!selectedClient ? (
+                <div className="flex-1 flex items-center justify-center text-center p-8">
+                    <div>
+                        <MessageCircle className="w-12 h-12 text-text-muted mx-auto mb-3" />
+                        <p className="text-text-secondary">Выберите клиента слева</p>
+                    </div>
+                </div>
+            ) : (
+                <>
+                    {/* Header */}
+                    <div className="border-b border-border px-4 py-3 flex items-center gap-3 flex-shrink-0">
+                        {/* Кнопка назад — только на мобильном */}
+                        <button
+                            onClick={handleBack}
+                            className="md:hidden p-1.5 rounded-lg hover:bg-bg-elevated transition-colors flex-shrink-0"
+                        >
+                            <ArrowLeft className="w-5 h-5 text-text-secondary" />
+                        </button>
+                        <div className="w-9 h-9 rounded-full bg-accent/20 flex items-center justify-center text-accent font-bold text-sm flex-shrink-0">
+                            {(selectedClient.full_name || selectedClient.email).charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                            <p className="font-semibold text-white text-sm truncate">{selectedClient.full_name || 'Без имени'}</p>
+                            <p className="text-xs text-text-muted truncate">{selectedClient.email}</p>
+                        </div>
+                    </div>
+
+                    {/* Messages */}
+                    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+                        {isLoadingMsgs ? (
+                            <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 text-accent animate-spin" /></div>
+                        ) : messages.length === 0 ? (
+                            <div className="text-center py-12">
+                                <p className="text-text-muted text-sm">Сообщений пока нет</p>
+                                <p className="text-text-muted text-xs mt-1">Напишите первым</p>
+                            </div>
+                        ) : (
+                            messages.map(msg => {
+                                const isFromTrainer = msg.from_user_id === TRAINER_ID
+                                return (
+                                    <div key={msg.id} className={`flex ${isFromTrainer ? 'justify-end' : 'justify-start'}`}>
+                                        <div className={`max-w-[75%] rounded-2xl px-4 py-3 ${
+                                            isFromTrainer ? 'bg-accent text-bg-main rounded-br-sm' : 'bg-bg-elevated text-white rounded-bl-sm'
+                                        }`}>
+                                            <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.message}</p>
+                                            <p className={`text-xs mt-1 ${isFromTrainer ? 'text-bg-main/60' : 'text-text-muted'}`}>
+                                                {new Date(msg.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                            </p>
+                                        </div>
+                                    </div>
+                                )
+                            })
+                        )}
+                        <div ref={bottomRef} />
+                    </div>
+
+                    {/* Input */}
+                    <div className="border-t border-border px-4 py-4 flex-shrink-0">
+                        <div className="flex gap-3 items-end">
+                            <textarea
+                                value={text}
+                                onChange={e => setText(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+                                placeholder="Ответить клиенту..."
+                                className="glass-input flex-1 resize-none text-sm min-h-[44px] max-h-32 py-3"
+                                rows={1}
+                            />
+                            <button onClick={handleSend} disabled={!text.trim() || sending}
+                                className="glass-button p-3 flex-shrink-0 disabled:opacity-40">
+                                {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                            </button>
+                        </div>
+                    </div>
+                </>
+            )}
+        </div>
+    )
+
+    return (
+        <>
+            {/* Десктоп: два столбца рядом */}
+            <div className="hidden md:flex h-full">
+                <div className="w-72 flex-shrink-0 border-r border-border">
+                    {ClientList}
+                </div>
+                <div className="flex-1 min-w-0">
+                    {ChatPanel}
+                </div>
+            </div>
+
+            {/* Мобильный: переключение между списком и чатом */}
+            <div className="md:hidden h-full">
+                {mobileView === 'list' ? ClientList : ChatPanel}
+            </div>
+        </>
     )
 }
 
