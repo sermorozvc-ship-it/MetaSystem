@@ -121,14 +121,14 @@ export default function AdminClientsPage() {
         <div className="min-h-screen bg-bg-main p-4 py-12">
             <div className="max-w-6xl mx-auto">
                 {/* Header */}
-                <div className="flex items-start justify-between gap-3 mb-8">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-8">
                     <div className="min-w-0">
                         <h1 className="text-2xl sm:text-3xl font-display font-bold text-white mb-1">Клиенты</h1>
                         <p className="text-sm text-text-secondary">Управление клиентами и программами</p>
                     </div>
                     <button
                         onClick={() => router.push('/admin/clients/new')}
-                        className="glass-button flex items-center gap-2 flex-shrink-0 text-sm"
+                        className="glass-button flex items-center gap-2 flex-shrink-0 text-sm self-start sm:self-auto"
                     >
                         <UserPlus className="w-4 h-4" />
                         <span>Добавить клиента</span>
@@ -214,93 +214,96 @@ export default function AdminClientsPage() {
                                 <div
                                     key={client.id}
                                     onClick={() => router.push(`/admin/clients/${client.id}`)}
-                                    className={`glass-card p-6 cursor-pointer hover:border-accent transition-all ${client.is_archived ? 'opacity-70' : ''}`}
+                                    className={`glass-card p-4 sm:p-6 cursor-pointer hover:border-accent transition-all ${client.is_archived ? 'opacity-70' : ''}`}
                                 >
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-3 mb-2 flex-wrap">
-                                                <h3 className="text-xl font-display font-bold text-white">
-                                                    {client.full_name || 'Без имени'}
-                                                </h3>
-                                                <div className={`px-3 py-1 rounded-full ${subscription.bgColor} flex items-center gap-1.5`}>
-                                                    <span className={`text-xs font-semibold ${subscription.color}`}>{subscription.label}</span>
+                                    {/* Верхняя строка: имя + бейдж + стрелка */}
+                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                                            <h3 className="text-lg sm:text-xl font-display font-bold text-white truncate">
+                                                {client.full_name || 'Без имени'}
+                                            </h3>
+                                            <div className={`px-2.5 py-0.5 rounded-full ${subscription.bgColor} flex items-center gap-1 flex-shrink-0`}>
+                                                <span className={`text-xs font-semibold ${subscription.color}`}>{subscription.label}</span>
+                                            </div>
+                                            {client.is_archived && (
+                                                <div className="px-2.5 py-0.5 rounded-full bg-text-muted/20 flex items-center gap-1 flex-shrink-0">
+                                                    <Archive className="w-3 h-3 text-text-muted" />
+                                                    <span className="text-xs font-semibold text-text-muted">Архив</span>
                                                 </div>
-                                                {client.is_archived && (
-                                                    <div className="px-3 py-1 rounded-full bg-text-muted/20 flex items-center gap-1.5">
-                                                        <Archive className="w-3 h-3 text-text-muted" />
-                                                        <span className="text-xs font-semibold text-text-muted">Архив</span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <p className="text-sm text-text-secondary mb-3">{client.email}</p>
-                                            <div className="flex items-center gap-6 text-sm flex-wrap">
-                                                {client.subscription_end_date && (
-                                                    <div className="flex items-center gap-2">
-                                                        <Calendar className="w-4 h-4 text-text-muted" />
-                                                        <span className="text-text-secondary">До {new Date(client.subscription_end_date).toLocaleDateString('ru-RU')}</span>
-                                                    </div>
-                                                )}
-                                                {client.has_nutrition_plan && (
-                                                    <div className="flex items-center gap-2">
-                                                        <CheckCircle2 className="w-4 h-4 text-success" />
-                                                        <span className="text-success">План питания</span>
-                                                    </div>
-                                                )}
-                                                {client.plan_type && (
-                                                    <div className="text-text-muted">
-                                                        Тариф: {client.plan_type === '1_month' ? '1 месяц' : client.plan_type === '3_months' ? '3 месяца' : '6 месяцев'}
-                                                    </div>
-                                                )}
-                                            </div>
+                                            )}
                                         </div>
+                                        <ChevronRight className="w-5 h-5 text-text-muted flex-shrink-0" />
+                                    </div>
 
-                                        <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                                            {tab === 'active' ? (
+                                    {/* Инфо */}
+                                    <p className="text-sm text-text-secondary mb-2">{client.email}</p>
+                                    <div className="flex items-center gap-4 text-sm flex-wrap mb-3">
+                                        {client.subscription_end_date && (
+                                            <div className="flex items-center gap-1.5">
+                                                <Calendar className="w-4 h-4 text-text-muted" />
+                                                <span className="text-text-secondary">До {new Date(client.subscription_end_date).toLocaleDateString('ru-RU')}</span>
+                                            </div>
+                                        )}
+                                        {client.has_nutrition_plan && (
+                                            <div className="flex items-center gap-1.5">
+                                                <CheckCircle2 className="w-4 h-4 text-success" />
+                                                <span className="text-success">План питания</span>
+                                            </div>
+                                        )}
+                                        {client.plan_type && (
+                                            <div className="text-text-muted">
+                                                Тариф: {client.plan_type === '1_month' ? '1 месяц' : client.plan_type === '3_months' ? '3 месяца' : '6 месяцев'}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Кнопки действий — отдельная строка снизу */}
+                                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                        {tab === 'active' ? (
+                                            <button
+                                                onClick={e => handleArchive(e, client.id)}
+                                                disabled={isProcessing}
+                                                title="В архив"
+                                                className="glass-button-secondary flex items-center gap-1.5 text-xs px-2.5 py-1.5 text-text-muted hover:text-warning hover:border-warning/40 transition-colors"
+                                            >
+                                                {isProcessing
+                                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                    : <Archive className="w-3.5 h-3.5" />
+                                                }
+                                                <span className="hidden sm:inline">В архив</span>
+                                            </button>
+                                        ) : (
+                                            <>
                                                 <button
-                                                    onClick={e => handleArchive(e, client.id)}
+                                                    onClick={e => handleUnarchive(e, client.id)}
                                                     disabled={isProcessing}
-                                                    title="В архив"
-                                                    className="glass-button-secondary flex items-center gap-1.5 text-xs px-3 py-2 text-text-muted hover:text-warning hover:border-warning/40 transition-colors"
+                                                    title="Восстановить"
+                                                    className="glass-button-secondary flex items-center gap-1.5 text-xs px-2.5 py-1.5 text-text-muted hover:text-success hover:border-success/40 transition-colors"
                                                 >
                                                     {isProcessing
                                                         ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                        : <Archive className="w-3.5 h-3.5" />
+                                                        : <ArchiveRestore className="w-3.5 h-3.5" />
                                                     }
-                                                    В архив
+                                                    <span className="hidden sm:inline">Восстановить</span>
                                                 </button>
-                                            ) : (
-                                                <>
-                                                    <button
-                                                        onClick={e => handleUnarchive(e, client.id)}
-                                                        disabled={isProcessing}
-                                                        title="Восстановить"
-                                                        className="glass-button-secondary flex items-center gap-1.5 text-xs px-3 py-2 text-text-muted hover:text-success hover:border-success/40 transition-colors"
-                                                    >
-                                                        {isProcessing
-                                                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                            : <ArchiveRestore className="w-3.5 h-3.5" />
-                                                        }
-                                                        Восстановить
-                                                    </button>
-                                                    <button
-                                                        onClick={e => handleDelete(e, client.id, client.full_name || 'клиента')}
-                                                        disabled={isProcessing}
-                                                        className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl border transition-all ${
-                                                            isConfirmingDelete
-                                                                ? 'bg-danger text-white border-danger animate-pulse'
-                                                                : 'glass-button-secondary text-danger border-danger/30 hover:border-danger/60'
-                                                        }`}
-                                                    >
-                                                        {isProcessing
-                                                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                            : <Trash2 className="w-3.5 h-3.5" />
-                                                        }
-                                                        {isConfirmingDelete ? 'Подтвердить удаление' : 'Удалить навсегда'}
-                                                    </button>
-                                                </>
-                                            )}
-                                            <ChevronRight className="w-5 h-5 text-text-muted ml-1" />
-                                        </div>
+                                                <button
+                                                    onClick={e => handleDelete(e, client.id, client.full_name || 'клиента')}
+                                                    disabled={isProcessing}
+                                                    className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border transition-all ${
+                                                        isConfirmingDelete
+                                                            ? 'bg-danger text-white border-danger animate-pulse'
+                                                            : 'glass-button-secondary text-danger border-danger/30 hover:border-danger/60'
+                                                    }`}
+                                                >
+                                                    {isProcessing
+                                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                        : <Trash2 className="w-3.5 h-3.5" />
+                                                    }
+                                                    <span className="hidden sm:inline">{isConfirmingDelete ? 'Подтвердить удаление' : 'Удалить навсегда'}</span>
+                                                    <span className="sm:hidden">{isConfirmingDelete ? 'Подтвердить' : 'Удалить'}</span>
+                                                </button>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             )

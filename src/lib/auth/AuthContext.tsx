@@ -15,14 +15,21 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+// Глобальный кеш сессии — переживает ремаунт компонента при навигации
+// Это ключевое: при переходе между страницами isLoading сразу false
+let globalSession: Session | null = null
+let globalUser: User | null = null
+let globalResolved = false
+
 /**
  * AuthContext — единственный источник правды о текущем пользователе.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
-    const [user, setUser] = useState<User | null>(null)
-    const [session, setSession] = useState<Session | null>(null)
-    const [isLoading, setIsLoading] = useState(true)
-    const hasResolved = useRef(false)
+    // Если глобальный кеш уже есть — стартуем с isLoading=false сразу
+    const [user, setUser] = useState<User | null>(globalUser)
+    const [session, setSession] = useState<Session | null>(globalSession)
+    const [isLoading, setIsLoading] = useState(!globalResolved)
+    const hasResolved = useRef(globalResolved)
 
     const [supabase] = useState(() => createClient())
     const isLoggingOut = useRef(false)
@@ -30,33 +37,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         let isMounted = true
 
-        // 1. Сначала мгновенно читаем сессию из localStorage (синхронно)
-        //    Снимаем isLoading сразу — страницы рендерятся без задержки
-        supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-            if (!isMounted) return
-            if (initialSession?.user) {
-                setSession(initialSession)
-                setUser(initialSession.user)
-                setCachedUser(initialSession.user)
-            } else {
-                // Сессии нет — сразу снимаем лоадер, не ждём onAuthStateChange
-                setSession(null)
-                setUser(null)
-                setCachedUser(null)
-            }
-            // В любом случае снимаем лоадер после getSession
-            if (!hasResolved.current) {
-                hasResolved.current = true
-                setIsLoading(false)
-            }
-        }).catch(() => {
-            // Ошибка getSession — тоже снимаем лоадер
-            if (!hasResolved.current && isMounted) {
-                hasResolved.current = true
-                setIsLoading(false)
-            }
-        })
-
+        // Если уже разрешили глобально — не делаем лишний getSession
+        if (globalResolved) {
+            setUser(globalUser)
+            setSession(globalSession)
+            setIsLoading(false)
+            hasResolved.current = true
+        } else {
+            // 1. Читаем сессию из localStorage (синхронно через Supabase)
+            supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+                if (!isMounted) return
+                if (initialSession?.user) {
+                    globalSession = initialSession
+                    globalUser = initialSession.user
+                    setSession(initialSession)
+                    setUser(initialSession.user)
+                    setCachedUser(initialSession.user)
+                } else {
+                    globalSession = null
+                    globalUser = null
+                    setSession(null)
+                    setUser(null)
+                    setCachedUser(null)
+                }
+                if (!hasResolved.current) {
+                    hasResolved.current = true
+                    globalResolved = true
+                    setIsLoading(false)
+                }
+            }).catch(() => {
+                if (!hasResolved.current && isMounted) {
+                    hasResolved.current = true
+                    globalResolved = true
+                    setIsLoading(false)
+                }
+            })
+        }
 
         // 2. Подписка на изменения состояния (главный источник правды)
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -65,25 +81,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                 console.log(`[Auth] Event: ${event}`, !!newSession?.user)
 
-                // Обрабатываем сессию
                 if (newSession?.user) {
+                    globalSession = newSession
+                    globalUser = newSession.user
                     setSession(newSession)
                     setUser(newSession.user)
                     setCachedUser(newSession.user)
                 } else {
-                    // Если сессии нет (вышли или INITIAL_SESSION без пользователя)
+                    globalSession = null
+                    globalUser = null
                     setSession(null)
                     setUser(null)
                     setCachedUser(null)
                 }
 
-                // Снимаем лоадер при первом получении состояния
                 if (!hasResolved.current) {
                     hasResolved.current = true
+                    globalResolved = true
                     setIsLoading(false)
                 }
 
-                // Логика создания профиля
+                // Создание профиля при первом входе
                 if (event === 'SIGNED_IN' && newSession?.user) {
                     try {
                         const { data: existing } = await supabase
@@ -98,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                                 id: newSession.user.id,
                                 email: newSession.user.email,
                                 full_name: newSession.user.user_metadata?.full_name || null,
-                                role: 'user',  // 'user' | 'admin' | 'curator' — 'client' не существует в check constraint!
+                                role: 'user',
                                 is_blocked: false
                             })
                         }
@@ -109,14 +127,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
         )
 
-        // 3. Таймаут-страховка: если что-то пошло не так — снимаем лоадер через 800мс
+        // 3. Таймаут-страховка: максимум 1.5 сек
         const timeout = setTimeout(() => {
             if (!hasResolved.current && isMounted) {
                 console.warn('[Auth] Timeout — forcing isLoading=false')
                 hasResolved.current = true
+                globalResolved = true
                 setIsLoading(false)
             }
-        }, 800)
+        }, 1500)
 
         return () => {
             isMounted = false
@@ -124,8 +143,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             clearTimeout(timeout)
         }
     }, [supabase])
-
-
 
     const signUp = async (email: string, password: string, fullName?: string) => {
         const { data, error } = await supabase.auth.signUp({
@@ -138,8 +155,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     : undefined
             }
         })
-        // Если Supabase вернул пользователя без ошибки — регистрация прошла
-        // (даже если email confirmation включена — сессия может быть установлена)
         return { error: error as Error | null }
     }
 
@@ -153,11 +168,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoggingOut.current = true
         setIsLoading(true)
 
+        // Сбрасываем глобальный кеш
+        globalSession = null
+        globalUser = null
+        globalResolved = false
+
         try {
             await supabase.auth.signOut()
 
             if (typeof window !== 'undefined') {
-                // Удаляем только ключи Supabase, чтобы не ломать другие данные
                 Object.keys(localStorage).forEach(key => {
                     if (key.startsWith('sb-')) localStorage.removeItem(key)
                 })

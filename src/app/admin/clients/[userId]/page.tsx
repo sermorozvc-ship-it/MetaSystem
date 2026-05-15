@@ -567,14 +567,14 @@ function ProgramCard({ program, onDelete, onUpdate }: {
         <>
         <div className="glass-card overflow-hidden">
             {/* Заголовок */}
-            <div
-                className="p-4 cursor-pointer hover:bg-white/5 transition-colors"
-                onClick={handleToggle}
-            >
-                {/* Верхняя строка: название + кнопки */}
-                <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="p-4">
+                {/* Строка 1: название + бейдж + стрелка (кликабельна) */}
+                <div
+                    className="flex items-center justify-between gap-2 mb-1 cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={handleToggle}
+                >
                     <div className="flex items-center gap-2 min-w-0">
-                        <h3 className="text-base font-display font-bold text-white whitespace-nowrap">
+                        <h3 className="text-base font-display font-bold text-white">
                             Неделя {program.week_number}
                         </h3>
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 ${
@@ -585,62 +585,16 @@ function ProgramCard({ program, onDelete, onUpdate }: {
                             {program.status}
                         </span>
                     </div>
-
-                    <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                        <button
-                            onClick={handleDownload}
-                            disabled={loadingEntries}
-                            className="glass-button-secondary p-2"
-                            title="Скачать .md"
-                        >
-                            {loadingEntries
-                                ? <Loader2 className="w-4 h-4 animate-spin" />
-                                : <Download className="w-4 h-4" />
-                            }
-                        </button>
-                        <button
-                            onClick={openEdit}
-                            className="glass-button-secondary p-2"
-                            title="Редактировать"
-                        >
-                            <Pencil className="w-4 h-4" />
-                        </button>
-                        {confirmDelete ? (
-                            <div className="flex items-center gap-1">
-                                <button
-                                    onClick={handleDelete}
-                                    disabled={deleting}
-                                    className="px-2 py-1.5 rounded-xl bg-danger/20 border border-danger/40 text-danger text-xs font-semibold"
-                                >
-                                    {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Да'}
-                                </button>
-                                <button
-                                    onClick={() => setConfirmDelete(false)}
-                                    className="px-2 py-1.5 rounded-xl glass-button-secondary text-xs"
-                                >
-                                    Нет
-                                </button>
-                            </div>
-                        ) : (
-                            <button
-                                onClick={handleDelete}
-                                className="glass-button-secondary p-2 text-danger hover:border-danger/40 transition-colors"
-                                title="Удалить"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        )}
-                        <div className="ml-1">
-                            {expanded
-                                ? <ChevronUp className="w-4 h-4 text-text-muted" />
-                                : <ChevronDown className="w-4 h-4 text-text-muted" />
-                            }
-                        </div>
+                    <div className="flex-shrink-0">
+                        {expanded
+                            ? <ChevronUp className="w-4 h-4 text-text-muted" />
+                            : <ChevronDown className="w-4 h-4 text-text-muted" />
+                        }
                     </div>
                 </div>
 
-                {/* Нижняя строка: даты и прогресс */}
-                <p className="text-xs text-text-secondary">
+                {/* Строка 2: даты */}
+                <p className="text-xs text-text-secondary mb-3">
                     {new Date(program.start_date).toLocaleDateString('ru-RU')} —{' '}
                     {new Date(program.end_date).toLocaleDateString('ru-RU')}
                     {' · '}{program.training_days_count} дней
@@ -650,6 +604,56 @@ function ProgramCard({ program, onDelete, onUpdate }: {
                         </span>
                     )}
                 </p>
+
+                {/* Строка 3: кнопки действий */}
+                <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                    <button
+                        onClick={handleDownload}
+                        disabled={loadingEntries}
+                        className="glass-button-secondary flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-muted hover:text-white transition-colors"
+                        title="Скачать .md"
+                    >
+                        {loadingEntries
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <Download className="w-3.5 h-3.5" />
+                        }
+                        <span>Скачать</span>
+                    </button>
+                    <button
+                        onClick={openEdit}
+                        className="glass-button-secondary flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-muted hover:text-white transition-colors"
+                        title="Редактировать"
+                    >
+                        <Pencil className="w-3.5 h-3.5" />
+                        <span>Изменить</span>
+                    </button>
+                    {confirmDelete ? (
+                        <div className="flex items-center gap-1.5 ml-auto">
+                            <button
+                                onClick={handleDelete}
+                                disabled={deleting}
+                                className="px-3 py-1.5 rounded-xl bg-danger/20 border border-danger/40 text-danger text-xs font-semibold"
+                            >
+                                {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Удалить'}
+                            </button>
+                            <button
+                                onClick={() => setConfirmDelete(false)}
+                                className="px-3 py-1.5 rounded-xl glass-button-secondary text-xs"
+                            >
+                                Отмена
+                            </button>
+                        </div>
+                    ) : (
+                        <button
+                            onClick={handleDelete}
+                            className="glass-button-secondary flex items-center gap-1.5 px-3 py-1.5 text-xs text-danger hover:border-danger/40 transition-colors ml-auto"
+                            title="Удалить"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                            <span>Удалить</span>
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Раскрытое содержимое */}
