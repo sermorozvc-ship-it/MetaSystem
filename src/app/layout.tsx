@@ -4,7 +4,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { AuthProvider } from '@/lib/auth'
-import { ErrorSuppressor } from '@/components/ErrorSuppressor'
+import { ClientErrorReporter } from '@/components/ClientErrorReporter'
 import Navigation from '@/components/Navigation'
 import PageWrapper from '@/components/PageWrapper'
 import NextTopLoader from 'nextjs-toploader'
@@ -53,7 +53,7 @@ export default function RootLayout({
                     shadow="0 0 10px rgba(200,245,66,0.5),0 0 5px rgba(200,245,66,0.3)"
                 />
                 <AuthProvider>
-                    <ErrorSuppressor />
+                    <ClientErrorReporter />
                     <Navigation />
                     <PageWrapper>{children}</PageWrapper>
                 </AuthProvider>

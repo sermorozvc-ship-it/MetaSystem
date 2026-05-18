@@ -45,18 +45,29 @@ ORDER BY table_name;
 ### Локальные переменные (.env.local) — уже настроены:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://bzyypoyvihqhrbllgffh.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key из Supabase Dashboard>
+SUPABASE_SERVICE_ROLE_KEY=<service role key из Supabase Dashboard>
 YOOMONEY_WALLET=410014990008683
-YOOMONEY_SECRET=STtr6NB+i52qaZAKS7PgLwA2
+YOOMONEY_SECRET=<секрет из настроек ЮMoney>
 NEXT_PUBLIC_YOOMONEY_WALLET=410014990008683
 NEXT_PUBLIC_APP_URL=https://meta-system-ja1o.vercel.app
 ```
 
-### Для Vercel (добавить в настройках проекта):
-1. Откройте проект на Vercel
-2. Settings → Environment Variables
-3. Добавьте все переменные из `.env.local`
+Актуальные значения — в `.env.local` (не коммитится в git).
+
+### Для Vercel:
+1. Откройте проект: https://vercel.com/dashboard → Settings → Environment Variables
+2. Добавьте все переменные из `.env.local`
+3. Выберите окружения: **Production**, **Preview**, **Development**
+4. После добавления — **Redeploy**
+
+### Настройки проекта Vercel:
+```
+Framework Preset: Next.js
+Build Command:    npm run build
+Output Directory: .next
+Node.js Version:  20.x
+```
 
 ---
 
@@ -100,6 +111,26 @@ npm i -g vercel
 
 # Деплой
 vercel --prod
+```
+
+---
+
+## Локальная разработка
+
+```bash
+npm run dev          # Dev-сервер (http://localhost:3001)
+npm run build        # Production-сборка
+npm run start        # Запуск production локально
+npm run type-check   # Проверка типов
+npm run lint         # Линтер
+```
+
+### Если dev-сервер не запускается (ошибка lock):
+```powershell
+# Остановить все процессы Node.js и очистить .next
+Stop-Process -Name node -Force -ErrorAction SilentlyContinue
+Remove-Item -Path ".next" -Recurse -Force -ErrorAction SilentlyContinue
+npm run dev
 ```
 
 ### Настройки проекта Vercel:

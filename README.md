@@ -103,13 +103,16 @@ metasystem/
 │   │   ├── questionnaire/      # Анкета
 │   │   ├── dashboard/          # Дашборд клиента
 │   │   ├── programs/           # Тренировочные программы
+│   │   ├── calendar/           # Календарь и стрики
 │   │   ├── metrics/            # Метрики и графики
 │   │   ├── messages/           # Чат
 │   │   ├── admin/              # Админ-панель
 │   │   └── api/                # API routes (вебхуки)
 │   ├── components/             # React компоненты
 │   │   ├── Navigation.tsx      # Навигация
-│   │   └── NotificationBell.tsx # Колокольчик уведомлений
+│   │   ├── NotificationBell.tsx # Колокольчик уведомлений
+│   │   ├── StreakCard.tsx       # Карточка стрика
+│   │   └── CalendarGrid.tsx    # Месячная сетка
 │   ├── lib/
 │   │   ├── services/           # Сервисы для работы с БД
 │   │   │   ├── payment.ts
@@ -117,19 +120,28 @@ metasystem/
 │   │   │   ├── training.ts
 │   │   │   ├── metrics.ts
 │   │   │   ├── admin.ts
-│   │   │   └── notifications.ts
+│   │   │   ├── notifications.ts
+│   │   │   └── streaks.ts      # Логика стриков
 │   │   ├── utils/              # Утилиты
 │   │   │   └── md-parser.ts    # Markdown → JSON парсер
 │   │   ├── auth.tsx            # Auth контекст
 │   │   └── supabase/           # Supabase клиенты
 │   └── app/globals.css         # Глобальные стили
 ├── supabase/
-│   └── migrations/             # SQL миграции
+│   ├── migrations/             # SQL миграции
+│   ├── CHECK_AND_FIX.sql       # Диагностика и фиксы
+│   └── supabase_setup.sql      # Ручная установка таблиц
 ├── docs/                       # Документация
-│   ├── implementation_plan.md  # План реализации
+│   ├── ARCHITECTURE.md         # Архитектурные решения (читать перед изменениями!)
+│   ├── PAYMENT_FLOW.md         # Платёжный флоу и отладка
 │   ├── dev_log.md              # Лог разработки
+│   ├── implementation_plan.md  # План реализации
+│   ├── deployment_guide.md     # Руководство по деплою
 │   ├── e2e_test_scenarios.md   # E2E тестовые сценарии
-│   └── manual_testing_checklist.md # Чеклист тестирования
+│   ├── manual_testing_checklist.md # Чеклист тестирования
+│   ├── renewal_migration_instructions.md # Миграция продлений
+│   ├── test_program_example.md # Пример тренировочной программы
+│   └── archive/                # Устаревшие инструкции
 └── public/                     # Статические файлы
 ```
 
@@ -179,16 +191,12 @@ metasystem/
 
 ## 🚀 Деплой
 
+Полное руководство: `docs/deployment_guide.md`
+
 ### Vercel (рекомендуется):
 1. Подключите репозиторий к Vercel
-2. Добавьте переменные окружения
+2. Добавьте переменные окружения из `.env.example`
 3. Задеплойте
-
-### Netlify:
-1. Подключите репозиторий к Netlify
-2. Build command: `npm run build`
-3. Publish directory: `.next`
-4. Добавьте переменные окружения
 
 ### Настройка вебхука ЮMoney:
 1. Зайдите в настройки кошелька ЮMoney

@@ -57,7 +57,17 @@ export default function AdminDashboardPage() {
         }
 
         load()
-        return () => { cancelled = true }
+
+        // Аварийный таймаут: если данные не успели загрузиться за 8с —
+        // снимаем спиннер и показываем страницу с тем что есть, а не висим бесконечно.
+        const failsafe = setTimeout(() => {
+            if (!cancelled) {
+                console.warn('[AdminPage] Failsafe timeout — forcing isLoading=false')
+                setIsLoading(false)
+            }
+        }, 8000)
+
+        return () => { cancelled = true; clearTimeout(failsafe) }
     }, [user, authLoading, router])
 
     if (authLoading || isLoading || !isAdminUser) {

@@ -6,7 +6,7 @@ import {
     ArrowLeft, Dumbbell, TrendingUp, FileText, Plus,
     Loader2, Upload, X, Check, ChevronDown, ChevronUp,
     Download, CheckCircle2, Clock, Pencil, Archive, ArchiveRestore,
-    Apple, Copy, Calendar, RefreshCw
+    Apple, Copy, Calendar, RefreshCw, Layers, Save, Flame
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { isAdmin, getUserDetails, archiveUser, unarchiveUser } from '@/lib/services/admin'
@@ -23,11 +23,22 @@ import ExerciseProgressView from '@/components/ExerciseProgressView'
 import { parseMdToJson, EXAMPLE_PROGRAM_MD } from '@/lib/utils/md-parser'
 import { type NutritionProgram } from '@/lib/services/nutrition-programs'
 import { parseNutritionMdToJson, EXAMPLE_NUTRITION_MD } from '@/lib/utils/nutrition-md-parser'
+import TemplatePicker from '@/components/admin/TemplatePicker'
+import SaveAsTemplateModal from '@/components/admin/SaveAsTemplateModal'
+import { applyDatesToTemplateMd, bumpUsage } from '@/lib/services/program-templates'
+import {
+    getClientStreakStats,
+    getClientCalendarMonth,
+    type StreakStats,
+    type CalendarMonth,
+} from '@/lib/services/streaks'
+import StreakCard from '@/components/StreakCard'
+import CalendarGrid from '@/components/CalendarGrid'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 
-type Tab = 'questionnaire' | 'nutrition' | 'programs' | 'nutrition_plans' | 'metrics' | 'exercise_stats'
+type Tab = 'questionnaire' | 'nutrition' | 'programs' | 'nutrition_plans' | 'metrics' | 'exercise_stats' | 'activity'
 
 // ─── Просмотр метрик клиента (для админа) ───────────────────────────────────
 function ClientMetricsView({ userId }: { userId: string }) {
@@ -251,6 +262,106 @@ function ClientMetricsView({ userId }: { userId: string }) {
     )
 }
 
+// ─── Активность клиента (стрик + календарь) для админа ─────────────────────
+function ClientActivityView({ userId }: { userId: string }) {
+    const [stats, setStats] = useState<StreakStats | null>(null)
+    const [calendar, setCalendar] = useState<CalendarMonth | null>(null)
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState<string | null>(null)
+
+    const today = new Date()
+    const [ym, setYm] = useState({ year: today.getFullYear(), month: today.getMonth() + 1 })
+
+    useEffect(() => {
+        let cancelled = false
+        const load = async () => {
+            try {
+                setError(null)
+                const [s, c] = await Promise.all([
+                    getClientStreakStats(userId),
+                    getClientCalendarMonth(userId, ym.year, ym.month),
+                ])
+                if (cancelled) return
+                setStats(s)
+                setCalendar(c)
+            } catch (e: any) {
+                if (cancelled) return
+                console.error('[Admin Activity] error:', e)
+                setError(e?.message || 'Не удалось загрузить активность')
+            } finally {
+                if (!cancelled) setLoading(false)
+            }
+        }
+        load()
+        return () => { cancelled = true }
+    }, [userId, ym.year, ym.month])
+
+    if (loading && !stats) {
+        return (
+            <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 text-accent animate-spin" />
+            </div>
+        )
+    }
+
+    if (error) {
+        return (
+            <div className="glass-card p-6 border-danger/40 bg-danger/10">
+                <p className="text-sm text-danger">{error}</p>
+            </div>
+        )
+    }
+
+    const last8 = stats ? [...stats.history].filter(w => w.isPast || w.isCurrent).slice(-8) : []
+
+    return (
+        <div className="space-y-6">
+            {stats && <StreakCard stats={stats} />}
+
+            {last8.length > 0 && (
+                <div className="glass-card p-4 sm:p-6">
+                    <h3 className="text-sm font-semibold text-white mb-3 uppercase tracking-wider">
+                        Последние недели
+                    </h3>
+                    <div className="flex gap-2 overflow-x-auto pb-2">
+                        {last8.map(w => {
+                            const status = w.isComplete ? 'complete' : (w.isPast ? 'missed' : 'current')
+                            const bg =
+                                status === 'complete' ? 'bg-accent/15 border-accent/40' :
+                                status === 'missed' ? 'bg-danger/10 border-danger/30' :
+                                'bg-bg-elevated/60 border-border'
+                            const txt =
+                                status === 'complete' ? 'text-accent' :
+                                status === 'missed' ? 'text-danger' :
+                                'text-text-secondary'
+                            return (
+                                <div
+                                    key={w.programId}
+                                    className={`flex-shrink-0 min-w-[88px] rounded-xl p-3 border ${bg} text-center`}
+                                >
+                                    <p className="text-xs text-text-muted mb-1">Нед.</p>
+                                    <p className={`text-lg font-display font-bold ${txt}`}>{w.weekNumber}</p>
+                                    <p className="text-[10px] text-text-muted mt-1">
+                                        {w.completedCount}/{w.requiredCount}
+                                    </p>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </div>
+            )}
+
+            {calendar && (
+                <CalendarGrid
+                    month={calendar}
+                    weeksHistory={stats?.history}
+                    onMonthChange={(y, m) => setYm({ year: y, month: m })}
+                />
+            )}
+        </div>
+    )
+}
+
 // ─── Генерация заполненного Markdown ────────────────────────────────────────
 function buildFilledMd(program: TrainingProgram, entries: TrainingEntry[]): string {
     const entriesMap = new Map(entries.map(e => [e.day_number, e]))
@@ -431,6 +542,10 @@ function ProgramCard({ program, onDelete, onUpdate }: {
     const [saving, setSaving] = useState(false)
     const [saveError, setSaveError] = useState('')
 
+    // Сохранение как шаблон
+    const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false)
+    const [saveAsTemplateToast, setSaveAsTemplateToast] = useState('')
+
     const openEdit = () => {
         setEditMd(program.program_md)
         setEditStartDate(program.start_date)
@@ -606,7 +721,7 @@ function ProgramCard({ program, onDelete, onUpdate }: {
                 </p>
 
                 {/* Строка 3: кнопки действий */}
-                <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                <div className="flex flex-wrap items-center gap-2" onClick={e => e.stopPropagation()}>
                     <button
                         onClick={handleDownload}
                         disabled={loadingEntries}
@@ -627,8 +742,16 @@ function ProgramCard({ program, onDelete, onUpdate }: {
                         <Pencil className="w-3.5 h-3.5" />
                         <span>Изменить</span>
                     </button>
+                    <button
+                        onClick={() => setSaveAsTemplateOpen(true)}
+                        className="glass-button-secondary flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-muted hover:text-accent transition-colors"
+                        title="Сохранить как шаблон"
+                    >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>В шаблоны</span>
+                    </button>
                     {confirmDelete ? (
-                        <div className="flex items-center gap-1.5 ml-auto">
+                        <div className="flex items-center gap-1.5">
                             <button
                                 onClick={handleDelete}
                                 disabled={deleting}
@@ -646,7 +769,7 @@ function ProgramCard({ program, onDelete, onUpdate }: {
                     ) : (
                         <button
                             onClick={handleDelete}
-                            className="glass-button-secondary flex items-center gap-1.5 px-3 py-1.5 text-xs text-danger hover:border-danger/40 transition-colors ml-auto"
+                            className="glass-button-secondary flex items-center gap-1.5 px-3 py-1.5 text-xs text-danger hover:border-danger/40 transition-colors"
                             title="Удалить"
                         >
                             <X className="w-3.5 h-3.5" />
@@ -825,7 +948,7 @@ function ProgramCard({ program, onDelete, onUpdate }: {
                     </div>
 
                     <div className="space-y-4">
-                        <div className="grid grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
                                 <label className="block text-sm text-text-secondary mb-2">Дата начала</label>
                                 <input type="date" value={editStartDate}
@@ -875,6 +998,25 @@ function ProgramCard({ program, onDelete, onUpdate }: {
                         </div>
                     </div>
                 </div>
+            </div>
+        )}
+
+        <SaveAsTemplateModal
+            open={saveAsTemplateOpen}
+            onClose={() => setSaveAsTemplateOpen(false)}
+            programMd={program.program_md}
+            trainingDaysCount={program.training_days_count}
+            suggestedName={`Неделя ${program.week_number}`}
+            onSaved={() => {
+                setSaveAsTemplateToast('Шаблон сохранён в библиотеку')
+                setTimeout(() => setSaveAsTemplateToast(''), 2500)
+            }}
+        />
+
+        {saveAsTemplateToast && (
+            <div className="fixed bottom-6 right-6 z-[70] glass-card px-4 py-3 flex items-center gap-2 text-sm text-accent border border-accent/30">
+                <Check className="w-4 h-4" />
+                {saveAsTemplateToast}
             </div>
         )}
         </>
@@ -1070,8 +1212,8 @@ function NutritionPlanCard({ plan, onDelete, onUpdate }: {
                     </div>
 
                     <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="col-span-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="col-span-1 sm:col-span-2">
                                 <label className="block text-sm text-text-secondary mb-2">Название</label>
                                 <input type="text" value={editTitle} onChange={e => setEditTitle(e.target.value)} className="glass-input w-full" />
                             </div>
@@ -1194,6 +1336,12 @@ export default function AdminClientDetailPage() {
     const [trainingDays, setTrainingDays] = useState(3)
     const [isUploading, setIsUploading] = useState(false)
     const [uploadError, setUploadError] = useState('')
+
+    // Шаблоны программ
+    const [showTemplatePicker, setShowTemplatePicker] = useState(false)
+    const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false)
+    const [appliedTemplateId, setAppliedTemplateId] = useState<string | null>(null)
+    const [templateToast, setTemplateToast] = useState('')
 
     // Renew modal state
     const [showRenewModal, setShowRenewModal] = useState(false)
@@ -1371,6 +1519,12 @@ export default function AdminClientDetailPage() {
             setShowUploadModal(false)
             setProgramMd('')
             setWeekNumber(weekNumber + 1)
+
+            // Если применяли шаблон — увеличиваем счётчик использования
+            if (appliedTemplateId) {
+                bumpUsage(appliedTemplateId).catch(() => {})
+                setAppliedTemplateId(null)
+            }
         } catch (e: any) {
             setUploadError(e.message || 'Ошибка загрузки')
         } finally {
@@ -1583,7 +1737,7 @@ export default function AdminClientDetailPage() {
 
                 {/* Tabs */}
                 <div className="-mx-4 px-4 flex gap-2 mb-6 overflow-x-auto pb-1" style={{scrollbarWidth: 'none'}}>
-                    {(['questionnaire', 'nutrition', 'programs', 'nutrition_plans', 'metrics', 'exercise_stats'] as Tab[]).map(tab => {
+                    {(['questionnaire', 'nutrition', 'programs', 'nutrition_plans', 'metrics', 'activity', 'exercise_stats'] as Tab[]).map(tab => {
                         if (tab === 'nutrition' && !nutritionAccess) return null
                         return (
                             <button
@@ -1598,6 +1752,7 @@ export default function AdminClientDetailPage() {
                                 {tab === 'programs' && <><Dumbbell className="w-4 h-4 inline mr-1" />Программы</>}
                                 {tab === 'nutrition_plans' && <><Apple className="w-4 h-4 inline mr-1" />Планы питания</>}
                                 {tab === 'metrics' && <><TrendingUp className="w-4 h-4 inline mr-1" />Метрики</>}
+                                {tab === 'activity' && <><Flame className="w-4 h-4 inline mr-1" />Активность</>}
                                 {tab === 'exercise_stats' && <>📊 Прогресс</>}
                             </button>
                         )
@@ -2038,21 +2193,44 @@ export default function AdminClientDetailPage() {
                                 </div>
 
                                 {/* Быстрые данные */}
-                                <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                                <div className="grid grid-cols-3 gap-3">
+                                    {/* Ряд 1: Вес, Рост, Возраст */}
                                     {[
                                         { label: 'Вес', value: nutritionQ.current_weight_kg, unit: 'кг', color: 'text-accent' },
                                         { label: 'Рост', value: nutritionQ.height_cm, unit: 'см', color: 'text-blue-400' },
                                         { label: 'Возраст', value: nutritionQ.age, unit: 'лет', color: 'text-yellow-400' },
-                                        { label: 'Пол', value: nutritionQ.gender === 'male' ? 'М' : nutritionQ.gender === 'female' ? 'Ж' : null, unit: '', color: 'text-purple-400' },
-                                        { label: 'Цель', value: nutritionQ.nutrition_goal ? NUTRITION_LABELS.GOAL_MAP[nutritionQ.nutrition_goal] : null, unit: '', color: 'text-emerald-400' },
-                                        { label: 'Тип питания', value: nutritionQ.diet_type ? NUTRITION_LABELS.DIET_TYPE_MAP[nutritionQ.diet_type] : null, unit: '', color: 'text-orange-400' },
                                     ].filter(c => c.value).map(c => (
-                                        <div key={c.label} className="glass-card p-3 text-center">
+                                        <div key={c.label} className="glass-card p-3 text-center flex flex-col items-center justify-center">
                                             <p className="text-xs text-text-muted mb-1">{c.label}</p>
                                             <p className={`text-sm font-display font-bold ${c.color} leading-tight`}>{c.value}</p>
                                             {c.unit && <p className="text-xs text-text-muted">{c.unit}</p>}
                                         </div>
                                     ))}
+                                    {/* Ряд 2: Пол, Цель (широкая), Тип питания (широкая) */}
+                                    {nutritionQ.gender && (
+                                        <div className="glass-card p-3 text-center flex flex-col items-center justify-center">
+                                            <p className="text-xs text-text-muted mb-1">Пол</p>
+                                            <p className="text-sm font-display font-bold text-purple-400 leading-tight">
+                                                {nutritionQ.gender === 'male' ? 'М' : 'Ж'}
+                                            </p>
+                                        </div>
+                                    )}
+                                    {nutritionQ.nutrition_goal && (
+                                        <div className="glass-card p-3 text-center flex flex-col items-center justify-center col-span-1">
+                                            <p className="text-xs text-text-muted mb-1">Цель</p>
+                                            <p className="text-sm font-display font-bold text-emerald-400 leading-snug text-center">
+                                                {NUTRITION_LABELS.GOAL_MAP[nutritionQ.nutrition_goal]}
+                                            </p>
+                                        </div>
+                                    )}
+                                    {nutritionQ.diet_type && (
+                                        <div className="glass-card p-3 text-center flex flex-col items-center justify-center col-span-1">
+                                            <p className="text-xs text-text-muted mb-1">Тип питания</p>
+                                            <p className="text-sm font-display font-bold text-orange-400 leading-snug text-center">
+                                                {NUTRITION_LABELS.DIET_TYPE_MAP[nutritionQ.diet_type]}
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Все блоки ответов */}
@@ -2257,6 +2435,11 @@ export default function AdminClientDetailPage() {
                     <ClientMetricsView userId={userId} />
                 )}
 
+                {/* Активность: стрик + календарь */}
+                {activeTab === 'activity' && (
+                    <ClientActivityView userId={userId} />
+                )}
+
                 {/* Прогресс упражнений */}
                 {activeTab === 'exercise_stats' && (
                     <AdminExerciseStats userId={userId} />
@@ -2270,6 +2453,26 @@ export default function AdminClientDetailPage() {
                             <h2 className="text-2xl font-display font-bold text-white">Загрузить программу</h2>
                             <button onClick={() => setShowUploadModal(false)} className="glass-button-secondary p-2">
                                 <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Кнопки работы с шаблонами */}
+                        <div className="flex flex-wrap gap-2 mb-4">
+                            <button
+                                onClick={() => setShowTemplatePicker(true)}
+                                className="glass-button-secondary flex items-center gap-2 text-sm"
+                            >
+                                <Layers className="w-4 h-4" />
+                                Из шаблона
+                            </button>
+                            <button
+                                onClick={() => setShowSaveTemplateModal(true)}
+                                disabled={!programMd.trim()}
+                                className="glass-button-secondary flex items-center gap-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                                title={!programMd.trim() ? 'Сначала введи программу' : 'Сохранить текущий MD как шаблон'}
+                            >
+                                <Save className="w-4 h-4" />
+                                Сохранить как шаблон
                             </button>
                         </div>
 
@@ -2328,6 +2531,44 @@ export default function AdminClientDetailPage() {
                             </div>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Модалка выбора шаблона */}
+            <TemplatePicker
+                open={showTemplatePicker}
+                onClose={() => setShowTemplatePicker(false)}
+                onPick={(tpl) => {
+                    // Подставим даты в MD при наличии заданных start/endDate
+                    const md = (startDate && endDate)
+                        ? applyDatesToTemplateMd(tpl.program_md, weekNumber, startDate, endDate)
+                        : tpl.program_md
+                    setProgramMd(md)
+                    setTrainingDays(tpl.training_days_count)
+                    setAppliedTemplateId(tpl.id)
+                    setShowTemplatePicker(false)
+                    setTemplateToast(`Применён шаблон: ${tpl.name}`)
+                    setTimeout(() => setTemplateToast(''), 2500)
+                }}
+            />
+
+            {/* Модалка сохранения текущего MD как шаблона */}
+            <SaveAsTemplateModal
+                open={showSaveTemplateModal}
+                onClose={() => setShowSaveTemplateModal(false)}
+                programMd={programMd}
+                trainingDaysCount={trainingDays}
+                suggestedName={`Программа для ${clientProfile?.full_name || 'клиента'}`}
+                onSaved={() => {
+                    setTemplateToast('Шаблон сохранён в библиотеку')
+                    setTimeout(() => setTemplateToast(''), 2500)
+                }}
+            />
+
+            {templateToast && (
+                <div className="fixed bottom-6 right-6 z-[70] glass-card px-4 py-3 flex items-center gap-2 text-sm text-accent border border-accent/30">
+                    <Check className="w-4 h-4" />
+                    {templateToast}
                 </div>
             )}
 

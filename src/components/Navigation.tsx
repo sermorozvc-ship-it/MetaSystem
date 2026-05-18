@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter, usePathname } from 'next/navigation'
-import { Home, Dumbbell, TrendingUp, MessageCircle, LogOut, Apple, BarChart3 } from 'lucide-react'
+import { Home, Dumbbell, TrendingUp, MessageCircle, LogOut, Apple, BarChart3, Library, Calendar } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import NotificationBell from './NotificationBell'
 import PushSubscribeButton from './PushSubscribeButton'
@@ -26,6 +26,7 @@ export default function Navigation() {
   const clientLinks = [
     { href: '/dashboard', icon: Home, label: 'Главная' },
     { href: '/programs', icon: Dumbbell, label: 'Программы' },
+    { href: '/calendar', icon: Calendar, label: 'Календарь' },
     { href: '/progress', icon: BarChart3, label: 'Прогресс' },
     { href: '/nutrition', icon: Apple, label: 'Питание' },
     { href: '/metrics', icon: TrendingUp, label: 'Метрики' },
@@ -35,6 +36,7 @@ export default function Navigation() {
   const adminLinks = [
     { href: '/admin', icon: Home, label: 'Главная' },
     { href: '/admin/clients', icon: Dumbbell, label: 'Клиенты' },
+    { href: '/admin/templates', icon: Library, label: 'Шаблоны' },
     { href: '/messages', icon: MessageCircle, label: 'Чат' },
   ]
 

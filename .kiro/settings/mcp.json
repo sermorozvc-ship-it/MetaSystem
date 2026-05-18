@@ -11,7 +11,9 @@
         "bzyypoyvihqhrbllgffh"
       ],
       "disabled": false,
-      "autoApprove": []
+      "autoApprove": [
+        "search_docs"
+      ]
     }
   }
 }

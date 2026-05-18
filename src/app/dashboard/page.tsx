@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import {
     Dumbbell, TrendingUp, Calendar, MessageCircle,
     ChevronRight, Loader2, Zap, Apple, RefreshCw,
-    AlertTriangle, CheckCircle2, Plus
+    AlertTriangle, CheckCircle2, Plus, Flame
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { getCurrentProgram, type TrainingProgram } from '@/lib/services/training'
@@ -17,6 +17,8 @@ import {
 import { getCurrentNutritionProgram, type NutritionProgram } from '@/lib/services/nutrition-programs'
 import { getMyQuestionnaire } from '@/lib/services/questionnaire'
 import { getMySubscriptionInfo, type SubscriptionInfo } from '@/lib/services/renewal'
+import { getMyStreakStats, type StreakStats } from '@/lib/services/streaks'
+import StreakCard from '@/components/StreakCard'
 import InstallPWABanner from '@/components/InstallPWABanner'
 
 export default function DashboardPage() {
@@ -27,6 +29,7 @@ export default function DashboardPage() {
     const [currentNutritionPlan, setCurrentNutritionPlan] = useState<NutritionProgram | null>(null)
     const [latestMetric, setLatestMetric] = useState<ClientMetric | null>(null)
     const [questionnaireWeight, setQuestionnaireWeight] = useState<number | null>(null)
+    const [streakStats, setStreakStats] = useState<StreakStats | null>(null)
     const [isLoading, setIsLoading] = useState(true)
     const [subscriptionDaysLeft, setSubscriptionDaysLeft] = useState<number | null>(null)
     const [subscriptionEndDate, setSubscriptionEndDate] = useState<Date | null>(null)
@@ -90,6 +93,14 @@ export default function DashboardPage() {
                     const nutPlan = await getCurrentNutritionProgram()
                     setCurrentNutritionPlan(nutPlan)
                 } catch {}
+
+                // Загружаем стрик (мягко — не ломаем дашборд при ошибке)
+                try {
+                    const streak = await getMyStreakStats()
+                    setStreakStats(streak)
+                } catch (e) {
+                    console.warn('[Dashboard] Streak load failed (non-critical):', e)
+                }
 
                 // Лейбл тарифа
                 const planLabels: Record<string, string> = {
@@ -231,6 +242,17 @@ export default function DashboardPage() {
                         </div>
                         <ChevronRight className="w-5 h-5 text-text-muted flex-shrink-0" />
                     </button>
+                )}
+
+                {/* Streak (если есть программы) */}
+                {streakStats && (streakStats.totalWeeks > 0 || streakStats.history.length > 0) && (
+                    <div className="mb-6">
+                        <StreakCard
+                            stats={streakStats}
+                            showLink
+                            onLinkClick={() => router.push('/calendar')}
+                        />
+                    </div>
                 )}
 
                 {/* Quick Stats */}
@@ -436,6 +458,28 @@ export default function DashboardPage() {
                                 <div>
                                     <h3 className="text-lg font-display font-bold text-white mb-1">Сообщения</h3>
                                     <p className="text-sm text-text-secondary">Чат с тренером</p>
+                                </div>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-text-muted" />
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => router.push('/calendar')}
+                        className="glass-card p-6 text-left hover:border-accent transition-all"
+                    >
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center">
+                                    <Flame className="w-6 h-6 text-accent" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-display font-bold text-white mb-1">Календарь и стрик</h3>
+                                    <p className="text-sm text-text-secondary">
+                                        {streakStats && streakStats.currentStreak > 0
+                                            ? `${streakStats.currentStreak} ${streakStats.currentStreak === 1 ? 'неделя' : streakStats.currentStreak <= 4 ? 'недели' : 'недель'} подряд`
+                                            : 'Серия закрытых недель'}
+                                    </p>
                                 </div>
                             </div>
                             <ChevronRight className="w-5 h-5 text-text-muted" />
