@@ -96,7 +96,9 @@ function NavigationInner({
             <div className="flex items-center gap-1">
               {links.map((link) => {
                 const Icon = link.icon
-                const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
+                const isActive = link.href === '/admin'
+                  ? pathname === '/admin'
+                  : pathname === link.href || pathname.startsWith(link.href + '/')
                 const isChat = link.href === '/messages'
                 const showBadge = isChat && unreadCount > 0 && !isOnMessages
 
@@ -159,7 +161,9 @@ function NavigationInner({
         <div className="flex items-center justify-around px-2 py-2">
           {links.map((link) => {
             const Icon = link.icon
-            const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
+            const isActive = link.href === '/admin'
+              ? pathname === '/admin'
+              : pathname === link.href || pathname.startsWith(link.href + '/')
             const isChat = link.href === '/messages'
             const showBadge = isChat && unreadCount > 0 && !isOnMessages
 

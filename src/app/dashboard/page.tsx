@@ -299,28 +299,6 @@ export default function DashboardPage() {
 
                     <div className="glass-card p-6">
                         <div className="flex items-center gap-3 mb-2">
-                            <div className="w-10 h-10 rounded-xl bg-success/20 flex items-center justify-center">
-                                <TrendingUp className="w-5 h-5 text-success" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-text-muted">Вес</p>
-                                <p className="text-xl font-display font-bold text-white">
-                                    {latestMetric?.weight_kg
-                                        ? `${latestMetric.weight_kg} кг`
-                                        : questionnaireWeight
-                                        ? `${questionnaireWeight} кг`
-                                        : '—'
-                                    }
-                                </p>
-                            </div>
-                        </div>
-                        {!latestMetric?.weight_kg && questionnaireWeight && (
-                            <p className="text-xs text-text-muted">из анкеты</p>
-                        )}
-                    </div>
-
-                    <div className="glass-card p-6">
-                        <div className="flex items-center gap-3 mb-2">
                             <div className="w-10 h-10 rounded-xl bg-info/20 flex items-center justify-center">
                                 <Dumbbell className="w-5 h-5 text-info" />
                             </div>
