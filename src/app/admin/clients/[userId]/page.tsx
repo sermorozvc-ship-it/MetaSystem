@@ -27,11 +27,17 @@ import TemplatePicker from '@/components/admin/TemplatePicker'
 import SaveAsTemplateModal from '@/components/admin/SaveAsTemplateModal'
 import { applyDatesToTemplateMd, bumpUsage } from '@/lib/services/program-templates'
 import {
-    getClientStreakStats,
-    getClientCalendarMonth,
+    getClientStreakAndCalendar,
+    rebuildCalendarMonth,
+    buildWeeksHistory,
+    calculateStreakStats,
+    buildCalendarMonth,
     type StreakStats,
     type CalendarMonth,
+    type CalendarDay,
 } from '@/lib/services/streaks'
+import type { TrainingProgram as TP, TrainingEntry as TE } from '@/lib/services/training'
+import type { ClientMetric as CM } from '@/lib/services/metrics'
 import StreakCard from '@/components/StreakCard'
 import CalendarGrid from '@/components/CalendarGrid'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
@@ -262,31 +268,131 @@ function ClientMetricsView({ userId }: { userId: string }) {
     )
 }
 
+// ─── Вспомогательная функция: загружает всё за 3 запроса ──────────────────
+async function getClientStreakAndCalendarFull(userId: string, year: number, month: number) {
+    const { createClient } = await import('@/lib/supabase/client')
+    const supabase = createClient()
+
+    const [programsRes, entriesRes, metricsRes] = await Promise.all([
+        supabase.from('training_programs').select('*').eq('user_id', userId).order('week_number'),
+        supabase.from('training_entries').select('*').eq('user_id', userId),
+        supabase.from('client_metrics').select('id,user_id,measured_at,weight_kg,notes').eq('user_id', userId),
+    ])
+
+    const programs = (programsRes.data || []) as TP[]
+    const entries = (entriesRes.data || []) as TE[]
+    const metrics = (metricsRes.data || []) as CM[]
+
+    const history = buildWeeksHistory(programs, entries)
+    const stats = calculateStreakStats(history)
+    const calendar = buildCalendarMonth(year, month, programs, entries, metrics)
+
+    return { stats, calendar, programs, entries, metrics }
+}
+
+// ─── Модалка деталей дня для админа ────────────────────────────────────────
+function AdminDayDetailsModal({
+    date,
+    data,
+    onClose,
+}: {
+    date: string
+    data: CalendarDay | null
+    onClose: () => void
+}) {
+    const formattedDate = new Date(date + 'T12:00:00').toLocaleDateString('ru-RU', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+    })
+
+    return (
+        <div
+            className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={onClose}
+        >
+            <div
+                className="glass-card p-6 max-w-md w-full"
+                onClick={e => e.stopPropagation()}
+            >
+                <div className="flex items-start justify-between mb-4">
+                    <div>
+                        <p className="text-xs text-text-muted">Детали дня</p>
+                        <h3 className="text-lg font-display font-bold text-white capitalize">
+                            {formattedDate}
+                        </h3>
+                    </div>
+                    <button onClick={onClose} className="glass-button-secondary p-2 rounded-xl">
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+
+                <div className="space-y-3">
+                    {data?.isTrainingCompleted ? (
+                        <div className="w-full p-4 rounded-xl bg-accent/10 border border-accent/30 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-accent/20 flex items-center justify-center flex-shrink-0">
+                                <Dumbbell className="w-5 h-5 text-accent" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-white">
+                                    {data.dayTitle || `День ${data.dayNumber}`}
+                                </p>
+                                <p className="text-xs text-text-muted">
+                                    Неделя {data.programWeek} · Тренировка завершена
+                                </p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="p-4 rounded-xl bg-bg-elevated/40 border border-border text-text-muted text-sm">
+                            В этот день не было завершённой тренировки.
+                        </div>
+                    )}
+
+                    {data?.hasMetric && (
+                        <div className="p-4 rounded-xl bg-info/10 border border-info/20 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-info/20 flex items-center justify-center flex-shrink-0">
+                                <TrendingUp className="w-5 h-5 text-info" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-semibold text-white">Замер добавлен</p>
+                                <p className="text-xs text-text-muted">Запись в метриках за этот день</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    )
+}
+
 // ─── Активность клиента (стрик + календарь) для админа ─────────────────────
 function ClientActivityView({ userId }: { userId: string }) {
     const [stats, setStats] = useState<StreakStats | null>(null)
     const [calendar, setCalendar] = useState<CalendarMonth | null>(null)
+    // Кешируем сырые данные чтобы не перезапрашивать при смене месяца
+    const [rawData, setRawData] = useState<{
+        programs: TP[]; entries: TE[]; metrics: CM[]
+    } | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    const [selected, setSelected] = useState<{ date: string; data: CalendarDay | null } | null>(null)
 
     const today = new Date()
     const [ym, setYm] = useState({ year: today.getFullYear(), month: today.getMonth() + 1 })
 
+    // Первичная загрузка — один раз, все данные за один набор запросов
     useEffect(() => {
         let cancelled = false
         const load = async () => {
+            setLoading(true)
+            setError(null)
             try {
-                setError(null)
-                const [s, c] = await Promise.all([
-                    getClientStreakStats(userId),
-                    getClientCalendarMonth(userId, ym.year, ym.month),
-                ])
+                const { stats: s, calendar: c, programs, entries, metrics } =
+                    await getClientStreakAndCalendarFull(userId, ym.year, ym.month)
                 if (cancelled) return
                 setStats(s)
                 setCalendar(c)
+                setRawData({ programs, entries, metrics })
             } catch (e: any) {
                 if (cancelled) return
-                console.error('[Admin Activity] error:', e)
                 setError(e?.message || 'Не удалось загрузить активность')
             } finally {
                 if (!cancelled) setLoading(false)
@@ -294,7 +400,15 @@ function ClientActivityView({ userId }: { userId: string }) {
         }
         load()
         return () => { cancelled = true }
-    }, [userId, ym.year, ym.month])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [userId])
+
+    // При смене месяца — пересчитываем календарь из кеша, без новых запросов
+    useEffect(() => {
+        if (!rawData) return
+        const c = rebuildCalendarMonth(ym.year, ym.month, rawData.programs, rawData.entries, rawData.metrics)
+        setCalendar(c)
+    }, [ym, rawData])
 
     if (loading && !stats) {
         return (
@@ -356,6 +470,15 @@ function ClientActivityView({ userId }: { userId: string }) {
                     month={calendar}
                     weeksHistory={stats?.history}
                     onMonthChange={(y, m) => setYm({ year: y, month: m })}
+                    onDayClick={(data, date) => setSelected({ date, data: data ?? null })}
+                />
+            )}
+
+            {selected && (
+                <AdminDayDetailsModal
+                    date={selected.date}
+                    data={selected.data}
+                    onClose={() => setSelected(null)}
                 />
             )}
         </div>

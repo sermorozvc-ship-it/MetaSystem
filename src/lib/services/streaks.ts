@@ -335,3 +335,37 @@ export async function getClientCalendarMonth(userId: string, year: number, month
   ])
   return buildCalendarMonth(year, month, programs, entries, metrics)
 }
+
+/**
+ * Загружает стрик-статистику И данные календаря за один набор запросов.
+ * Вместо 5 запросов (2+2+1) делает 3 (programs + entries + metrics).
+ * При смене месяца пересчитывает только календарь из уже загруженных данных.
+ */
+export async function getClientStreakAndCalendar(
+  userId: string,
+  year: number,
+  month: number
+): Promise<{ stats: StreakStats; calendar: CalendarMonth }> {
+  const [{ programs, entries }, metrics] = await Promise.all([
+    loadClientTrainingData(userId),
+    loadClientMetrics(userId),
+  ])
+  const history = buildWeeksHistory(programs, entries)
+  const stats = calculateStreakStats(history)
+  const calendar = buildCalendarMonth(year, month, programs, entries, metrics)
+  return { stats, calendar }
+}
+
+/**
+ * Пересчитывает только календарь из уже загруженных данных (без новых запросов).
+ * Используется при смене месяца в AdminClientActivityView.
+ */
+export function rebuildCalendarMonth(
+  year: number,
+  month: number,
+  programs: TrainingProgram[],
+  entries: TrainingEntry[],
+  metrics: ClientMetric[]
+): CalendarMonth {
+  return buildCalendarMonth(year, month, programs, entries, metrics)
+}
