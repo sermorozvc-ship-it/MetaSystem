@@ -148,6 +148,19 @@ function NavigationInner({
           </div>
           <div className="flex items-center gap-2">
             <PushSubscribeButton />
+            {/* Иконка чата с бейджем непрочитанных */}
+            <button
+              onClick={() => onNavigate('/messages')}
+              className={`relative glass-button-secondary p-2.5 rounded-xl ${isOnMessages ? 'text-accent border-accent/40' : ''}`}
+              title="Чат"
+            >
+              <MessageCircle className="w-4 h-4" />
+              {unreadCount > 0 && !isOnMessages && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
             <NotificationBell />
             <button onClick={onSignOut} className="glass-button-secondary p-2.5 rounded-xl" title="Выйти">
               <LogOut className="w-4 h-4" />
@@ -159,13 +172,11 @@ function NavigationInner({
       {/* ── Мобильный нижний таббар ── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 glass-sidebar border-t border-border safe-area-bottom">
         <div className="flex items-center justify-around px-2 py-2">
-          {links.map((link) => {
+          {links.filter(link => link.href !== '/messages').map((link) => {
             const Icon = link.icon
             const isActive = link.href === '/admin'
               ? pathname === '/admin'
               : pathname === link.href || pathname.startsWith(link.href + '/')
-            const isChat = link.href === '/messages'
-            const showBadge = isChat && unreadCount > 0 && !isOnMessages
 
             return (
               <button
@@ -175,14 +186,7 @@ function NavigationInner({
                   isActive ? 'text-accent' : 'text-text-muted'
                 }`}
               >
-                <span className="relative">
-                  <Icon className={`w-5 h-5 ${isActive ? 'text-accent' : ''}`} />
-                  {showBadge && (
-                    <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
-                      {unreadCount > 99 ? '99+' : unreadCount}
-                    </span>
-                  )}
-                </span>
+                <Icon className={`w-5 h-5 ${isActive ? 'text-accent' : ''}`} />
                 <span className="text-[10px] font-medium truncate">{link.label}</span>
               </button>
             )
