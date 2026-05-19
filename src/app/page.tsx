@@ -664,11 +664,14 @@ export default function LandingPage() {
     const [redirecting, setRedirecting] = useState(false)
     const [showStickyCta, setShowStickyCta] = useState(false)
 
-    // Авторизованный редирект (если не отключён dev-флагом)
+    // Авторизованный редирект (если не отключён dev-флагом или preview-режимом)
     // Используем ref чтобы не перезапускать при каждом рендере
     const redirected = useRef(false)
     useEffect(() => {
         if (process.env.NEXT_PUBLIC_DISABLE_REDIRECTS === 'true') return
+        // ?preview=1 — позволяет просматривать лендинг будучи авторизованным
+        const params = new URLSearchParams(window.location.search)
+        if (params.get('preview') === '1') return
         if (!isLoading && user && !redirected.current) {
             redirected.current = true
             setRedirecting(true)
