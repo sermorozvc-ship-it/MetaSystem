@@ -1612,7 +1612,20 @@ export default function AdminClientDetailPage() {
 
             if (error) { setUploadError('Ошибка БД: ' + error.message); return }
 
-            // Уведомление клиенту (in-app)
+            // Программа сохранена — сразу закрываем модалку и сбрасываем форму,
+            // чтобы UI не висел в "загрузке" из-за побочных запросов ниже.
+            const newWeekNumber = weekNumber + 1
+            setShowUploadModal(false)
+            setProgramMd('')
+            setWeekNumber(newWeekNumber)
+
+            // Если применяли шаблон — увеличиваем счётчик использования
+            if (appliedTemplateId) {
+                bumpUsage(appliedTemplateId).catch(() => {})
+                setAppliedTemplateId(null)
+            }
+
+            // Уведомление клиенту (in-app) — fire-and-forget
             const notifTitle = 'Новая программа! 💪'
             const notifMessage = `Тренер загрузил программу на неделю ${weekNumber}.`
             db.from('notifications').insert({
@@ -1637,17 +1650,15 @@ export default function AdminClientDetailPage() {
                 }),
             }).catch(() => {})
 
-            const updated = await getClientPrograms(userId)
-            setPrograms(updated)
-            setShowUploadModal(false)
-            setProgramMd('')
-            setWeekNumber(weekNumber + 1)
-
-            // Если применяли шаблон — увеличиваем счётчик использования
-            if (appliedTemplateId) {
-                bumpUsage(appliedTemplateId).catch(() => {})
-                setAppliedTemplateId(null)
-            }
+            // Обновляем список программ через тот же service-role клиент (без зависимости от сессии).
+            // Делаем это после закрытия модалки, чтобы возможные сетевые задержки/ошибки не блокировали UI.
+            db.from('training_programs')
+                .select('*')
+                .eq('user_id', userId)
+                .order('week_number', { ascending: false })
+                .then(({ data: updated }) => {
+                    if (updated) setPrograms(updated as TrainingProgram[])
+                })
         } catch (e: any) {
             setUploadError(e.message || 'Ошибка загрузки')
         } finally {
@@ -1691,6 +1702,13 @@ export default function AdminClientDetailPage() {
 
             if (error) { setNutritionUploadError('Ошибка БД: ' + error.message); return }
 
+            // План сохранён — сразу закрываем модалку и сбрасываем форму,
+            // чтобы UI не висел в "загрузке" из-за побочных запросов ниже.
+            const newPlanNumber = nutritionPlanNumber + 1
+            setShowNutritionModal(false)
+            setNutritionMd('')
+            setNutritionPlanNumber(newPlanNumber)
+
             // Уведомление клиенту (in-app + Web Push)
             const notifTitle = 'Новый план питания! 🥗'
             const notifMessage = `Тренер загрузил план питания №${nutritionPlanNumber}.`
@@ -1716,15 +1734,14 @@ export default function AdminClientDetailPage() {
                 }),
             }).catch(() => {})
 
-            const updated2 = await db
-                .from('nutrition_programs')
+            // Обновляем список планов в фоне — не блокируем закрытие модалки
+            db.from('nutrition_programs')
                 .select('*')
                 .eq('user_id', userId)
                 .order('plan_number', { ascending: false })
-            setNutritionPlans(updated2.data || [])
-            setShowNutritionModal(false)
-            setNutritionMd('')
-            setNutritionPlanNumber(nutritionPlanNumber + 1)
+                .then(({ data: updated2 }) => {
+                    setNutritionPlans(updated2 || [])
+                })
         } catch (e: any) {
             setNutritionUploadError(e.message || 'Ошибка загрузки')
         } finally {
