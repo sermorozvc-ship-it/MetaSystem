@@ -54,18 +54,28 @@ function AuthContent() {
 
         if (isAdminUser) return '/admin'
 
-        // Если есть явный returnTo — используем его
-        if (returnTo && returnTo !== '/questionnaire') return returnTo
-
-        // Иначе определяем по состоянию: оплата → анкета → дашборд
+        // Определяем фактическое состояние клиента: оплата → анкета → питание → дашборд.
+        // Это базовая правда, которая важнее returnTo из URL — иначе залипший в истории
+        // returnTo=/payment кидает уже оплатившего клиента обратно на форму оплаты.
         try {
             const { getUserPayment } = await import('@/lib/services/payment')
             const { isQuestionnaireCompleted } = await import('@/lib/services/questionnaire')
+
             const payment = await getUserPayment()
-            if (!payment || payment.status !== 'confirmed') return '/payment'
+            const isPaid = payment?.status === 'confirmed'
+
+            // Не оплачено — на оплату (или на returnTo, если он явно ведёт на оплату/онбординг)
+            if (!isPaid) {
+                if (returnTo && (returnTo.startsWith('/payment') || returnTo.startsWith('/onboarding'))) {
+                    return returnTo
+                }
+                return '/payment'
+            }
+
+            // Оплачено — проверяем анкеты
             const done = await isQuestionnaireCompleted()
             if (!done) return '/questionnaire'
-            // Анкета тренировок заполнена — проверяем питание
+
             try {
                 const { isNutritionQuestionnaireRequired, isNutritionQuestionnaireCompleted } =
                     await import('@/lib/services/nutrition')
@@ -75,9 +85,22 @@ function AuthContent() {
                     if (!nutritionDone) return '/questionnaire/nutrition'
                 }
             } catch {}
+
+            // Всё пройдено. Если returnTo указывает на нормальную клиентскую страницу —
+            // уважаем его (например, после refresh сессии). На /payment и /auth не возвращаем.
+            if (
+                returnTo &&
+                returnTo !== '/questionnaire' &&
+                !returnTo.startsWith('/payment') &&
+                !returnTo.startsWith('/auth')
+            ) {
+                return returnTo
+            }
+
             return '/dashboard'
         } catch {
-            return returnTo
+            // Фолбэк: на дашборд, оттуда middleware/страницы сами разрулят
+            return '/dashboard'
         }
     }
 
