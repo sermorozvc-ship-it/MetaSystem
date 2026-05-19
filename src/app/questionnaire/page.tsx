@@ -167,19 +167,29 @@ export default function QuestionnairePage() {
       const compressed = await compressImage(file, 1200, 0.8)
       const url = await uploadQuestionnairePhoto(compressed, type)
       upd(`photo_${type}` as keyof QuestionnaireFormData, url)
-    } catch {
-      setError('Ошибка загрузки фото. Попробуйте другой файл.')
+    } catch (e: any) {
+      console.error('Photo upload error:', e)
+      setError('Ошибка загрузки фото: ' + (e?.message || 'Попробуйте другой файл.'))
     } finally {
+      // Всегда снимаем спиннер — даже если compressImage завис или uploadQuestionnairePhoto упал
       setPhotoUploading(p => ({ ...p, [type]: false }))
     }
   }
 
   const compressImage = (file: File, maxSize: number, quality: number): Promise<File> =>
     new Promise((resolve, reject) => {
+      // Таймаут 15 сек — если img.onload не сработал, не висим вечно
+      const timeout = setTimeout(() => {
+        URL.revokeObjectURL(objectUrl)
+        console.warn('compressImage timeout, using original file')
+        resolve(file)
+      }, 15_000)
+
       const img = new Image()
-      const url = URL.createObjectURL(file)
+      const objectUrl = URL.createObjectURL(file)
       img.onload = () => {
-        URL.revokeObjectURL(url)
+        clearTimeout(timeout)
+        URL.revokeObjectURL(objectUrl)
         let { width, height } = img
         if (width > maxSize || height > maxSize) {
           if (width > height) { height = Math.round(height * maxSize / width); width = maxSize }
@@ -195,8 +205,12 @@ export default function QuestionnairePage() {
           resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }))
         }, 'image/jpeg', quality)
       }
-      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Ошибка загрузки')) }
-      img.src = url
+      img.onerror = () => {
+        clearTimeout(timeout)
+        URL.revokeObjectURL(objectUrl)
+        reject(new Error('Не удалось прочитать изображение'))
+      }
+      img.src = objectUrl
     })
 
   const handleNext = () => { setError(''); setCurrentStep(s => Math.min(s + 1, STEPS.length)) }

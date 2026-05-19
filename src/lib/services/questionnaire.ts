@@ -389,12 +389,19 @@ export async function uploadQuestionnairePhoto(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  const fileExt = file.name.split('.').pop()
+  const fileExt = file.name.split('.').pop() || 'jpg'
   const fileName = `${user.id}/questionnaire/${type}_${Date.now()}.${fileExt}`
 
-  const { data, error } = await supabase.storage
+  // Таймаут 30 сек — если Storage завис, не блокируем UI вечно
+  const uploadPromise = supabase.storage
     .from('client-photos')
-    .upload(fileName, file, { cacheControl: '3600', upsert: false })
+    .upload(fileName, file, { cacheControl: '3600', upsert: true })
+
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('Превышено время ожидания загрузки фото (30 сек)')), 30_000)
+  )
+
+  const { data, error } = await Promise.race([uploadPromise, timeoutPromise])
 
   if (error) {
     console.error('Error uploading photo:', error)
