@@ -108,6 +108,7 @@ export interface NutritionQuestionnaire {
  * Нужна ли пользователю анкета по питанию.
  * - Тариф 6 месяцев → всегда да (план питания идёт в подарок)
  * - Иначе → только если платёж с includes_nutrition = true
+ * - Fallback: profiles.has_nutrition_plan = true
  */
 export async function isNutritionQuestionnaireRequired(): Promise<boolean> {
   const supabase = createClient()
@@ -115,6 +116,16 @@ export async function isNutritionQuestionnaireRequired(): Promise<boolean> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return false
 
+  // Сначала проверяем профиль — самый надёжный источник после активации подписки
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('has_nutrition_plan, subscription_status')
+    .eq('id', user.id)
+    .single()
+
+  if (profile?.has_nutrition_plan) return true
+
+  // Fallback: смотрим на подтверждённый платёж
   const { data, error } = await supabase
     .from('payments')
     .select('plan_type, includes_nutrition, status')
@@ -136,6 +147,16 @@ export async function isNutritionQuestionnaireRequired(): Promise<boolean> {
 export async function userHasNutritionAccess(userId: string): Promise<boolean> {
   const supabase = createClient()
 
+  // Сначала проверяем профиль
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('has_nutrition_plan')
+    .eq('id', userId)
+    .single()
+
+  if (profile?.has_nutrition_plan) return true
+
+  // Fallback: подтверждённый платёж
   const { data } = await supabase
     .from('payments')
     .select('plan_type, includes_nutrition, status')

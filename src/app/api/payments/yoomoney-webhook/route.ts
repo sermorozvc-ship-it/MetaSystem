@@ -178,22 +178,64 @@ export async function POST(request: NextRequest) {
     } else {
         console.log('[YooMoney Webhook] No pending found — inserting confirmed payment for user:', userId)
 
-        const { error: insErr } = await supabase
+        // Определяем тариф по сумме платежа (fallback когда нет pending-записи)
+        const amountNum = parseFloat(amount)
+        let plan_months = 1
+        let plan_type = '1_month'
+        let includes_nutrition = false
+
+        // Примерные пороги — 6 месяцев обычно дороже 3 месяцев
+        // Точные суммы можно скорректировать под реальные тарифы
+        if (amountNum >= 5000) {
+            plan_months = 6
+            plan_type = '6_months'
+            includes_nutrition = true
+        } else if (amountNum >= 3000) {
+            plan_months = 3
+            plan_type = '3_months'
+        }
+
+        const { data: insertedPayment, error: insErr } = await supabase
             .from('payments')
             .insert({
                 user_id: userId,
-                amount: parseFloat(amount),
+                amount: amountNum,
                 currency: 'RUB',
                 status: 'confirmed',
                 payment_method: 'yoomoney',
                 confirmed_at: new Date().toISOString(),
                 confirmed_by: null,
                 renewal_type: 'initial',
+                plan_months,
+                plan_type,
+                includes_nutrition,
             })
+            .select()
+            .single()
 
         if (insErr) {
             console.error('[YooMoney Webhook] DB insert error:', insErr)
             return new NextResponse('DB Error', { status: 500 })
+        }
+
+        // Активируем подписку — это было пропущено в оригинальном коде
+        const subscriptionEndDate = new Date()
+        subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + plan_months)
+
+        const { error: profileErr } = await supabase
+            .from('profiles')
+            .update({
+                subscription_status: 'active',
+                subscription_end_date: subscriptionEndDate.toISOString().split('T')[0],
+                has_nutrition_plan: includes_nutrition,
+            })
+            .eq('id', userId)
+
+        if (profileErr) {
+            console.error('[YooMoney Webhook] Error updating profile (no-pending branch):', profileErr)
+        } else {
+            console.log('[YooMoney Webhook] ✓ Subscription activated (no-pending branch) for user:', userId)
+            await notifyPaymentConfirmed(userId, amountNum)
         }
     }
 
