@@ -600,12 +600,27 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .hero-facts {
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 18px 28px;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
   margin-bottom: 36px;
-  font-size: 14px;
-  color: var(--text-secondary);
 }
-.hero-facts span { display: inline-flex; align-items: center; gap: 6px; }
+.hero-facts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 7px 16px;
+  border-radius: 100px;
+  white-space: nowrap;
+}
+.hero-facts span::before {
+  content: '✓';
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 12px;
+}
 
 .btn-group { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
 .btn-primary {
@@ -1217,7 +1232,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* Mobile specific */
 @media (max-width: 640px) {
-  .hero-facts { flex-direction: column; gap: 10px; align-items: center; }
+  /* hero-facts — оставляем flex-wrap, пилюли сами переносятся */
   .btn-group { flex-direction: column; align-items: center; }
   .btn-group > * { width: 100%; max-width: 320px; }
   /* btn-final не растягиваем — он inline */

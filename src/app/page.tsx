@@ -852,10 +852,10 @@ export default function LandingPage() {
                     Это настоящая система, а не шаблон с вашим именем.
                 </p>
                 <div className="hero-facts">
-                    <span>✓ Программа с первого дня</span>
-                    <span>✓ Корректировка каждую неделю</span>
-                    <span>✓ Личный кабинет с метриками</span>
-                    <span>✓ Результат или деньги назад</span>
+                    <span>Программа с первого дня</span>
+                    <span>Корректировка каждую неделю</span>
+                    <span>Личный кабинет с метриками</span>
+                    <span>Результат или деньги назад</span>
                 </div>
                 <div className="btn-group">
                     <a href="#pricing" className="btn-primary" onClick={(e) => { e.preventDefault(); scrollTo('pricing') }}>
