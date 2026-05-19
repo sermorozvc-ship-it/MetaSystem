@@ -225,15 +225,35 @@ export default function QuestionnairePage() {
     if (!formData.goal) { setError('Укажите главную цель'); return }
     if (!formData.training_location) { setError('Укажите место тренировок'); return }
 
+    // Не даём сохранить пока фото ещё загружаются
+    if (Object.values(photoUploading).some(Boolean)) {
+      setError('Подождите, фото ещё загружаются...')
+      return
+    }
+
     setIsSubmitting(true)
     try {
-      await upsertQuestionnaire(formData as QuestionnaireFormData)
+      // Таймаут 20 сек на сохранение анкеты
+      await Promise.race([
+        upsertQuestionnaire(formData as QuestionnaireFormData),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Превышено время ожидания сохранения (20 сек). Проверьте соединение.')), 20_000)
+        ),
+      ])
+
       try {
         const { isNutritionQuestionnaireRequired, isNutritionQuestionnaireCompleted } =
           await import('@/lib/services/nutrition')
-        const needsNutrition = await isNutritionQuestionnaireRequired()
+        // Таймаут 10 сек на проверку питания
+        const needsNutrition = await Promise.race([
+          isNutritionQuestionnaireRequired(),
+          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 10_000)),
+        ])
         if (needsNutrition) {
-          const nutritionDone = await isNutritionQuestionnaireCompleted()
+          const nutritionDone = await Promise.race([
+            isNutritionQuestionnaireCompleted(),
+            new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 10_000)),
+          ])
           if (!nutritionDone) { router.push('/questionnaire/nutrition'); return }
         }
       } catch {}
@@ -336,11 +356,16 @@ export default function QuestionnairePage() {
               Далее<ArrowRight className="w-4 h-4" />
             </button>
           ) : (
-            <button onClick={handleSubmit} disabled={isSubmitting}
-              className="glass-button flex items-center gap-2 ml-auto">
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting || Object.values(photoUploading).some(Boolean)}
+              className="glass-button flex items-center gap-2 ml-auto"
+            >
               {isSubmitting
                 ? <><Loader2 className="w-4 h-4 animate-spin" />Сохранение...</>
-                : <><Check className="w-4 h-4" />Завершить</>
+                : Object.values(photoUploading).some(Boolean)
+                  ? <><Loader2 className="w-4 h-4 animate-spin" />Загрузка фото...</>
+                  : <><Check className="w-4 h-4" />Завершить</>
               }
             </button>
           )}

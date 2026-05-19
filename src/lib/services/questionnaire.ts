@@ -362,21 +362,29 @@ export async function upsertQuestionnaire(
     }
   }
 
-  const { data, error } = await supabase
+  const upsertPromise = supabase
     .from('client_questionnaires')
     .upsert(payload, { onConflict: 'user_id' })
     .select()
     .single()
+
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('Превышено время ожидания сохранения анкеты (15 сек)')), 15_000)
+  )
+
+  const { data, error } = await Promise.race([upsertPromise, timeoutPromise])
 
   if (error) {
     console.error('Error upserting questionnaire:', error)
     throw new Error('Ошибка сохранения: ' + error.message)
   }
 
-  await supabase
+  // Обновляем профиль в фоне — не блокируем возврат данных
+  supabase
     .from('profiles')
     .update({ questionnaire_completed: true })
     .eq('id', user.id)
+    .then(() => {})
 
   return data
 }
