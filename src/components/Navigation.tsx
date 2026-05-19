@@ -3,6 +3,7 @@
 import { useRouter, usePathname } from 'next/navigation'
 import { Home, Dumbbell, TrendingUp, MessageCircle, LogOut, Apple, BarChart3, Library, Calendar } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
+import { isAdminUser } from '@/lib/auth/isAdminUser'
 import NotificationBell from './NotificationBell'
 import PushSubscribeButton from './PushSubscribeButton'
 import { useUnreadMessages } from '@/hooks/useUnreadMessages'
@@ -17,11 +18,7 @@ export default function Navigation() {
     return null
   }
 
-  const ADMIN_EMAILS = ['dgmukhin@gmail.com']
-  const isAdminUser = ADMIN_EMAILS.includes(user.email?.toLowerCase() || '')
-    || user.user_metadata?.role === 'admin'
-    || user.user_metadata?.role === 'curator'
-    || user.user_metadata?.role === 'trainer'
+  const isAdmin = isAdminUser(user)
 
   const clientLinks = [
     { href: '/dashboard', icon: Home, label: 'Главная' },
@@ -40,7 +37,7 @@ export default function Navigation() {
     { href: '/messages', icon: MessageCircle, label: 'Чат' },
   ]
 
-  const links = isAdminUser ? adminLinks : clientLinks
+  const links = isAdmin ? adminLinks : clientLinks
 
   const handleSignOut = async () => {
     await signOut()
@@ -51,7 +48,7 @@ export default function Navigation() {
     <NavigationInner
       links={links}
       pathname={pathname}
-      isAdminUser={isAdminUser}
+      isAdmin={isAdmin}
       userId={user.id}
       onNavigate={(href) => router.push(href)}
       onSignOut={handleSignOut}
@@ -63,19 +60,19 @@ export default function Navigation() {
 function NavigationInner({
   links,
   pathname,
-  isAdminUser,
+  isAdmin,
   userId,
   onNavigate,
   onSignOut,
 }: {
   links: { href: string; icon: React.ElementType; label: string }[]
   pathname: string
-  isAdminUser: boolean
+  isAdmin: boolean
   userId: string
   onNavigate: (href: string) => void
   onSignOut: () => void
 }) {
-  const unreadCount = useUnreadMessages(userId, isAdminUser)
+  const unreadCount = useUnreadMessages(userId, isAdmin)
   const isOnMessages = pathname === '/messages' || pathname.startsWith('/messages/')
 
   return (

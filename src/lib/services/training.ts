@@ -374,7 +374,6 @@ export async function getProgramEntries(programId: string): Promise<TrainingEntr
 export async function getClientPrograms(userId: string): Promise<TrainingProgram[]> {
   const supabase = createClient()
 
-  // Пробуем user_id (основное поле)
   const { data, error } = await supabase
     .from('training_programs')
     .select('*')
@@ -382,19 +381,8 @@ export async function getClientPrograms(userId: string): Promise<TrainingProgram
     .order('week_number', { ascending: false })
 
   if (error) {
-    // Если ошибка — возможно поле называется client_id
-    console.warn('getClientPrograms user_id failed, trying client_id:', error.message)
-    const { data: data2, error: error2 } = await supabase
-      .from('training_programs')
-      .select('*')
-      .eq('client_id', userId)
-      .order('week_number', { ascending: false })
-
-    if (error2) {
-      console.error('Error fetching client programs:', error2)
-      return []
-    }
-    return data2 || []
+    console.error('Error fetching client programs:', error)
+    return []
   }
 
   return data || []
