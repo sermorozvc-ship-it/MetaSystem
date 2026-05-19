@@ -62,7 +62,9 @@ function VideoModal({ url, title, onClose }: { url: string; title: string; onClo
     }, [onClose])
 
     return (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+        <div className={`fixed inset-0 z-50 flex justify-center p-4 transition-all duration-300 ${
+            large ? 'items-center' : 'items-end sm:items-center'
+        }`}
             onClick={onClose}>
             {/* Затемнение */}
             <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
