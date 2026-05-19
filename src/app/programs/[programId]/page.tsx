@@ -61,13 +61,6 @@ function VideoModal({ url, title, onClose }: { url: string; title: string; onClo
         return () => window.removeEventListener('keydown', handler)
     }, [onClose])
 
-    if (!embedUrl) {
-        // Не YouTube — открываем в новой вкладке
-        window.open(url, '_blank')
-        onClose()
-        return null
-    }
-
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
             onClick={onClose}>
@@ -85,32 +78,51 @@ function VideoModal({ url, title, onClose }: { url: string; title: string; onClo
                 <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                     <p className="text-sm font-semibold text-white truncate pr-4">{title}</p>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                        <button
-                            onClick={() => setLarge(v => !v)}
-                            className="glass-button-secondary p-1.5 rounded-lg"
-                            title={large ? 'Уменьшить' : 'Увеличить'}
-                        >
-                            {large
-                                ? <Minimize2 className="w-4 h-4" />
-                                : <Maximize2 className="w-4 h-4" />
-                            }
-                        </button>
+                        {embedUrl && (
+                            <button
+                                onClick={() => setLarge(v => !v)}
+                                className="glass-button-secondary p-1.5 rounded-lg"
+                                title={large ? 'Уменьшить' : 'Увеличить'}
+                            >
+                                {large
+                                    ? <Minimize2 className="w-4 h-4" />
+                                    : <Maximize2 className="w-4 h-4" />
+                                }
+                            </button>
+                        )}
                         <button onClick={onClose} className="glass-button-secondary p-1.5 rounded-lg" title="Закрыть">
                             <X className="w-4 h-4" />
                         </button>
                     </div>
                 </div>
 
-                {/* Видео 16:9 */}
-                <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
-                    <iframe
-                        src={embedUrl}
-                        className="absolute inset-0 w-full h-full"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                        title={title}
-                    />
-                </div>
+                {embedUrl ? (
+                    /* YouTube embed 16:9 */
+                    <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+                        <iframe
+                            src={embedUrl}
+                            className="absolute inset-0 w-full h-full"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                            title={title}
+                        />
+                    </div>
+                ) : (
+                    /* Не YouTube — показываем кнопку открытия внутри модала */
+                    <div className="p-6 flex flex-col items-center gap-4 text-center">
+                        <Play className="w-12 h-12 text-accent opacity-60" />
+                        <p className="text-sm text-text-secondary">Видео доступно по ссылке</p>
+                        <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="glass-button flex items-center gap-2 text-sm"
+                            onClick={onClose}
+                        >
+                            <Play className="w-4 h-4" />Открыть видео
+                        </a>
+                    </div>
+                )}
             </div>
         </div>
     )
@@ -212,11 +224,8 @@ function ExerciseCard({
                     <div className="flex items-center gap-2 pl-9" onClick={e => e.stopPropagation()}>
                         <button
                             onClick={() => {
-                                if (exercise.videoUrl) {
-                                    onVideoClick(exercise.videoUrl, exercise.name)
-                                } else {
-                                    window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(exercise.name + ' техника')}`, '_blank')
-                                }
+                                const url = exercise.videoUrl || `https://www.youtube.com/results?search_query=${encodeURIComponent(exercise.name + ' техника')}`
+                                onVideoClick(url, exercise.name)
                             }}
                             className="glass-button-secondary flex items-center gap-1.5 text-xs px-3 py-1.5">
                             <Play className="w-3 h-3" />Видео
