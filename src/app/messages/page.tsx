@@ -10,8 +10,8 @@ import {
     type ChatMessage
 } from '@/lib/services/messages'
 import { getAllUsers, type UserWithProgress } from '@/lib/services/admin'
+import { isAdminUser } from '@/lib/auth/isAdminUser'
 
-const ADMIN_EMAILS = ['dgmukhin@gmail.com']
 const TRAINER_ID = '2c87d862-8f21-4ca0-ac69-eafe5a343ee1'
 
 // ─── Клиентский чат ──────────────────────────────────────────────────────────
@@ -322,11 +322,7 @@ export default function MessagesPage() {
     }
 
     // Пока authLoading — рендерим с user=null, данные подгрузятся
-    const isAdmin = user ? (
-        ADMIN_EMAILS.includes(user.email?.toLowerCase() || '')
-        || user.user_metadata?.role === 'admin'
-        || user.user_metadata?.role === 'trainer'
-    ) : false
+    const isAdmin = isAdminUser(user, ['admin', 'trainer'])
 
     return (
         <div className="bg-bg-main flex flex-col" style={{ height: '100vh', paddingTop: '72px' }}>

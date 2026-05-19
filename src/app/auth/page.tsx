@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Flame, Mail, Lock, User, Eye, EyeOff, ArrowRight, Loader2, CheckCircle, ShieldCheck, CreditCard } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/client'
+import { isAdminUser } from '@/lib/auth/isAdminUser'
 
 type AuthMode = 'login' | 'register'
 
@@ -46,13 +47,7 @@ function AuthContent() {
 
     // Определяем куда редиректить после входа
     const getRedirectTarget = async (loggedInUser: { id?: string; email?: string | null; user_metadata?: any }) => {
-        const ADMIN_EMAILS = ['dgmukhin@gmail.com']
-        const isAdminUser = ADMIN_EMAILS.includes(loggedInUser.email?.toLowerCase() || '')
-            || loggedInUser.user_metadata?.role === 'admin'
-            || loggedInUser.user_metadata?.role === 'curator'
-            || loggedInUser.user_metadata?.role === 'trainer'
-
-        if (isAdminUser) return '/admin'
+        if (isAdminUser(loggedInUser)) return '/admin'
 
         // Определяем фактическое состояние клиента: оплата → анкета → питание → дашборд.
         // Это базовая правда, которая важнее returnTo из URL — иначе залипший в истории
@@ -109,12 +104,7 @@ function AuthContent() {
         if (!authLoading && user && !isRedirecting) {
             setIsRedirecting(true)
             setRedirectMessage('Перенаправляем...')
-            const ADMIN_EMAILS = ['dgmukhin@gmail.com']
-            const isAdminUser = ADMIN_EMAILS.includes(user.email?.toLowerCase() || '')
-                || user.user_metadata?.role === 'admin'
-                || user.user_metadata?.role === 'curator'
-                || user.user_metadata?.role === 'trainer'
-            if (isAdminUser) {
+            if (isAdminUser(user)) {
                 window.location.href = '/admin'
             } else {
                 getRedirectTarget(user).then(target => { window.location.href = target })

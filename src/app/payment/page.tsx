@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { getUserPayment, createPaymentRequest, createTestPayment, type Payment } from '@/lib/services/payment'
+import { isAdminUser } from '@/lib/auth/isAdminUser'
 
 const YOOMONEY_WALLET = process.env.NEXT_PUBLIC_YOOMONEY_WALLET || '410014990008683'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://meta-system-ja1o.vercel.app'
@@ -85,11 +86,7 @@ function PaymentContent() {
     useEffect(() => {
         if (process.env.NEXT_PUBLIC_DISABLE_REDIRECTS === 'true') return
         if (!authLoading && user) {
-            const ADMIN_EMAILS = ['dgmukhin@gmail.com']
-            const isAdminUser = ADMIN_EMAILS.includes(user.email?.toLowerCase() || '')
-                || user.user_metadata?.role === 'admin'
-                || user.user_metadata?.role === 'curator'
-            if (isAdminUser) {
+            if (isAdminUser(user, ['admin', 'curator'])) {
                 window.location.href = '/admin'
             }
         }

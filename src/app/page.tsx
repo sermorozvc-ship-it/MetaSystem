@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { getUserPayment } from '@/lib/services/payment'
 import { isQuestionnaireCompleted } from '@/lib/services/questionnaire'
+import { isAdminUser } from '@/lib/auth/isAdminUser'
 
 const PAIN_POINTS = [
     {
@@ -678,13 +679,7 @@ export default function LandingPage() {
             const check = async () => {
                 try {
                     // Проверяем роль — админ идёт в /admin
-                    const ADMIN_EMAILS = ['dgmukhin@gmail.com']
-                    const isAdminUser = ADMIN_EMAILS.includes(user.email?.toLowerCase() || '')
-                        || user.user_metadata?.role === 'admin'
-                        || user.user_metadata?.role === 'curator'
-                        || user.user_metadata?.role === 'trainer'
-
-                    if (isAdminUser) {
+                    if (isAdminUser(user)) {
                         router.replace('/admin')
                         return
                     }
