@@ -14,7 +14,7 @@ export default function OnboardingPage() {
     useEffect(() => {
         if (isLoading) return
         if (!user) return
-        // Авторизован — проверяем анкеты
+        // Авторизован — проверяем анкеты и ведём по правильному пути
         const go = async () => {
             try {
                 const done = await isQuestionnaireCompleted()
@@ -22,6 +22,7 @@ export default function OnboardingPage() {
                     window.location.href = '/questionnaire'
                     return
                 }
+                // Основная анкета заполнена — проверяем питание
                 const { isNutritionQuestionnaireRequired, isNutritionQuestionnaireCompleted } =
                     await import('@/lib/services/nutrition')
                 const needsNutrition = await isNutritionQuestionnaireRequired()

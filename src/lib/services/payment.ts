@@ -22,7 +22,9 @@ export interface Payment {
 }
 
 /**
- * Получить статус оплаты текущего пользователя
+ * Получить статус оплаты текущего пользователя.
+ * Возвращает последний CONFIRMED платёж, или последний pending если confirmed нет.
+ * Fallback: если profiles.subscription_status = 'active' — создаём виртуальный confirmed-объект.
  */
 export async function getUserPayment(): Promise<Payment | null> {
     const supabase = createClient()
@@ -30,7 +32,45 @@ export async function getUserPayment(): Promise<Payment | null> {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
 
-    const { data, error } = await supabase
+    // Сначала ищем подтверждённый платёж — он приоритетнее pending
+    const { data: confirmed } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('status', 'confirmed')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+    if (confirmed) return confirmed as Payment
+
+    // Нет confirmed — проверяем профиль как fallback
+    // (вебхук мог не прийти, но подписка активирована вручную)
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('subscription_status, subscription_end_date, has_nutrition_plan')
+        .eq('id', user.id)
+        .single()
+
+    if (profile?.subscription_status === 'active') {
+        // Возвращаем синтетический confirmed-объект чтобы не блокировать пользователя
+        return {
+            id: 'profile-fallback',
+            user_id: user.id,
+            amount: 0,
+            currency: 'RUB',
+            status: 'confirmed',
+            payment_method: 'manual',
+            confirmed_by: null,
+            confirmed_at: null,
+            includes_nutrition: profile.has_nutrition_plan ?? false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        } as Payment
+    }
+
+    // Нет ни confirmed, ни активного профиля — возвращаем последний pending (или null)
+    const { data: pending, error } = await supabase
         .from('payments')
         .select('*')
         .eq('user_id', user.id)
@@ -43,7 +83,7 @@ export async function getUserPayment(): Promise<Payment | null> {
         return null
     }
 
-    return data as Payment | null
+    return pending as Payment | null
 }
 
 /**
