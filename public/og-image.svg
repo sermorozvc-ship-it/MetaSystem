@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0d0d0d"/>
+      <stop offset="100%" style="stop-color:#111111"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="85%" r="50%">
+      <stop offset="0%" style="stop-color:#c8f542;stop-opacity:0.15"/>
+      <stop offset="100%" style="stop-color:#c8f542;stop-opacity:0"/>
+    </radialGradient>
+    <!-- Grid pattern -->
+    <pattern id="grid" width="44" height="44" patternUnits="userSpaceOnUse">
+      <path d="M 44 0 L 0 0 0 44" fill="none" stroke="rgba(200,245,66,0.04)" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+
+  <!-- Left accent bar -->
+  <rect x="80" y="180" width="4" height="120" rx="2" fill="#c8f542"/>
+
+  <!-- Badge -->
+  <rect x="100" y="120" width="340" height="36" rx="18" fill="rgba(200,245,66,0.1)" stroke="rgba(200,245,66,0.3)" stroke-width="1"/>
+  <text x="270" y="143" font-family="Arial, sans-serif" font-size="13" font-weight="600" fill="#8a8a82" text-anchor="middle" letter-spacing="1">⚡ 10 лет опыта · Личная платформа</text>
+
+  <!-- Main headline -->
+  <text x="100" y="230" font-family="Arial Black, sans-serif" font-size="52" font-weight="900" fill="#f0f0ee" letter-spacing="-1">Ты уже тренируешься.</text>
+  <text x="100" y="295" font-family="Arial Black, sans-serif" font-size="52" font-weight="900" fill="#f0f0ee" letter-spacing="-1">Осталось начать</text>
+  <text x="100" y="360" font-family="Arial Black, sans-serif" font-size="52" font-weight="900" fill="#c8f542" letter-spacing="-1">прогрессировать.</text>
+
+  <!-- Subtext -->
+  <text x="100" y="420" font-family="Arial, sans-serif" font-size="20" fill="#8a8a82">Индивидуальная программа · Еженедельная корректировка · Личный кабинет</text>
+
+  <!-- Guarantee pill -->
+  <rect x="100" y="460" width="280" height="44" rx="22" fill="#c8f542"/>
+  <text x="240" y="487" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#0d0d0d" text-anchor="middle">Гарантия возврата за 5 дней</text>
+
+  <!-- Right side: trainer photo placeholder circle -->
+  <circle cx="980" cy="315" r="200" fill="rgba(200,245,66,0.06)" stroke="rgba(200,245,66,0.2)" stroke-width="2"/>
+  <circle cx="980" cy="315" r="160" fill="rgba(200,245,66,0.04)"/>
+  <text x="980" y="300" font-family="Arial Black, sans-serif" font-size="48" font-weight="900" fill="#c8f542" text-anchor="middle">ДМ</text>
+  <text x="980" y="345" font-family="Arial, sans-serif" font-size="16" fill="#8a8a82" text-anchor="middle">Дмитрий Мухин</text>
+  <text x="980" y="368" font-family="Arial, sans-serif" font-size="14" fill="#444440" text-anchor="middle">Фитнес-тренер</text>
+
+  <!-- Bottom domain -->
+  <text x="100" y="590" font-family="Arial, sans-serif" font-size="16" fill="#444440">metasystem.fit</text>
+  <text x="1100" y="590" font-family="Arial Black, sans-serif" font-size="18" font-weight="900" fill="#c8f542" text-anchor="end">MetaSystem</text>
+</svg>

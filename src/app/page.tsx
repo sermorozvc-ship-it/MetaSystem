@@ -2,17 +2,42 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { getUserPayment } from '@/lib/services/payment'
 import { isQuestionnaireCompleted } from '@/lib/services/questionnaire'
 
 const PAIN_POINTS = [
-    { emoji: '😤', text: 'Я тренируюсь в зале больше года, но отражение в зеркале не меняется.' },
-    { emoji: '😴', text: 'После работы нет сил, а когда есть силы, нет понимания что делать.' },
-    { emoji: '😕', text: 'Не понимаю сколько подходов делать и как правильно прогрессировать.' },
-    { emoji: '🤷', text: 'Пробовал программы из интернета, ничего не сработало.' },
-    { emoji: '📉', text: 'Худею, но теряю мышцы. Набираю, но растёт живот, а не мышцы.' },
-    { emoji: '🔄', text: 'Каждые 2 месяца начинаю заново с нуля.' },
+    {
+        emoji: '😤',
+        heading: 'Год без результата',
+        text: 'Тренируешься больше года, но отражение в зеркале не меняется.',
+    },
+    {
+        emoji: '😴',
+        heading: 'Нет сил — нет системы',
+        text: 'После работы нет сил, а когда есть — непонятно что делать.',
+    },
+    {
+        emoji: '😕',
+        heading: 'Хаос в нагрузке',
+        text: 'Непонятно сколько подходов делать и как правильно прогрессировать.',
+    },
+    {
+        emoji: '🤷',
+        heading: 'Программы не работают',
+        text: 'Пробовал программы из интернета — ни одна не дала результата.',
+    },
+    {
+        emoji: '📉',
+        heading: 'Тело меняется не туда',
+        text: 'Худеешь — теряешь мышцы. Набираешь — растёт живот, а не мышцы.',
+    },
+    {
+        emoji: '🔄',
+        heading: 'Старт с нуля каждые 2 месяца',
+        text: 'Мотивация кончается, и всё начинается заново.',
+    },
 ]
 
 const PLATFORM_FEATURES = [
@@ -98,19 +123,148 @@ const BENEFITS = [
 
 const REVIEWS = [
     {
-        result: 'минус 16 кг за 4.5 месяца',
-        text: 'Тренировался сам 2 года и почти ничего не добился. С Дмитрием за 4.5 месяца убрал живот, нормализовал гормональный фон и повысил уровень энергии. Самое удобное заключается в том, что программа и динамика изменений всех показателей отображаются прямо в приложении.',
-        author: 'Алексей, 36 лет, Москва',
+        result: 'минус 15 кг за 5 месяцев',
+        text: 'Тренировался сам 2 года и почти ничего не добился. С Дмитрием за 5 месяцев убрал живот.',
+        author: 'Азиз, 43 года, Мытищи',
+        initials: 'АЗ',
+        photo: '/case-aziz.jpg',
+        details: {
+            pointA: {
+                label: 'Точка А',
+                text: '43 года, вес с лишним жиром на животе, хроническая усталость после работы, сниженный гормональный фон. Тренировался самостоятельно 2 года — результата почти не было.',
+            },
+            goals: {
+                label: 'Запрос',
+                items: [
+                    'Убрать живот и лишний жир',
+                    'Нормализовать гормональный фон',
+                    'Повысить уровень энергии и тонус',
+                    'Выстроить систему — не просто «ходить в зал»',
+                ],
+            },
+            actions: {
+                label: 'Что было сделано',
+                items: [
+                    'Индивидуальная программа с учётом возраста и гормонального статуса',
+                    'Питание с акцентом на белок и контроль калорийности',
+                    'Силовые тренировки 3 раза в неделю без перегрузок',
+                    'Еженедельная корректировка нагрузки по данным из платформы',
+                ],
+            },
+            pointB: {
+                label: 'Точка Б',
+                items: [
+                    'Минус 15 кг за 5 месяцев',
+                    'Живот ушёл, появился рельеф',
+                    'Гормональный фон нормализовался',
+                    'Уровень энергии вырос — стало хватать и на работу, и на тренировки',
+                ],
+            },
+            challenges: {
+                label: 'Сложности',
+                items: [
+                    'Первые недели — перестройка режима питания после многолетних привычек',
+                    'Скептицизм после 2 лет безрезультатных тренировок',
+                    'Совмещение тренировок с плотным рабочим графиком',
+                ],
+            },
+        },
     },
     {
-        result: 'плюс 8 кг сухой массы за 6 месяцев',
-        text: 'Три года в зале и всё встало. Думала справлюсь сама. За полгода с Дмитрием прогресс которого не было никогда. Очень удобно что в личном кабинете видна вся история тренировок и графики. Понимаешь что работает, а что нет.',
-        author: 'Мария, 31 год, Санкт-Петербург',
+        result: 'минус 30 кг за год · жим с 80 до 145 кг',
+        text: 'Пришёл к Дмитрию на месяц, остался на год, работаем дальше.',
+        author: 'Валерий, 46 лет, Москва · менеджер',
+        initials: 'ВА',
+        photo: '/case-valeriy.jpg',
+        details: {
+            pointA: {
+                label: 'Точка А',
+                text: 'Вес 118 кг, одышка, боли в суставах, высокое давление, низкая выносливость. Быстрая утомляемость, проблемы со сном, отсутствие уверенности в себе.',
+            },
+            goals: {
+                label: 'Запрос',
+                items: [
+                    'Сбросить лишний вес',
+                    'Улучшить здоровье и самочувствие',
+                    'Повысить уровень энергии',
+                    'Развить силу и выносливость',
+                ],
+            },
+            actions: {
+                label: 'Что было сделано',
+                items: [
+                    'Сбалансированное питание с дефицитом калорий',
+                    'Силовые и кардиотренировки 3–4 раза в неделю',
+                    'Контроль сна и уровня стресса',
+                    'Постепенное увеличение активности',
+                ],
+            },
+            pointB: {
+                label: 'Точка Б',
+                items: [
+                    'Минус 30 кг — вес 88 кг',
+                    'Жим лёжа вырос с 80 до 145 кг',
+                    'Суставы перестали болеть, давление нормализовалось',
+                    'Появилась лёгкость в движении, улучшился сон',
+                    'Стал увереннее, сильнее и выносливее',
+                ],
+            },
+            challenges: {
+                label: 'Сложности',
+                items: [
+                    'Первые месяцы — борьба с пищевыми привычками',
+                    'Лень и отсутствие мотивации',
+                    'Периодические застои в весе',
+                ],
+            },
+        },
     },
     {
-        result: 'жим 80 кг вырос до 115 кг за 8 месяцев',
-        text: 'Работаю много, времени мало. 3 тренировки в неделю по 60 минут. Через 8 месяцев результат которого не ожидал. Платформа очень удобная, заполнил данные после тренировки за 2 минуты и всё сразу видит тренер.',
-        author: 'Павел, 38 лет, Казань',
+        result: 'минус 7 кг · набор сухой массы · 3 месяца',
+        text: 'Дима очень помог в плане нормализации питания и выстраивания тренировочного процесса.',
+        author: 'Георгий, 32 года, Казань · свой бизнес',
+        initials: 'ГЕ',
+        photo: '/case-georgiy.jpg',
+        details: {
+            pointA: {
+                label: 'Точка А',
+                text: 'Вес 88 кг, скрытый андрогенный дефицит, хроническая усталость, апатия. Вес не менялся несколько лет, сил на тренировки не хватало.',
+            },
+            goals: {
+                label: 'Запрос',
+                items: [
+                    'Организовать правильное питание',
+                    'Сохранить и увеличить мышцы',
+                    'Повысить уровень энергии',
+                ],
+            },
+            actions: {
+                label: 'Что было сделано',
+                items: [
+                    'Коррекция питания с упором на белки и полезные жиры',
+                    'Силовые тренировки 3 раза в неделю',
+                    'Работа с режимом сна и восстановлением',
+                    'Контроль гормонального фона',
+                ],
+            },
+            pointB: {
+                label: 'Точка Б',
+                items: [
+                    'Минус 5 кг жира за 2 месяца, последующее увеличение сухой массы',
+                    'Сформировал здоровые пищевые привычки',
+                    'Увеличил мышечную массу без набора жира',
+                    'Почувствовал прилив сил, получил повышение на работе',
+                ],
+            },
+            challenges: {
+                label: 'Сложности',
+                items: [
+                    'Первые недели — усталость и адаптация к новому питанию',
+                    'Сомнения, можно ли прогрессировать без жёсткой диеты',
+                    'Перестройка привычек потребовала дисциплины',
+                ],
+            },
+        },
     },
 ]
 
@@ -154,7 +308,7 @@ const PLANS = [
         duration: 'СТАРТ · 1 месяц',
         price: '5 ₽',
         perMonth: '5 ₽ в месяц',
-        features: [
+        base: [
             'Доступ к личному кабинету MetaSystem',
             'Индивидуальная программа тренировок',
             'Еженедельная корректировка (4 раза)',
@@ -164,6 +318,7 @@ const PLANS = [
             'Контроль прогресса по итогам месяца',
             'Гарантия возврата за 5 дней',
         ],
+        bonuses: [] as string[],
         desc: 'Хорошо подходит для знакомства с системой.',
         featured: false,
         badge: null,
@@ -173,7 +328,7 @@ const PLANS = [
         duration: 'ПРОГРЕСС · 3 месяца',
         price: '6 ₽',
         perMonth: '2 ₽ в месяц (экономия 9 800 ₽)',
-        features: [
+        base: [
             'Доступ к личному кабинету MetaSystem',
             'Индивидуальная программа тренировок',
             'Еженедельная корректировка (12 раз)',
@@ -182,7 +337,9 @@ const PLANS = [
             'Метрики и графики прогресса',
             'Контроль прогресса каждый месяц',
             'Гарантия возврата за 5 дней',
-            'БОНУС: Пересмотр программы после первого мезоцикла',
+        ],
+        bonuses: [
+            'Пересмотр программы после первого мезоцикла',
         ],
         desc: 'За 3 месяца проходим полный цикл и закрепляем результат.',
         featured: true,
@@ -193,7 +350,7 @@ const PLANS = [
         duration: 'ТРАНСФОРМАЦИЯ · 6 месяцев',
         price: '7 ₽',
         perMonth: '1.17 ₽ в месяц (экономия 29 500 ₽)',
-        features: [
+        base: [
             'Доступ к личному кабинету MetaSystem',
             'Индивидуальная программа тренировок',
             'Еженедельная корректировка (24 раза)',
@@ -202,8 +359,10 @@ const PLANS = [
             'Метрики и графики прогресса',
             'Контроль прогресса каждый месяц',
             'Гарантия возврата за 5 дней',
-            'БОНУС: Программа питания включена (3 000 ₽ в подарок)',
-            'БОНУС: Приоритетный ответ в чате',
+        ],
+        bonuses: [
+            'Программа питания включена (3 000 ₽ в подарок)',
+            'Приоритетный ответ в чате',
         ],
         desc: 'За 6 месяцев меняется не только тело — меняется привычка тренироваться.',
         featured: false,
@@ -211,41 +370,299 @@ const PLANS = [
     },
 ]
 
-function Timer() {
-    const [time, setTime] = useState('72:00:00')
+// Кружок с цифрой в timeline — считает от 0 до target при попадании в viewport
+function TimelineDot({ number }: { number: number }) {
+    const [displayed, setDisplayed] = useState(0)
+    const [animated, setAnimated] = useState(false)
+    const ref = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
-        let deadline = Number(localStorage.getItem('offer_deadline'))
-        if (!deadline || Number.isNaN(deadline)) {
-            deadline = Date.now() + 72 * 60 * 60 * 1000
-            localStorage.setItem('offer_deadline', String(deadline))
-        }
-        const tick = () => {
-            const diff = deadline - Date.now()
-            if (diff <= 0) {
-                setTime('00:00:00')
-                return
-            }
-            const h = Math.floor(diff / 3600000)
-            const m = Math.floor((diff % 3600000) / 60000)
-            const s = Math.floor((diff % 60000) / 1000)
-            setTime(
-                `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-            )
-        }
-        tick()
-        const id = setInterval(tick, 1000)
-        return () => clearInterval(id)
-    }, [])
+        const el = ref.current
+        if (!el) return
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry.isIntersecting && !animated) {
+                    setAnimated(true)
+                    observer.disconnect()
+                    // count-up: 0 → number за ~400ms
+                    const steps = number          // шагов = само число (1..6)
+                    const duration = 420          // мс
+                    const interval = duration / steps
+                    let current = 0
+                    const tick = setInterval(() => {
+                        current += 1
+                        setDisplayed(current)
+                        if (current >= number) clearInterval(tick)
+                    }, interval)
+                }
+            },
+            { threshold: 0.6 }
+        )
+        observer.observe(el)
+        return () => observer.disconnect()
+    }, [number, animated])
 
-    return <div className="urgency-timer">{time}</div>
+    return (
+        <div
+            ref={ref}
+            className={`timeline-dot ${animated ? 'timeline-dot-animated' : ''}`}
+        >
+            {displayed}
+        </div>
+    )
+}
+
+// Блок «осталось мест» — честная альтернатива псевдо-таймеру
+// Число мест меняй вручную по мере набора потока
+const SPOTS_TOTAL = 5
+let SPOTS_LEFT: number = 2
+
+function SpotsBlock() {
+    return (
+        <div className="urgency-block">
+            <div className="urgency-label">🎯 Набор в текущий поток</div>
+            <div className="spots-row">
+                {Array.from({ length: SPOTS_TOTAL }).map((_, i) => (
+                    <div
+                        key={i}
+                        className={`spot-dot ${i < SPOTS_TOTAL - SPOTS_LEFT ? 'spot-dot-taken' : 'spot-dot-free'}`}
+                        title={i < SPOTS_TOTAL - SPOTS_LEFT ? 'Занято' : 'Свободно'}
+                    />
+                ))}
+            </div>
+            <div className="urgency-timer" style={{ fontSize: 'clamp(36px, 7vw, 56px)' }}>
+                {SPOTS_LEFT} {SPOTS_LEFT === 1 ? 'место' : SPOTS_LEFT < 5 ? 'места' : 'мест'}
+            </div>
+            <div className="urgency-text">
+                Работаю с ограниченным числом клиентов одновременно — это позволяет уделять
+                каждому достаточно внимания. Когда поток закрывается, следующий старт
+                через 3–4 недели.
+            </div>
+        </div>
+    )
+}
+
+// Слайдер кейсов с фото до/после
+function CaseSlider() {
+    const cases = REVIEWS.filter(r => r.photo)
+    const [idx, setIdx] = useState(0)
+    const [dir, setDir] = useState<'left' | 'right'>('right')
+    const [animating, setAnimating] = useState(false)
+    const [openSection, setOpenSection] = useState<string | null>(null)
+
+    const go = (next: number, direction: 'left' | 'right') => {
+        if (animating || next === idx) return
+        setDir(direction)
+        setAnimating(true)
+        setOpenSection(null) // сбрасываем аккордеон при смене слайда
+        setTimeout(() => {
+            setIdx(next)
+            setAnimating(false)
+        }, 320)
+    }
+
+    const prev = () => go((idx - 1 + cases.length) % cases.length, 'left')
+    const next = () => go((idx + 1) % cases.length, 'right')
+
+    const r = cases[idx]
+
+    const toggleSection = (key: string) =>
+        setOpenSection(prev => prev === key ? null : key)
+
+    return (
+        <div className="case-slider">
+            <div className={`case-card case-card-anim ${animating ? (dir === 'right' ? 'slide-out-left' : 'slide-out-right') : 'slide-in'}`}>
+                <div className="case-photo-wrap">
+                    <img
+                        src={r.photo!}
+                        alt={`До и после — ${r.author}`}
+                        className="case-photo"
+                    />
+                    <div className="case-photo-label">До · После</div>
+                </div>
+                <div className="case-content">
+                    <div className="review-result" style={{ marginBottom: 20 }}>
+                        Результат: {r.result}
+                    </div>
+                    <div className="review-quote">"</div>
+                    <div className="review-text">{r.text}</div>
+
+                    {/* Аккордеон с деталями кейса */}
+                    {r.details && (
+                        <div className="case-accordion">
+                            {/* Точка А */}
+                            <div className={`case-acc-item ${openSection === 'pointA' ? 'open' : ''}`}>
+                                <button
+                                    type="button"
+                                    className="case-acc-btn"
+                                    onClick={() => toggleSection('pointA')}
+                                    aria-expanded={openSection === 'pointA'}
+                                >
+                                    <span className="case-acc-icon">📍</span>
+                                    <span>{r.details.pointA.label}</span>
+                                    <span className="case-acc-arrow">↓</span>
+                                </button>
+                                <div className="case-acc-body">
+                                    <p className="case-acc-text">{r.details.pointA.text}</p>
+                                </div>
+                            </div>
+
+                            {/* Запрос */}
+                            <div className={`case-acc-item ${openSection === 'goals' ? 'open' : ''}`}>
+                                <button
+                                    type="button"
+                                    className="case-acc-btn"
+                                    onClick={() => toggleSection('goals')}
+                                    aria-expanded={openSection === 'goals'}
+                                >
+                                    <span className="case-acc-icon">🎯</span>
+                                    <span>{r.details.goals.label}</span>
+                                    <span className="case-acc-arrow">↓</span>
+                                </button>
+                                <div className="case-acc-body">
+                                    <ul className="case-acc-list">
+                                        {r.details.goals.items.map((item, i) => <li key={i}>{item}</li>)}
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* Что сделано */}
+                            <div className={`case-acc-item ${openSection === 'actions' ? 'open' : ''}`}>
+                                <button
+                                    type="button"
+                                    className="case-acc-btn"
+                                    onClick={() => toggleSection('actions')}
+                                    aria-expanded={openSection === 'actions'}
+                                >
+                                    <span className="case-acc-icon">⚙️</span>
+                                    <span>{r.details.actions.label}</span>
+                                    <span className="case-acc-arrow">↓</span>
+                                </button>
+                                <div className="case-acc-body">
+                                    <ul className="case-acc-list">
+                                        {r.details.actions.items.map((item, i) => <li key={i}>{item}</li>)}
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* Точка Б */}
+                            <div className={`case-acc-item ${openSection === 'pointB' ? 'open' : ''}`}>
+                                <button
+                                    type="button"
+                                    className="case-acc-btn"
+                                    onClick={() => toggleSection('pointB')}
+                                    aria-expanded={openSection === 'pointB'}
+                                >
+                                    <span className="case-acc-icon">✅</span>
+                                    <span>{r.details.pointB.label}</span>
+                                    <span className="case-acc-arrow">↓</span>
+                                </button>
+                                <div className="case-acc-body">
+                                    <ul className="case-acc-list accent">
+                                        {r.details.pointB.items.map((item, i) => <li key={i}>{item}</li>)}
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* Сложности */}
+                            <div className={`case-acc-item ${openSection === 'challenges' ? 'open' : ''}`}>
+                                <button
+                                    type="button"
+                                    className="case-acc-btn"
+                                    onClick={() => toggleSection('challenges')}
+                                    aria-expanded={openSection === 'challenges'}
+                                >
+                                    <span className="case-acc-icon">⚡</span>
+                                    <span>{r.details.challenges.label}</span>
+                                    <span className="case-acc-arrow">↓</span>
+                                </button>
+                                <div className="case-acc-body">
+                                    <ul className="case-acc-list">
+                                        {r.details.challenges.items.map((item, i) => <li key={i}>{item}</li>)}
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="review-author-row" style={{ marginTop: 24 }}>
+                        <div className="review-avatar">{r.initials}</div>
+                        <div className="review-author">{r.author}</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Навигация */}
+            {cases.length > 1 && (
+                <div className="case-slider-nav">
+                    <button type="button" className="case-slider-btn" onClick={prev} aria-label="Предыдущий кейс">←</button>
+                    <div className="case-slider-dots">
+                        {cases.map((_, i) => (
+                            <button
+                                key={i}
+                                type="button"
+                                className={`case-slider-dot ${i === idx ? 'active' : ''}`}
+                                onClick={() => go(i, i > idx ? 'right' : 'left')}
+                                aria-label={`Кейс ${i + 1}`}
+                            />
+                        ))}
+                    </div>
+                    <button type="button" className="case-slider-btn" onClick={next} aria-label="Следующий кейс">→</button>
+                </div>
+            )}
+        </div>
+    )
+}
+
+// Универсальный count-up с easeOut — резкий старт, замедление к концу
+// target: конечное число, suffix: «+», « кг», «%» и т.п.
+// duration: мс (по умолчанию 900)
+function CountUp({ target, suffix = '', duration = 900 }: { target: number; suffix?: string; duration?: number }) {
+    const [value, setValue] = useState(0)
+    const [started, setStarted] = useState(false)
+    const ref = useRef<HTMLSpanElement>(null)
+
+    useEffect(() => {
+        const el = ref.current
+        if (!el) return
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry.isIntersecting && !started) {
+                    setStarted(true)
+                    observer.disconnect()
+
+                    const startTime = performance.now()
+                    const tick = (now: number) => {
+                        const elapsed = now - startTime
+                        const progress = Math.min(elapsed / duration, 1)
+                        // easeOutExpo — резкий старт, плавное торможение
+                        const eased = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress)
+                        setValue(Math.round(eased * target))
+                        if (progress < 1) requestAnimationFrame(tick)
+                    }
+                    requestAnimationFrame(tick)
+                }
+            },
+            { threshold: 0.5 }
+        )
+        observer.observe(el)
+        return () => observer.disconnect()
+    }, [target, duration, started])
+
+    return (
+        <span ref={ref}>
+            {value}{suffix}
+        </span>
+    )
 }
 
 export default function LandingPage() {
     const { user, isLoading } = useAuth()
     const router = useRouter()
-    const [openFaq, setOpenFaq] = useState<number | null>(null)
+    const [openFaq, setOpenFaq] = useState<Set<number>>(new Set())
     const [scrolled, setScrolled] = useState(false)
+    const [redirecting, setRedirecting] = useState(false)
+    const [showStickyCta, setShowStickyCta] = useState(false)
 
     // Авторизованный редирект (если не отключён dev-флагом)
     // Используем ref чтобы не перезапускать при каждом рендере
@@ -254,6 +671,7 @@ export default function LandingPage() {
         if (process.env.NEXT_PUBLIC_DISABLE_REDIRECTS === 'true') return
         if (!isLoading && user && !redirected.current) {
             redirected.current = true
+            setRedirecting(true)
             const check = async () => {
                 try {
                     // Проверяем роль — админ идёт в /admin
@@ -264,18 +682,18 @@ export default function LandingPage() {
                         || user.user_metadata?.role === 'trainer'
 
                     if (isAdminUser) {
-                        window.location.href = '/admin'
+                        router.replace('/admin')
                         return
                     }
 
                     const payment = await getUserPayment()
                     if (!payment || payment.status !== 'confirmed') {
-                        window.location.href = '/payment'
+                        router.replace('/payment')
                         return
                     }
                     const done = await isQuestionnaireCompleted()
                     if (!done) {
-                        window.location.href = '/questionnaire'
+                        router.replace('/questionnaire')
                         return
                     }
                     // Проверяем анкету питания при необходимости
@@ -286,74 +704,126 @@ export default function LandingPage() {
                         if (needsNutrition) {
                             const nutritionDone = await isNutritionQuestionnaireCompleted()
                             if (!nutritionDone) {
-                                window.location.href = '/questionnaire/nutrition'
+                                router.replace('/questionnaire/nutrition')
                                 return
                             }
                         }
                     } catch {}
-                    window.location.href = '/dashboard'
+                    router.replace('/dashboard')
                 } catch {
-                    window.location.href = '/payment'
+                    router.replace('/payment')
                 }
             }
             check()
         }
-    }, [user, isLoading])
+    }, [user, isLoading, router])
 
-    // Sticky navbar background
+    // Sticky navbar background + sticky CTA на мобиле
+    // Используем rAF-throttle чтобы не вызывать setState на каждый scroll-event
     useEffect(() => {
-        const onScroll = () => setScrolled(window.scrollY > 50)
-        window.addEventListener('scroll', onScroll, { passive: true })
-        return () => window.removeEventListener('scroll', onScroll)
-    }, [])
+        let rafId = 0
+        let prevScrolled = false
+        let prevSticky = false
 
-    // Fade-in on scroll — запускаем после полного рендера
-    useEffect(() => {
-        const init = () => {
-            const observer = new IntersectionObserver(
-                (entries) => {
-                    entries.forEach((entry) => {
-                        if (entry.isIntersecting) {
-                            entry.target.classList.add('visible')
-                            observer.unobserve(entry.target)
-                        }
-                    })
-                },
-                { threshold: 0.05, rootMargin: '0px 0px -40px 0px' }
-            )
-            document.querySelectorAll('.fade-in').forEach((el) => observer.observe(el))
-            return observer
+        const onScroll = () => {
+            if (rafId) return
+            rafId = requestAnimationFrame(() => {
+                rafId = 0
+                const y = window.scrollY
+                const nextScrolled = y > 50
+                const docHeight = document.documentElement.scrollHeight - window.innerHeight
+                const nearBottom = docHeight > 0 && y > docHeight - 120
+                const nextSticky = y > window.innerHeight * 0.6 && !nearBottom
+
+                // setState только при реальном изменении — нет лишних ре-рендеров
+                if (nextScrolled !== prevScrolled) {
+                    prevScrolled = nextScrolled
+                    setScrolled(nextScrolled)
+                }
+                if (nextSticky !== prevSticky) {
+                    prevSticky = nextSticky
+                    setShowStickyCta(nextSticky)
+                }
+            })
         }
 
-        // Небольшая задержка чтобы DOM полностью отрисовался
-        const timer = setTimeout(() => {
-            const obs = init()
-            return () => obs.disconnect()
-        }, 100)
+        onScroll()
+        window.addEventListener('scroll', onScroll, { passive: true })
+        return () => {
+            window.removeEventListener('scroll', onScroll)
+            if (rafId) cancelAnimationFrame(rafId)
+        }
+    }, [])
 
-        return () => clearTimeout(timer)
+    // Fade-in on scroll через IntersectionObserver
+    // Без setTimeout — observer стартует сразу после mount,
+    // элементы уже в viewport сразу получают класс visible
+    useEffect(() => {
+        const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        if (prefersReduced) {
+            // Сразу показываем всё без анимации
+            document.querySelectorAll('.fade-in').forEach((el) => el.classList.add('visible'))
+            return
+        }
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('visible')
+                        observer.unobserve(entry.target)
+                    }
+                })
+            },
+            { threshold: 0.05, rootMargin: '0px 0px -40px 0px' }
+        )
+        document.querySelectorAll('.fade-in').forEach((el) => observer.observe(el))
+        return () => observer.disconnect()
     }, [])
 
     const handleBuyPlan = (planKey: string) => {
         // Сохраняем выбранный план и переходим на страницу оплаты
         // Регистрация происходит после оплаты через /onboarding
-        if (typeof window !== 'undefined') {
-            sessionStorage.setItem('selected_plan', planKey)
-        }
-        window.location.href = `/payment?plan=${planKey}`
+        sessionStorage.setItem('selected_plan', planKey)
+        router.push(`/payment?plan=${planKey}`)
     }
 
     const scrollTo = (id: string) => {
         document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
+        // Обновляем hash в адресной строке — пользователь может шарить ссылку
+        if (typeof window !== 'undefined') {
+            history.replaceState(null, '', id === 'top' ? window.location.pathname : `#${id}`)
+        }
     }
 
     return (
         <div className="landing-root">
+            {/* Плавный оверлей при редиректе авторизованного пользователя */}
+            {redirecting && (
+                <div className="landing-redirect-overlay" role="status" aria-live="polite">
+                    <Loader2 className="w-8 h-8 text-accent animate-spin" />
+                    <span className="landing-redirect-text">Загружаем твой кабинет…</span>
+                </div>
+            )}
+
             {/* NAVBAR */}
             <nav className={`landing-navbar ${scrolled ? 'scrolled' : ''}`}>
                 <div className="landing-nav-inner">
                     <a href="#" className="landing-logo" onClick={(e) => { e.preventDefault(); scrollTo('top') }}>
-                        <div className="landing-logo-mark">ДМ</div>
+                        <div className="landing-logo-mark">
+                            <img
+                                src="/trainer.jpg"
+                                alt="Дмитрий Мухин"
+                                className="landing-logo-photo"
+                                onError={(e) => {
+                                    const img = e.currentTarget
+                                    img.style.display = 'none'
+                                    const fb = img.nextElementSibling as HTMLElement | null
+                                    if (fb) fb.style.display = 'flex'
+                                }}
+                            />
+                            <span className="landing-logo-fallback">ДМ</span>
+                        </div>
                         <span className="landing-logo-text">Дмитрий Мухин</span>
                     </a>
                     <a
@@ -423,8 +893,9 @@ export default function LandingPage() {
                     <div className="pain-grid" style={{ marginTop: 48 }}>
                         {PAIN_POINTS.map((p, i) => (
                             <div key={i} className="pain-card">
-                                <span style={{ marginRight: 8 }}>{p.emoji}</span>
-                                {p.text}
+                                <div className="pain-card-emoji">{p.emoji}</div>
+                                <div className="pain-card-heading">{p.heading}</div>
+                                <div className="pain-card-text">{p.text}</div>
                             </div>
                         ))}
                     </div>
@@ -465,6 +936,111 @@ export default function LandingPage() {
                             Я вижу всё в реальном времени и корректирую план.
                         </div>
                     </div>
+
+                    {/* Mockup-кадры платформы */}
+                    <div className="platform-mockups">
+                        {/* Кадр 1: Программа недели */}
+                        <div className="mockup-card">
+                            <div className="mockup-topbar">
+                                <div className="mockup-dot" /><div className="mockup-dot" /><div className="mockup-dot" />
+                                <span className="mockup-url">metasystem.fit/dashboard</span>
+                            </div>
+                            <div className="mockup-body">
+                                <div className="mockup-label">📋 Программа · Неделя 4</div>
+                                <div className="mockup-week-row">
+                                    {['Пн', 'Ср', 'Пт'].map((d, i) => (
+                                        <div key={d} className={`mockup-day ${i < 2 ? 'done' : 'active'}`}>
+                                            <span className="mockup-day-name">{d}</span>
+                                            <span className="mockup-day-icon">{i < 2 ? '✓' : '▶'}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="mockup-exercise-list">
+                                    {['Жим лёжа · 4×8 · 80 кг', 'Тяга верхнего блока · 3×10', 'Разводка гантелей · 3×12'].map((ex) => (
+                                        <div key={ex} className="mockup-exercise-row">
+                                            <div className="mockup-exercise-dot" />
+                                            <span>{ex}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="mockup-caption">Программа недели</div>
+                        </div>
+
+                        {/* Кадр 2: Метрики */}
+                        <div className="mockup-card">
+                            <div className="mockup-topbar">
+                                <div className="mockup-dot" /><div className="mockup-dot" /><div className="mockup-dot" />
+                                <span className="mockup-url">metasystem.fit/metrics</span>
+                            </div>
+                            <div className="mockup-body">
+                                <div className="mockup-label">📊 Метрики · Динамика веса</div>
+                                <div className="mockup-chart">
+                                    {[82, 81.2, 80.5, 79.8, 79.1, 78.6, 78.0].map((v, i) => (
+                                        <div
+                                            key={i}
+                                            className="mockup-bar"
+                                            style={{ height: `${((v - 77) / 6) * 100}%` }}
+                                            title={`${v} кг`}
+                                        />
+                                    ))}
+                                </div>
+                                <div className="mockup-chart-labels">
+                                    <span>Нед 1</span><span>Нед 4</span><span>Нед 7</span>
+                                </div>
+                                <div className="mockup-metric-row">
+                                    <span className="mockup-metric-val">−4 кг</span>
+                                    <span className="mockup-metric-sub">за 7 недель</span>
+                                </div>
+                            </div>
+                            <div className="mockup-caption">График прогресса</div>
+                        </div>
+
+                        {/* Кадр 3: Чат */}
+                        <div className="mockup-card">
+                            <div className="mockup-topbar">
+                                <div className="mockup-dot" /><div className="mockup-dot" /><div className="mockup-dot" />
+                                <span className="mockup-url">metasystem.fit/messages</span>
+                            </div>
+                            <div className="mockup-body">
+                                <div className="mockup-label">💬 Чат с тренером</div>
+                                <div className="mockup-chat">
+                                    <div className="mockup-msg trainer">Программа на неделю загружена. Жим начинаем с 75 кг — не форсируй.</div>
+                                    <div className="mockup-msg client">Сделал тренировку, всё внёс. Жим пошёл легче!</div>
+                                    <div className="mockup-msg trainer">Вижу данные — отлично. На следующей неделе добавим 2.5 кг.</div>
+                                </div>
+                            </div>
+                            <div className="mockup-caption">Чат с тренером</div>
+                        </div>
+
+                        {/* Кадр 4: Ввод данных */}
+                        <div className="mockup-card">
+                            <div className="mockup-topbar">
+                                <div className="mockup-dot" /><div className="mockup-dot" /><div className="mockup-dot" />
+                                <span className="mockup-url">metasystem.fit/programs</span>
+                            </div>
+                            <div className="mockup-body">
+                                <div className="mockup-label">⚡ Ввод результатов</div>
+                                <div className="mockup-input-rows">
+                                    {[
+                                        { ex: 'Жим лёжа', sets: '4', reps: '8', kg: '80' },
+                                        { ex: 'Тяга блока', sets: '3', reps: '10', kg: '65' },
+                                    ].map((row) => (
+                                        <div key={row.ex} className="mockup-input-row">
+                                            <span className="mockup-input-name">{row.ex}</span>
+                                            <div className="mockup-input-fields">
+                                                <div className="mockup-input-field">{row.sets}<span>подх</span></div>
+                                                <div className="mockup-input-field">{row.reps}<span>повт</span></div>
+                                                <div className="mockup-input-field accent">{row.kg}<span>кг</span></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="mockup-save-btn">✓ Сохранено автоматически</div>
+                            </div>
+                            <div className="mockup-caption">Ввод данных тренировки</div>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -472,7 +1048,9 @@ export default function LandingPage() {
             <section>
                 <div className="landing-container-wide fade-in">
                     <h2 className="section-title">Как я работаю и в чём заключаются основные отличия</h2>
-                    <div className="compare-table" style={{ marginTop: 48 }}>
+
+                    {/* Десктоп: обычная таблица */}
+                    <div className="compare-table compare-table-desktop" style={{ marginTop: 48 }}>
                         <div className="compare-header">
                             <div className="compare-col-bad">Как у большинства</div>
                             <div className="compare-col-good">Как у меня</div>
@@ -481,6 +1059,17 @@ export default function LandingPage() {
                             <div key={i} className="compare-row">
                                 <div className="compare-cell bad">❌ {bad}</div>
                                 <div className="compare-cell good">✅ {good}</div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Мобайл: стек карточек bad → стрелка → good */}
+                    <div className="compare-mobile" style={{ marginTop: 32 }}>
+                        {COMPARE_ROWS.map(([bad, good], i) => (
+                            <div key={i} className="compare-mobile-pair">
+                                <div className="compare-mobile-bad">❌ {bad}</div>
+                                <div className="compare-mobile-arrow" aria-hidden="true">↓</div>
+                                <div className="compare-mobile-good">✅ {good}</div>
                             </div>
                         ))}
                     </div>
@@ -497,7 +1086,7 @@ export default function LandingPage() {
                     <div className="timeline">
                         {TIMELINE_STEPS.map((s, i) => (
                             <div key={i} className="timeline-step">
-                                <div className="timeline-dot">{i + 1}</div>
+                                <TimelineDot number={i + 1} />
                                 <div className="timeline-title">{s.title}</div>
                                 <div className="timeline-text">{s.text}</div>
                             </div>
@@ -522,20 +1111,16 @@ export default function LandingPage() {
                 </div>
             </section>
 
-            {/* ОТЗЫВЫ */}
+            {/* КЕЙСЫ / ОТЗЫВЫ */}
             <section className="bg-section">
                 <div className="landing-container-wide fade-in">
                     <h2 className="section-title">Что говорят люди которые уже прошли</h2>
-                    <div className="reviews-grid" style={{ marginTop: 48 }}>
-                        {REVIEWS.map((r, i) => (
-                            <div key={i} className="review-card">
-                                <div className="review-result">Результат: {r.result}</div>
-                                <div className="review-quote">"</div>
-                                <div className="review-text">{r.text}</div>
-                                <div className="review-author">{r.author}</div>
-                            </div>
-                        ))}
+
+                    {/* Слайдер кейсов с фото */}
+                    <div style={{ marginTop: 48 }}>
+                        <CaseSlider />
                     </div>
+
                     <p className="reviews-footer">
                         📸 Фотографии до/после и скриншоты из платформы — в Telegram канале<br />
                         <a href="https://t.me/BodyBal" target="_blank" rel="noreferrer">→ t.me/BodyBal</a>
@@ -543,18 +1128,10 @@ export default function LandingPage() {
                 </div>
             </section>
 
-            {/* URGENCY / ТАЙМЕР */}
+            {/* URGENCY / МЕСТА */}
             <section>
                 <div className="fade-in">
-                    <div className="urgency-block">
-                        <div className="urgency-label">⚡ Актуальная цена действует</div>
-                        <Timer />
-                        <div className="urgency-text">
-                            Цена растёт по мере того как система доказывает эффективность
-                            и растёт очередь на ведение. Текущие условия зафиксированы
-                            для тех кто начнёт сейчас.
-                        </div>
-                    </div>
+                    <SpotsBlock />
                 </div>
             </section>
 
@@ -573,11 +1150,27 @@ export default function LandingPage() {
                                 <div className="pricing-duration">{plan.duration}</div>
                                 <div className="pricing-price">{plan.price}</div>
                                 <div className="pricing-per-month">{plan.perMonth}</div>
+
+                                {/* Базовые фичи */}
+                                <div className="pricing-group-label">Что входит каждый месяц</div>
                                 <ul className="pricing-features">
-                                    {plan.features.map((f, j) => (
+                                    {plan.base.map((f, j) => (
                                         <li key={j}>{f}</li>
                                     ))}
                                 </ul>
+
+                                {/* Бонусы — только если есть */}
+                                {plan.bonuses.length > 0 && (
+                                    <>
+                                        <div className="pricing-group-label pricing-group-label-bonus">Бонусы</div>
+                                        <ul className="pricing-features pricing-features-bonus">
+                                            {plan.bonuses.map((b, j) => (
+                                                <li key={j}>{b}</li>
+                                            ))}
+                                        </ul>
+                                    </>
+                                )}
+
                                 <div className="pricing-desc">{plan.desc}</div>
                                 <button
                                     onClick={() => handleBuyPlan(plan.key)}
@@ -621,7 +1214,22 @@ export default function LandingPage() {
                 <div className="landing-container-wide fade-in">
                     <h2 className="section-title">Почему ты можешь мне доверять</h2>
                     <div className="author-card" style={{ marginTop: 48 }}>
-                        <div className="author-avatar">ДМ</div>
+                        <div className="author-avatar-photo">
+                            {/* Положи фото в public/trainer.jpg */}
+                            <img
+                                src="/trainer.jpg"
+                                alt="Дмитрий Мухин — фитнес-тренер"
+                                className="author-photo-img"
+                                onError={(e) => {
+                                    // fallback на инициалы если фото не загрузилось
+                                    const t = e.currentTarget
+                                    t.style.display = 'none'
+                                    const fb = t.nextElementSibling as HTMLElement | null
+                                    if (fb) fb.style.display = 'flex'
+                                }}
+                            />
+                            <div className="author-photo-fallback" style={{ display: 'none' }}>ДМ</div>
+                        </div>
                         <div className="author-info">
                             <div className="author-name">Дмитрий Мухин</div>
                             <div className="author-role">Фитнес-тренер · 10 лет практики</div>
@@ -646,20 +1254,28 @@ export default function LandingPage() {
                     </div>
                     <div className="author-stats">
                         <div>
-                            <div className="author-stat-value">10</div>
+                            <div className="author-stat-value">
+                                <CountUp target={10} duration={700} />
+                            </div>
                             <div className="author-stat-label">лет опыта</div>
                         </div>
                         <div>
-                            <div className="author-stat-value">100+</div>
+                            <div className="author-stat-value">
+                                <CountUp target={100} suffix="+" duration={900} />
+                            </div>
                             <div className="author-stat-label">клиентов</div>
                         </div>
                         <div>
-                            <div className="author-stat-value">16 кг</div>
+                            <div className="author-stat-value">
+                                <CountUp target={16} suffix=" кг" duration={800} />
+                            </div>
                             <div className="author-stat-label">лучший результат<br />за 4.5 месяца</div>
                         </div>
                         <div>
-                            <div className="author-stat-value">0</div>
-                            <div className="author-stat-label">шаблонных программ</div>
+                            <div className="author-stat-value">
+                                <CountUp target={100} suffix="%" duration={900} />
+                            </div>
+                            <div className="author-stat-label">индивидуальных<br />программ</div>
                         </div>
                     </div>
                 </div>
@@ -683,15 +1299,20 @@ export default function LandingPage() {
                         className="btn-final"
                         onClick={(e) => { e.preventDefault(); scrollTo('pricing') }}
                     >
-                        Выбрать тариф и начать →
+                        Начать прямо сейчас →
                     </a>
                     <a href="https://t.me/dgmukhin_adm" target="_blank" rel="noreferrer" className="btn-outline">
                         Задать вопрос
                     </a>
                 </div>
-                <p style={{ marginTop: 28, fontSize: 13, color: 'var(--text-muted)' }}>
-                    🛡️ Гарантия возврата за 5 дней · Доступ в платформу в течение 24 часов
-                </p>
+                {/* Бейдж-гарантия */}
+                <div className="guarantee-badge">
+                    <div className="guarantee-badge-seal">🛡️</div>
+                    <div className="guarantee-badge-text">
+                        <div className="guarantee-badge-title">Гарантия возврата</div>
+                        <div className="guarantee-badge-sub">Если за 5 дней не устроит — верну деньги полностью. Без вопросов.</div>
+                    </div>
+                </div>
             </section>
 
             {/* FAQ */}
@@ -699,15 +1320,41 @@ export default function LandingPage() {
                 <div className="landing-container fade-in">
                     <h2 className="section-title">Частые вопросы</h2>
                     <div className="faq-list" style={{ marginTop: 48 }}>
-                        {FAQ_ITEMS.map((item, i) => (
-                            <div key={i} className={`faq-item ${openFaq === i ? 'open' : ''}`}>
-                                <div className="faq-q" onClick={() => setOpenFaq(openFaq === i ? null : i)}>
-                                    <span>{item.q}</span>
-                                    <span className="faq-arrow">↓</span>
+                        {FAQ_ITEMS.map((item, i) => {
+                            const isOpen = openFaq.has(i)
+                            const panelId = `faq-panel-${i}`
+                            const buttonId = `faq-btn-${i}`
+                            return (
+                                <div key={i} className={`faq-item ${isOpen ? 'open' : ''}`}>
+                                    <button
+                                        type="button"
+                                        id={buttonId}
+                                        className="faq-q"
+                                        aria-expanded={isOpen}
+                                        aria-controls={panelId}
+                                        onClick={() =>
+                                            setOpenFaq((prev) => {
+                                                const next = new Set(prev)
+                                                if (next.has(i)) next.delete(i)
+                                                else next.add(i)
+                                                return next
+                                            })
+                                        }
+                                    >
+                                        <span>{item.q}</span>
+                                        <span className="faq-arrow" aria-hidden="true">↓</span>
+                                    </button>
+                                    <div
+                                        id={panelId}
+                                        role="region"
+                                        aria-labelledby={buttonId}
+                                        className="faq-a"
+                                    >
+                                        {item.a}
+                                    </div>
                                 </div>
-                                <div className="faq-a">{item.a}</div>
-                            </div>
-                        ))}
+                            )
+                        })}
                     </div>
                 </div>
             </section>
@@ -722,6 +1369,26 @@ export default function LandingPage() {
                     </div>
                 </div>
             </footer>
+
+            {/* Мобильный sticky CTA — показываем после первого экрана */}
+            <div
+                className={`landing-sticky-cta ${showStickyCta ? 'visible' : ''}`}
+                aria-hidden={!showStickyCta}
+            >
+                <div className="landing-sticky-cta-inner">
+                    <div className="landing-sticky-cta-text">
+                        <div className="landing-sticky-cta-title">Готов начать?</div>
+                        <div className="landing-sticky-cta-sub">Гарантия возврата за 5 дней</div>
+                    </div>
+                    <button
+                        type="button"
+                        className="landing-sticky-cta-btn"
+                        onClick={() => scrollTo('pricing')}
+                    >
+                        Выбрать тариф →
+                    </button>
+                </div>
+            </div>
         </div>
     )
 }

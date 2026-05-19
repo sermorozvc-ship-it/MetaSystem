@@ -25,6 +25,30 @@ export const metadata: Metadata = {
         statusBarStyle: 'black-translucent',
         title: 'MetaSystem',
     },
+    openGraph: {
+        type: 'website',
+        locale: 'ru_RU',
+        url: 'https://metasystem.fit',
+        siteName: 'MetaSystem',
+        title: 'Ты уже тренируешься. Осталось начать прогрессировать.',
+        description: 'Онлайн-ведение с индивидуальной программой, еженедельной корректировкой и личным кабинетом. Результат или деньги назад за 5 дней.',
+        images: [
+            {
+                // Замени на /og-image.jpg (1200×630 JPG) для максимальной совместимости
+                // SVG работает в Telegram, JPG нужен для WhatsApp/VK/Facebook
+                url: '/og-image.svg',
+                width: 1200,
+                height: 630,
+                alt: 'MetaSystem — онлайн-ведение тренировок с Дмитрием Мухиным',
+            },
+        ],
+    },
+    twitter: {
+        card: 'summary_large_image',
+        title: 'Ты уже тренируешься. Осталось начать прогрессировать.',
+        description: 'Онлайн-ведение с индивидуальной программой, еженедельной корректировкой и личным кабинетом.',
+        images: ['/og-image.svg'],
+    },
 }
 
 export default function RootLayout({
