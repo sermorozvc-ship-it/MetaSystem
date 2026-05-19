@@ -2264,28 +2264,6 @@ export default function AdminClientDetailPage() {
                                     </div>
                                 )}
 
-                                {/* Стартовые фото */}
-                                {(questionnaire.photo_front || questionnaire.photo_side || questionnaire.photo_back) && (
-                                    <div>
-                                        <h3 className="text-sm font-semibold text-accent uppercase tracking-wider mb-4">Стартовые фото</h3>
-                                        <div className="grid grid-cols-3 gap-4">
-                                            {[
-                                                { label: 'Спереди', url: questionnaire.photo_front },
-                                                { label: 'Сбоку', url: questionnaire.photo_side },
-                                                { label: 'Сзади', url: questionnaire.photo_back },
-                                            ].map(({ label, url }) => url ? (
-                                                <div key={label} className="text-center">
-                                                    <p className="text-xs text-text-muted mb-2">{label}</p>
-                                                    <a href={url} target="_blank" rel="noopener noreferrer">
-                                                        <img src={url} alt={label}
-                                                            className="w-full h-64 object-contain rounded-xl bg-bg-elevated hover:opacity-90 transition-opacity cursor-pointer" />
-                                                    </a>
-                                                </div>
-                                            ) : null)}
-                                        </div>
-                                    </div>
-                                )}
-
                             </div>
                         ) : (
                             <div className="text-center py-12">
