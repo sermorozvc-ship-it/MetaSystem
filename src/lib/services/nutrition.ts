@@ -233,22 +233,30 @@ export async function upsertNutritionQuestionnaire(
     updated_at: new Date().toISOString(),
   }
 
-  const { data, error } = await supabase
+  // Таймаут 15 сек — если Supabase завис, не блокируем UI вечно
+  const upsertPromise = supabase
     .from('client_nutrition_questionnaires')
     .upsert(payload, { onConflict: 'user_id' })
     .select()
     .single()
+
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('Превышено время ожидания сохранения (15 сек). Проверьте соединение.')), 15_000)
+  )
+
+  const { data, error } = await Promise.race([upsertPromise, timeoutPromise])
 
   if (error) {
     console.error('[Nutrition] Error upserting:', error)
     throw new Error('Ошибка сохранения анкеты питания: ' + error.message)
   }
 
-  // Обновляем флаг в профиле
-  await supabase
+  // Обновляем флаг в профиле — fire-and-forget, не блокируем возврат
+  supabase
     .from('profiles')
     .update({ nutrition_questionnaire_completed: true })
     .eq('id', user.id)
+    .then(() => {})
 
   return data as NutritionQuestionnaire
 }

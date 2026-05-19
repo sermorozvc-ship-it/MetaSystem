@@ -47,7 +47,11 @@ export default function NutritionQuestionnairePage() {
     }
     const run = async () => {
       try {
-        const allowed = await isNutritionQuestionnaireRequired()
+        // Таймаут 10 сек на проверку доступа
+        const allowed = await Promise.race([
+          isNutritionQuestionnaireRequired(),
+          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 10_000)),
+        ])
         if (!allowed) {
           router.replace('/dashboard')
           return
@@ -112,7 +116,12 @@ export default function NutritionQuestionnairePage() {
     setError('')
     setIsSubmitting(true)
     try {
-      await upsertNutritionQuestionnaire(formData)
+      await Promise.race([
+        upsertNutritionQuestionnaire(formData),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Превышено время ожидания сохранения (20 сек). Проверьте соединение.')), 20_000)
+        ),
+      ])
       router.push('/dashboard')
     } catch (e: any) {
       setError(e?.message || 'Ошибка сохранения анкеты')
