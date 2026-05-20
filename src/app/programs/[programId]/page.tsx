@@ -566,7 +566,7 @@ export default function ProgramDetailPage() {
     const [collapsedExercises, setCollapsedExercises] = useState<Set<string>>(new Set())
     const [isStatsCollapsed, setIsStatsCollapsed] = useState(true)
     const [isWellnessCollapsed, setIsWellnessCollapsed] = useState(true)
-    const [isWeeklyNoteCollapsed, setIsWeeklyNoteCollapsed] = useState(false)
+    const [isWeeklyNoteCollapsed, setIsWeeklyNoteCollapsed] = useState(true)
     const [isWeekContextCollapsed, setIsWeekContextCollapsed] = useState(true)
     const [isRedFlagsCollapsed, setIsRedFlagsCollapsed] = useState(true)
     const [isDayNoteCollapsed, setIsDayNoteCollapsed] = useState(true)
