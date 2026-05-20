@@ -24,7 +24,9 @@ export interface ProgramData {
   startDate: string
   endDate: string
   days: TrainingDay[]
-  weeklyNote?: string  // общая рекомендация тренера на неделю
+  weeklyNote?: string    // краткая рекомендация тренера на неделю (**Рекомендация:**)
+  weekContext?: string   // контекст недели (**Контекст недели:**), многострочный
+  redFlags?: string      // красные флаги (**Красные флаги:**), многострочный
 }
 
 export interface TrainingDay {
@@ -34,7 +36,8 @@ export interface TrainingDay {
   exercises: Exercise[]
   cardio?: string
   clientNotes?: string
-  coachNote?: string   // рекомендация тренера на этот день
+  coachNote?: string   // краткая рекомендация тренера на день (**Рекомендация дня:**)
+  dayContext?: string  // расширенный контекст дня, многострочный
 }
 
 export interface Exercise {

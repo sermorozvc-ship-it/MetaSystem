@@ -519,6 +519,11 @@ export default function ProgramDetailPage() {
     const [collapsedExercises, setCollapsedExercises] = useState<Set<string>>(new Set())
     const [isStatsCollapsed, setIsStatsCollapsed] = useState(true)
     const [isWellnessCollapsed, setIsWellnessCollapsed] = useState(true)
+    const [isWeeklyNoteCollapsed, setIsWeeklyNoteCollapsed] = useState(false)
+    const [isWeekContextCollapsed, setIsWeekContextCollapsed] = useState(true)
+    const [isRedFlagsCollapsed, setIsRedFlagsCollapsed] = useState(true)
+    const [isDayNoteCollapsed, setIsDayNoteCollapsed] = useState(false)
+    const [isDayContextCollapsed, setIsDayContextCollapsed] = useState(true)
     const [restTimerVisible, setRestTimerVisible] = useState(false)
 
     // Суперсеты и порядок упражнений
@@ -579,6 +584,10 @@ export default function ProgramDetailPage() {
         const currentDay = program.program_data.days[currentDayIndex]
         if (!currentDay) return
         setCollapsedExercises(new Set(currentDay.exercises.map(e => e.id)))
+        // Сбрасываем состояние дневных блоков
+        setIsDayNoteCollapsed(false)
+        setIsDayContextCollapsed(true)
+        setIsWeekContextCollapsed(true)
     }, [program, currentDayIndex])
 
     // Загрузка записи текущего дня
@@ -1005,12 +1014,62 @@ export default function ProgramDetailPage() {
                     </div>
 
                     {program.program_data.weeklyNote && (
-                        <div className="mb-3 p-3 rounded-xl bg-accent/10 border border-accent/20 flex gap-2">
-                            <span className="text-accent text-base flex-shrink-0">💬</span>
-                            <p className="text-sm text-text-secondary leading-relaxed">
-                                <span className="text-accent font-semibold">Тренер: </span>
-                                {program.program_data.weeklyNote}
-                            </p>
+                        <div className="mb-2 rounded-xl border border-accent/20 overflow-hidden">
+                            <button
+                                onClick={() => setIsWeeklyNoteCollapsed(v => !v)}
+                                className="w-full flex items-center gap-2 px-3 py-2.5 text-left bg-accent/10 hover:bg-accent/15 transition-colors"
+                            >
+                                <span className="text-accent text-base flex-shrink-0">💬</span>
+                                <span className="text-sm font-semibold text-accent flex-1">Рекомендация тренера</span>
+                                <ChevronDown className={`w-4 h-4 text-accent/60 transition-transform duration-200 ${isWeeklyNoteCollapsed ? '' : 'rotate-180'}`} />
+                            </button>
+                            {!isWeeklyNoteCollapsed && (
+                                <div className="px-3 py-2.5 bg-accent/5">
+                                    <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                        {program.program_data.weeklyNote}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {program.program_data.weekContext && (
+                        <div className="mb-2 rounded-xl border border-blue-500/20 overflow-hidden">
+                            <button
+                                onClick={() => setIsWeekContextCollapsed(v => !v)}
+                                className="w-full flex items-center gap-2 px-3 py-2.5 text-left bg-blue-500/10 hover:bg-blue-500/15 transition-colors"
+                            >
+                                <span className="text-base flex-shrink-0">📖</span>
+                                <span className="text-sm font-semibold text-blue-400 flex-1">Контекст недели</span>
+                                <ChevronDown className={`w-4 h-4 text-blue-400/60 transition-transform duration-200 ${isWeekContextCollapsed ? '' : 'rotate-180'}`} />
+                            </button>
+                            {!isWeekContextCollapsed && (
+                                <div className="px-3 py-2.5 bg-blue-500/5">
+                                    <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                        {program.program_data.weekContext}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {program.program_data.redFlags && (
+                        <div className="mb-2 rounded-xl border border-danger/20 overflow-hidden">
+                            <button
+                                onClick={() => setIsRedFlagsCollapsed(v => !v)}
+                                className="w-full flex items-center gap-2 px-3 py-2.5 text-left bg-danger/10 hover:bg-danger/15 transition-colors"
+                            >
+                                <span className="text-base flex-shrink-0">🚩</span>
+                                <span className="text-sm font-semibold text-danger flex-1">Красные флаги</span>
+                                <ChevronDown className={`w-4 h-4 text-danger/60 transition-transform duration-200 ${isRedFlagsCollapsed ? '' : 'rotate-180'}`} />
+                            </button>
+                            {!isRedFlagsCollapsed && (
+                                <div className="px-3 py-2.5 bg-danger/5">
+                                    <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                        {program.program_data.redFlags}
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -1056,12 +1115,42 @@ export default function ProgramDetailPage() {
                 {/* Упражнения */}
                 <div className="space-y-2 mb-5">
                     {currentDay.coachNote && (
-                        <div className="p-4 rounded-xl bg-accent/10 border border-accent/20 flex gap-3">
-                            <span className="text-accent text-lg flex-shrink-0">📋</span>
-                            <div>
-                                <p className="text-xs text-accent font-semibold mb-0.5">Рекомендация тренера на сегодня</p>
-                                <p className="text-sm text-text-secondary leading-relaxed">{currentDay.coachNote}</p>
-                            </div>
+                        <div className="rounded-xl border border-accent/20 overflow-hidden">
+                            <button
+                                onClick={() => setIsDayNoteCollapsed(v => !v)}
+                                className="w-full flex items-center gap-2 px-4 py-3 text-left bg-accent/10 hover:bg-accent/15 transition-colors"
+                            >
+                                <span className="text-accent text-lg flex-shrink-0">📋</span>
+                                <span className="text-sm font-semibold text-accent flex-1">Рекомендация тренера на сегодня</span>
+                                <ChevronDown className={`w-4 h-4 text-accent/60 transition-transform duration-200 ${isDayNoteCollapsed ? '' : 'rotate-180'}`} />
+                            </button>
+                            {!isDayNoteCollapsed && (
+                                <div className="px-4 py-3 bg-accent/5">
+                                    <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                        {currentDay.coachNote}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {currentDay.dayContext && (
+                        <div className="rounded-xl border border-blue-500/20 overflow-hidden">
+                            <button
+                                onClick={() => setIsDayContextCollapsed(v => !v)}
+                                className="w-full flex items-center gap-2 px-4 py-3 text-left bg-blue-500/10 hover:bg-blue-500/15 transition-colors"
+                            >
+                                <span className="text-base flex-shrink-0">📝</span>
+                                <span className="text-sm font-semibold text-blue-400 flex-1">Детали дня</span>
+                                <ChevronDown className={`w-4 h-4 text-blue-400/60 transition-transform duration-200 ${isDayContextCollapsed ? '' : 'rotate-180'}`} />
+                            </button>
+                            {!isDayContextCollapsed && (
+                                <div className="px-4 py-3 bg-blue-500/5">
+                                    <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                        {currentDay.dayContext}
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     )}
 

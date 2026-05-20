@@ -8,6 +8,8 @@ import type { ProgramData, TrainingDay, Exercise, AlternativeExercise } from '@/
  * # Неделя 1
  * **Период:** 2026-05-14 — 2026-05-21
  * **Рекомендация:** Неделя средняя по нагрузке. Закрываем базовый объём.
+ * **Контекст недели:** Многострочный текст...
+ * **Красные флаги:** Многострочный текст...
  *
  * ## День 1: Верх тела (Push)
  * **Рекомендация дня:** Сегодня работаем не до отказа, RIR 2-3 на всех подходах.
@@ -19,6 +21,16 @@ import type { ProgramData, TrainingDay, Exercise, AlternativeExercise } from '@/
  * - Жим штанги лёжа | [Видео](url) | 4 x 10-12
  * - Отжимания на брусьях | 4 x 10-12
  */
+
+// Типы текущего многострочного блока
+type MultilineBlock =
+  | 'weeklyNote'
+  | 'weekContext'
+  | 'redFlags'
+  | 'coachNote'
+  | 'dayContext'
+  | null
+
 export function parseMdToJson(markdown: string): ProgramData {
   const lines = markdown.split('\n').map((line) => line.trim())
 
@@ -37,21 +49,35 @@ export function parseMdToJson(markdown: string): ProgramData {
     endDate = dates[1] || ''
   }
 
-  // Рекомендация на неделю (строка до первого ##)
-  let weeklyNote = ''
-  for (const l of lines) {
-    if (l.startsWith('## ')) break
-    const m = l.match(/^\*\*Рекомендация[^:]*:\*\*\s*(.+)/i)
-    if (m) { weeklyNote = m[1].trim(); break }
-  }
-
   const days: TrainingDay[] = []
   let currentDay: TrainingDay | null = null
   let currentExercise: Exercise | null = null
-  let parsingAlternatives = false  // флаг: сейчас читаем блок альтернатив
+  let parsingAlternatives = false
+
+  // Многострочные блоки уровня недели
+  let weeklyNote = ''
+  let weekContext = ''
+  let redFlags = ''
+
+  // Текущий активный многострочный блок
+  let currentBlock: MultilineBlock = null
+
+  // Добавляет текст в нужный блок (неделя или день)
+  const appendToBlock = (text: string) => {
+    if (!currentBlock) return
+    const sep = text ? '\n' : ''
+    if (currentBlock === 'weeklyNote') weeklyNote += (weeklyNote ? sep : '') + text
+    else if (currentBlock === 'weekContext') weekContext += (weekContext ? sep : '') + text
+    else if (currentBlock === 'redFlags') redFlags += (redFlags ? sep : '') + text
+    else if (currentBlock === 'coachNote' && currentDay) {
+      currentDay.coachNote = (currentDay.coachNote ? currentDay.coachNote + sep : '') + text
+    } else if (currentBlock === 'dayContext' && currentDay) {
+      currentDay.dayContext = (currentDay.dayContext ? currentDay.dayContext + sep : '') + text
+    }
+  }
 
   for (const line of lines) {
-    // День: ## День N: Название
+    // ── Переход к новому дню — сбрасываем всё ──────────────────────────────
     const dayMatch =
       line.match(/^##\s+(?:.*?)?День\s*(\d+):?\s*(.*)/i) ||
       line.match(/^##\s+(?:.*?)?Тренировка\s*(\d+):?\s*(.*)/i) ||
@@ -61,6 +87,7 @@ export function parseMdToJson(markdown: string): ProgramData {
       if (currentExercise && currentDay) { currentDay.exercises.push(currentExercise); currentExercise = null }
       if (currentDay) days.push(currentDay)
       parsingAlternatives = false
+      currentBlock = null
       currentDay = {
         dayNumber: parseInt(dayMatch[1]),
         dayOfWeek: getDayOfWeek(parseInt(dayMatch[1])),
@@ -71,16 +98,11 @@ export function parseMdToJson(markdown: string): ProgramData {
       continue
     }
 
-    // Рекомендация на день (строка после ## и до первого ###)
-    if (currentDay && !currentExercise) {
-      const noteMatch = line.match(/^\*\*Рекомендация[^:]*:\*\*\s*(.+)/i)
-      if (noteMatch) { currentDay.coachNote = noteMatch[1].trim(); continue }
-    }
-
-    // Упражнение: ### Название
+    // ── Переход к упражнению — сбрасываем блок ─────────────────────────────
     if (line.startsWith('###')) {
       if (currentExercise && currentDay) currentDay.exercises.push(currentExercise)
       parsingAlternatives = false
+      currentBlock = null
       const exerciseName = line.replace(/^###\s*/, '').trim()
       currentExercise = {
         id: generateExerciseId(exerciseName),
@@ -93,6 +115,71 @@ export function parseMdToJson(markdown: string): ProgramData {
       continue
     }
 
+    // ── Разделитель --- сбрасывает блок ────────────────────────────────────
+    if (line === '---') {
+      currentBlock = null
+      continue
+    }
+
+    // ── Заголовки многострочных блоков ─────────────────────────────────────
+    // Уровень недели (до первого ##)
+    if (!currentDay) {
+      const weeklyNoteMatch = line.match(/^\*\*Рекомендация[^:]*:\*\*\s*(.*)/i)
+      if (weeklyNoteMatch) {
+        currentBlock = 'weeklyNote'
+        const inline = weeklyNoteMatch[1].trim()
+        if (inline) weeklyNote = inline
+        continue
+      }
+      const weekContextMatch = line.match(/^\*\*Контекст[^:]*:\*\*\s*(.*)/i)
+      if (weekContextMatch) {
+        currentBlock = 'weekContext'
+        const inline = weekContextMatch[1].trim()
+        if (inline) weekContext = inline
+        continue
+      }
+      const redFlagsMatch = line.match(/^\*\*Красн[^:]*:\*\*\s*(.*)/i)
+      if (redFlagsMatch) {
+        currentBlock = 'redFlags'
+        const inline = redFlagsMatch[1].trim()
+        if (inline) redFlags = inline
+        continue
+      }
+    }
+
+    // Уровень дня (до первого ###)
+    if (currentDay && !currentExercise) {
+      const coachNoteMatch = line.match(/^\*\*Рекомендация[^:]*:\*\*\s*(.*)/i)
+      if (coachNoteMatch) {
+        currentBlock = 'coachNote'
+        const inline = coachNoteMatch[1].trim()
+        if (inline) currentDay.coachNote = inline
+        continue
+      }
+      // «Контекст недели» внутри дня не используем, но на случай если тренер напишет
+      const dayContextMatch = line.match(/^\*\*Контекст[^:]*:\*\*\s*(.*)/i)
+      if (dayContextMatch) {
+        currentBlock = 'dayContext'
+        const inline = dayContextMatch[1].trim()
+        if (inline) currentDay.dayContext = inline
+        continue
+      }
+    }
+
+    // ── Продолжение многострочного блока ───────────────────────────────────
+    // Новый **Заголовок:** на уровне недели/дня прерывает текущий блок
+    if (currentBlock && line.match(/^\*\*[^*]+:\*\*/)) {
+      currentBlock = null
+      // Не continue — обрабатываем строку дальше (может быть кардио и т.п.)
+    }
+
+    if (currentBlock && !currentExercise) {
+      // Пустая строка — разделитель абзацев, сохраняем как пустую строку
+      appendToBlock(line)
+      continue
+    }
+
+    // ── Дальше — логика упражнений ─────────────────────────────────────────
     if (!currentExercise && !currentDay) continue
 
     // Видео основного упражнения
@@ -109,8 +196,6 @@ export function parseMdToJson(markdown: string): ProgramData {
     }
 
     // Строка альтернативы: - Название | [Видео](url) | N x reps
-    // или: - Название | N x reps
-    // или: - Название
     if (currentExercise && parsingAlternatives && line.startsWith('- ')) {
       const altLine = line.slice(2).trim()
       if (!altLine) continue
@@ -126,7 +211,6 @@ export function parseMdToJson(markdown: string): ProgramData {
         reps: currentExercise.reps,
       }
 
-      // Ищем видео и параметры в остальных частях
       for (const part of parts.slice(1)) {
         const videoMatch = part.match(/\[Видео\]\((.*?)\)/)
         if (videoMatch) { alt.videoUrl = videoMatch[1]; continue }
@@ -203,7 +287,18 @@ export function parseMdToJson(markdown: string): ProgramData {
     }
   }
 
-  return { weekNumber, startDate, endDate, days, weeklyNote }
+  // Обрезаем лишние пустые строки по краям многострочных блоков
+  const trim = (s: string) => s.replace(/^\n+|\n+$/g, '').trim()
+
+  return {
+    weekNumber,
+    startDate,
+    endDate,
+    days,
+    weeklyNote: trim(weeklyNote) || undefined,
+    weekContext: trim(weekContext) || undefined,
+    redFlags: trim(redFlags) || undefined,
+  }
 }
 
 function generateExerciseId(name: string): string {
