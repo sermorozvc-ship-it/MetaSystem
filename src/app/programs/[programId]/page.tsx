@@ -176,10 +176,12 @@ function ExerciseCard({
     onChange,
     onVideoClick,
     onTimerStart,
+    onSupersetClick,
     collapsed,
     onToggleCollapse,
     supersetLabel,
     isDragging,
+    nextExerciseName,
 }: {
     exercise: Exercise
     index: number
@@ -187,10 +189,12 @@ function ExerciseCard({
     onChange: (d: ExerciseClientData) => void
     onVideoClick: (url: string, title: string) => void
     onTimerStart: () => void
+    onSupersetClick?: () => void   // открыть модалку суперсета
     collapsed: boolean
     onToggleCollapse: () => void
     supersetLabel?: string
     isDragging?: boolean
+    nextExerciseName?: string      // название следующего упражнения для модалки
 }) {
     const [showAltMenu, setShowAltMenu] = useState(false)
     const altMenuRef = useRef<HTMLDivElement>(null)
@@ -381,6 +385,16 @@ function ExerciseCard({
                             <Timer className="w-3.5 h-3.5" />
                             <span>Отдых</span>
                         </button>
+                        {onSupersetClick && (
+                            <button
+                                onClick={onSupersetClick}
+                                className={`glass-button-secondary flex items-center gap-1.5 text-xs px-3 py-1.5 ${supersetLabel ? 'border-accent/40 text-accent' : ''}`}
+                                title="Суперсет"
+                            >
+                                <Link2 className="w-3 h-3" />
+                                {supersetLabel ? `Сет ${supersetLabel}` : 'Суперсет'}
+                            </button>
+                        )}
                     </div>
                 )}
             </div>
@@ -553,6 +567,9 @@ export default function ProgramDetailPage() {
     // Суперсеты и порядок упражнений
     const [supersets, setSupersets] = useState<Superset[]>([])
     const [exerciseOrder, setExerciseOrder] = useState<ExerciseOrder>([])
+
+    // Модалка суперсета
+    const [supersetModal, setSupersetModal] = useState<{ exerciseId: string; nextExerciseId: string; nextName: string } | null>(null)
 
     // Drag-and-drop
     const [draggedId, setDraggedId] = useState<string | null>(null)
@@ -1100,9 +1117,7 @@ export default function ProgramDetailPage() {
                                         label={getSupersetLabel(ss.id)}
                                         onRemove={() => removeSuperset(ss.id)}
                                     />
-                                )}
-
-                                <div
+                                )}                                <div
                                     data-exercise-id={exercise.id}
                                     draggable
                                     onDragStart={() => handleDragStart(exercise.id)}
@@ -1125,6 +1140,24 @@ export default function ProgramDetailPage() {
                                         onChange={d => updateExercise(exercise.id, d)}
                                         onVideoClick={(url, title) => setVideoModal({ url, title })}
                                         onTimerStart={() => setRestTimerVisible(true)}
+                                        onSupersetClick={
+                                            // Показываем кнопку только если есть следующее упражнение
+                                            nextExercise
+                                                ? () => {
+                                                    const existingSS = getSupersetForExercise(exercise.id)
+                                                    if (existingSS) {
+                                                        // Уже в суперсете — убираем
+                                                        removeSuperset(existingSS.id)
+                                                    } else {
+                                                        setSupersetModal({
+                                                            exerciseId: exercise.id,
+                                                            nextExerciseId: nextExercise.id,
+                                                            nextName: nextExercise.name,
+                                                        })
+                                                    }
+                                                }
+                                                : undefined
+                                        }
                                         collapsed={collapsedExercises.has(exercise.id)}
                                         onToggleCollapse={() => setCollapsedExercises(prev => {
                                             const next = new Set(prev)
@@ -1134,21 +1167,11 @@ export default function ProgramDetailPage() {
                                         })}
                                         supersetLabel={ssLabel}
                                         isDragging={draggedId === exercise.id}
+                                        nextExerciseName={nextExercise?.name}
                                     />
                                 </div>
 
-                                {/* Кнопка "Объединить в суперсет" между упражнениями */}
-                                {canAddSuperset && !isFirstInSS && (
-                                    <div className="flex justify-center py-0.5">
-                                        <button
-                                            onClick={() => addSuperset(exercise.id, nextExercise.id)}
-                                            className="text-border/40 hover:text-accent transition-colors"
-                                            title="Объединить в суперсет"
-                                        >
-                                            <Link2 className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                )}
+                                {/* Скрепка между карточками убрана — суперсет через кнопку внутри карточки */}
                             </div>
                         )
                     })}
@@ -1294,6 +1317,49 @@ export default function ProgramDetailPage() {
 
         {restTimerVisible && (
             <RestTimer onClose={() => setRestTimerVisible(false)} />
+        )}
+
+        {/* Модалка суперсета */}
+        {supersetModal && (
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setSupersetModal(null)}>
+                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+                <div className="relative z-10 glass-card w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 rounded-xl bg-accent/20 flex items-center justify-center flex-shrink-0">
+                            <Link2 className="w-5 h-5 text-accent" />
+                        </div>
+                        <div>
+                            <h3 className="text-base font-display font-bold text-white">Суперсет</h3>
+                            <p className="text-xs text-text-muted">Объединить со следующим упражнением</p>
+                        </div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-bg-elevated border border-border mb-4 text-sm text-text-secondary">
+                        <span className="text-accent font-semibold">→ </span>
+                        {supersetModal.nextName}
+                    </div>
+                    <p className="text-xs text-text-muted mb-4 leading-relaxed">
+                        Упражнения будут выполняться поочерёдно без отдыха между ними.
+                    </p>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => setSupersetModal(null)}
+                            className="glass-button-secondary flex-1 py-2.5 text-sm"
+                        >
+                            Отмена
+                        </button>
+                        <button
+                            onClick={() => {
+                                addSuperset(supersetModal.exerciseId, supersetModal.nextExerciseId)
+                                setSupersetModal(null)
+                            }}
+                            className="glass-button flex-1 py-2.5 text-sm flex items-center justify-center gap-2"
+                        >
+                            <Link2 className="w-4 h-4" />
+                            Объединить
+                        </button>
+                    </div>
+                </div>
+            </div>
         )}
         </>
     )
