@@ -197,6 +197,8 @@ function ExerciseCard({
 }) {
     const [showAltMenu, setShowAltMenu] = useState(false)
     const altMenuRef = useRef<HTMLDivElement>(null)
+    const altBtnRef = useRef<HTMLButtonElement>(null)
+    const [altMenuPos, setAltMenuPos] = useState({ top: 0, right: 0 })
 
     useEffect(() => {
         if (!showAltMenu) return
@@ -269,7 +271,7 @@ function ExerciseCard({
     }, 0)
 
     return (
-        <div className={`overflow-hidden transition-all duration-200 ${isDragging ? 'opacity-50' : ''}`}>
+        <div className={`transition-all duration-200 ${isDragging ? 'opacity-50' : ''}`}>
             <div className={`glass-card transition-all duration-200 ${collapsed ? 'opacity-70' : ''} ${isDragging ? 'ring-2 ring-accent shadow-glow-accent' : ''}`}>
             {/* Заголовок */}
             <div className="p-4 cursor-pointer select-none" onClick={onToggleCollapse}>
@@ -316,14 +318,27 @@ function ExerciseCard({
                         {hasAlternatives && (
                             <div className="relative" ref={altMenuRef} onClick={e => e.stopPropagation()}>
                                 <button
+                                    ref={altBtnRef}
                                     className={`glass-button-secondary p-1.5 rounded-lg text-xs flex items-center gap-1 ${selectedAlt ? 'border-accent/40 text-accent' : ''}`}
                                     title="Альтернативные упражнения"
-                                    onClick={() => setShowAltMenu(v => !v)}
+                                    onClick={() => {
+                                        if (!showAltMenu && altBtnRef.current) {
+                                            const rect = altBtnRef.current.getBoundingClientRect()
+                                            setAltMenuPos({
+                                                top: rect.bottom + 4,
+                                                right: window.innerWidth - rect.right,
+                                            })
+                                        }
+                                        setShowAltMenu(v => !v)
+                                    }}
                                 >
                                     <span className="text-sm leading-none">⇄</span>
                                 </button>
                                 {showAltMenu && (
-                                    <div className="absolute right-0 top-full mt-1 z-20 glass-card border border-border shadow-xl min-w-[220px] p-2 space-y-1">
+                                    <div
+                                        className="fixed z-[200] glass-card border border-border shadow-xl min-w-[220px] p-2 space-y-1"
+                                        style={{ top: altMenuPos.top, right: altMenuPos.right }}
+                                    >
                                         <p className="text-xs text-text-muted px-2 pb-1 border-b border-border mb-1">Выбери упражнение:</p>
                                         <button
                                             onClick={() => selectExercise(undefined)}
