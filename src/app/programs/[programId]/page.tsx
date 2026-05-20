@@ -517,6 +517,8 @@ export default function ProgramDetailPage() {
     const [completedDays, setCompletedDays] = useState<Set<number>>(new Set())
     const [videoModal, setVideoModal] = useState<{ url: string; title: string } | null>(null)
     const [collapsedExercises, setCollapsedExercises] = useState<Set<string>>(new Set())
+    const [isStatsCollapsed, setIsStatsCollapsed] = useState(false)
+    const [isWellnessCollapsed, setIsWellnessCollapsed] = useState(false)
     const [restTimerVisible, setRestTimerVisible] = useState(false)
 
     // Суперсеты и порядок упражнений
@@ -1207,42 +1209,58 @@ export default function ProgramDetailPage() {
                     if (exercisesWithData.length === 0) return null
 
                     return (
-                        <div className="glass-card p-5 mb-5 border border-accent/20">
-                            <h3 className="text-base font-display font-bold text-white mb-4 flex items-center justify-between gap-2">
-                                <span className="flex items-center gap-2">
+                        <div className="glass-card mb-5 border border-accent/20 overflow-hidden">
+                            <button
+                                onClick={() => setIsStatsCollapsed(v => !v)}
+                                className="w-full p-5 flex items-center justify-between gap-2 text-left"
+                            >
+                                <span className="flex items-center gap-2 text-base font-display font-bold text-white">
                                     <span className="text-accent">📊</span> Статистика сессии
                                 </span>
-                                {displayDuration !== null && (
-                                    <span className="flex items-center gap-1.5 text-sm font-mono font-bold text-accent">
-                                        <Clock className="w-4 h-4" />
-                                        {formatDuration(displayDuration)}
-                                    </span>
-                                )}
-                            </h3>
-                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                                <div className="rounded-xl bg-bg-elevated p-3 text-center">
-                                    <p className="text-2xl font-display font-bold text-accent">{totalTonnage.toLocaleString('ru-RU')}</p>
-                                    <p className="text-xs text-text-muted mt-0.5">Тоннаж (кг)</p>
+                                <span className="flex items-center gap-2">
+                                    {isStatsCollapsed && displayDuration !== null && (
+                                        <span className="flex items-center gap-1.5 text-sm font-mono font-bold text-accent">
+                                            <Clock className="w-4 h-4" />
+                                            {formatDuration(displayDuration)}
+                                        </span>
+                                    )}
+                                    <ChevronDown className={`w-4 h-4 text-text-muted transition-transform duration-200 ${isStatsCollapsed ? '-rotate-90' : ''}`} />
+                                </span>
+                            </button>
+                            {!isStatsCollapsed && (
+                                <div className="px-5 pb-5">
+                                    {displayDuration !== null && (
+                                        <div className="flex items-center gap-1.5 text-sm font-mono font-bold text-accent mb-3 -mt-1">
+                                            <Clock className="w-4 h-4" />
+                                            {formatDuration(displayDuration)}
+                                        </div>
+                                    )}
+                                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                                        <div className="rounded-xl bg-bg-elevated p-3 text-center">
+                                            <p className="text-2xl font-display font-bold text-accent">{totalTonnage.toLocaleString('ru-RU')}</p>
+                                            <p className="text-xs text-text-muted mt-0.5">Тоннаж (кг)</p>
+                                        </div>
+                                        <div className="rounded-xl bg-bg-elevated p-3 text-center">
+                                            <p className="text-2xl font-display font-bold text-white">{exercisesWithData.length}</p>
+                                            <p className="text-xs text-text-muted mt-0.5">Упражнений</p>
+                                        </div>
+                                        <div className="rounded-xl bg-bg-elevated p-3 text-center">
+                                            <p className="text-2xl font-display font-bold text-white">{totalSetsCount}</p>
+                                            <p className="text-xs text-text-muted mt-0.5">Подходов</p>
+                                        </div>
+                                        <div className="rounded-xl bg-bg-elevated p-3 text-center">
+                                            <p className="text-2xl font-display font-bold text-white">{totalRepsCount}</p>
+                                            <p className="text-xs text-text-muted mt-0.5">Повторений</p>
+                                        </div>
+                                        <div className="rounded-xl bg-bg-elevated p-3 text-center col-span-2 sm:col-span-1">
+                                            <p className="text-2xl font-display font-bold text-white font-mono">
+                                                {displayDuration !== null ? formatDuration(displayDuration) : '—'}
+                                            </p>
+                                            <p className="text-xs text-text-muted mt-0.5">Время</p>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="rounded-xl bg-bg-elevated p-3 text-center">
-                                    <p className="text-2xl font-display font-bold text-white">{exercisesWithData.length}</p>
-                                    <p className="text-xs text-text-muted mt-0.5">Упражнений</p>
-                                </div>
-                                <div className="rounded-xl bg-bg-elevated p-3 text-center">
-                                    <p className="text-2xl font-display font-bold text-white">{totalSetsCount}</p>
-                                    <p className="text-xs text-text-muted mt-0.5">Подходов</p>
-                                </div>
-                                <div className="rounded-xl bg-bg-elevated p-3 text-center">
-                                    <p className="text-2xl font-display font-bold text-white">{totalRepsCount}</p>
-                                    <p className="text-xs text-text-muted mt-0.5">Повторений</p>
-                                </div>
-                                <div className="rounded-xl bg-bg-elevated p-3 text-center col-span-2 sm:col-span-1">
-                                    <p className="text-2xl font-display font-bold text-white font-mono">
-                                        {displayDuration !== null ? formatDuration(displayDuration) : '—'}
-                                    </p>
-                                    <p className="text-xs text-text-muted mt-0.5">Время</p>
-                                </div>
-                            </div>
+                            )}
                         </div>
                     )
                 })()}
@@ -1256,31 +1274,39 @@ export default function ProgramDetailPage() {
                 )}
 
                 {/* Самочувствие */}
-                <div className="glass-card p-5 mb-5">
-                    <h3 className="text-base font-display font-bold text-white mb-4">Самочувствие</h3>
-                    <div className="space-y-4">
-                        {[
-                            { label: 'Энергия до тренировки', value: energyLevel, max: 10, set: (v: number) => { userChangedRef.current = true; setEnergyLevel(v) } },
-                            { label: 'Настроение', value: mood, max: 5, set: (v: number) => { userChangedRef.current = true; setMood(v) } },
-                            { label: 'RPE тренировки (субъективная нагрузка)', value: sleepQuality, max: 10, set: (v: number) => { userChangedRef.current = true; setSleepQuality(v) } },
-                        ].map(({ label, value, max, set }) => (
-                            <div key={label}>
-                                <div className="flex justify-between items-center mb-1.5">
-                                    <label className="text-sm text-text-secondary">{label}</label>
-                                    <span className="text-accent font-bold text-sm">{value}/{max}</span>
+                <div className="glass-card mb-5 overflow-hidden">
+                    <button
+                        onClick={() => setIsWellnessCollapsed(v => !v)}
+                        className="w-full p-5 flex items-center justify-between gap-2 text-left"
+                    >
+                        <span className="text-base font-display font-bold text-white">Самочувствие</span>
+                        <ChevronDown className={`w-4 h-4 text-text-muted transition-transform duration-200 ${isWellnessCollapsed ? '-rotate-90' : ''}`} />
+                    </button>
+                    {!isWellnessCollapsed && (
+                        <div className="px-5 pb-5 space-y-4">
+                            {[
+                                { label: 'Энергия до тренировки', value: energyLevel, max: 10, set: (v: number) => { userChangedRef.current = true; setEnergyLevel(v) } },
+                                { label: 'Настроение', value: mood, max: 5, set: (v: number) => { userChangedRef.current = true; setMood(v) } },
+                                { label: 'RPE тренировки (субъективная нагрузка)', value: sleepQuality, max: 10, set: (v: number) => { userChangedRef.current = true; setSleepQuality(v) } },
+                            ].map(({ label, value, max, set }) => (
+                                <div key={label}>
+                                    <div className="flex justify-between items-center mb-1.5">
+                                        <label className="text-sm text-text-secondary">{label}</label>
+                                        <span className="text-accent font-bold text-sm">{value}/{max}</span>
+                                    </div>
+                                    <input type="range" min="1" max={max} value={value}
+                                        onChange={e => set(parseInt(e.target.value))} className="w-full" />
                                 </div>
-                                <input type="range" min="1" max={max} value={value}
-                                    onChange={e => set(parseInt(e.target.value))} className="w-full" />
+                            ))}
+                            <div>
+                                <label className="block text-sm text-text-secondary mb-1.5">Заметки</label>
+                                <textarea value={notes}
+                                    onChange={e => { userChangedRef.current = true; setNotes(e.target.value) }}
+                                    className="glass-input w-full h-20 resize-none text-sm"
+                                    placeholder="Как прошла тренировка..." />
                             </div>
-                        ))}
-                        <div>
-                            <label className="block text-sm text-text-secondary mb-1.5">Заметки</label>
-                            <textarea value={notes}
-                                onChange={e => { userChangedRef.current = true; setNotes(e.target.value) }}
-                                className="glass-input w-full h-20 resize-none text-sm"
-                                placeholder="Как прошла тренировка..." />
                         </div>
-                    </div>
+                    )}
                 </div>
 
                 {/* Кнопки */}
