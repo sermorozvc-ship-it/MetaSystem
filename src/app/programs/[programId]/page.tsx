@@ -517,8 +517,8 @@ export default function ProgramDetailPage() {
     const [completedDays, setCompletedDays] = useState<Set<number>>(new Set())
     const [videoModal, setVideoModal] = useState<{ url: string; title: string } | null>(null)
     const [collapsedExercises, setCollapsedExercises] = useState<Set<string>>(new Set())
-    const [isStatsCollapsed, setIsStatsCollapsed] = useState(false)
-    const [isWellnessCollapsed, setIsWellnessCollapsed] = useState(false)
+    const [isStatsCollapsed, setIsStatsCollapsed] = useState(true)
+    const [isWellnessCollapsed, setIsWellnessCollapsed] = useState(true)
     const [restTimerVisible, setRestTimerVisible] = useState(false)
 
     // Суперсеты и порядок упражнений
