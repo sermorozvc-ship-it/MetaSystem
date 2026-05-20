@@ -1156,10 +1156,10 @@ export default function ProgramDetailPage() {
                                     <div className="flex justify-center py-0.5">
                                         <button
                                             onClick={() => addSuperset(exercise.id, nextExercise.id)}
-                                            className="w-7 h-7 flex items-center justify-center rounded-full text-text-muted hover:text-accent hover:bg-accent/10 border border-dashed border-border/60 hover:border-accent/40 transition-all"
+                                            className="text-border/40 hover:text-accent transition-colors"
                                             title="Объединить в суперсет"
                                         >
-                                            <Link2 className="w-3.5 h-3.5" />
+                                            <Link2 className="w-3 h-3" />
                                         </button>
                                     </div>
                                 )}
