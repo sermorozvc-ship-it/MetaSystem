@@ -305,17 +305,6 @@ function ExerciseCard({
                         </div>
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                        {hasAlternatives && (
-                            <div ref={altMenuRef} onClick={e => e.stopPropagation()}>
-                                <button
-                                    className={`glass-button-secondary p-1.5 rounded-lg text-xs flex items-center gap-1 ${selectedAlt ? 'border-accent/40 text-accent' : ''}`}
-                                    title="Альтернативные упражнения"
-                                    onClick={() => onAltMenuOpen?.()}
-                                >
-                                    <span className="text-sm leading-none">⇄</span>
-                                </button>
-                            </div>
-                        )}
                         <button
                             className="glass-button-secondary p-1.5 rounded-lg"
                             onClick={e => { e.stopPropagation(); onToggleCollapse() }}
@@ -340,6 +329,16 @@ function ExerciseCard({
                             <Timer className="w-3.5 h-3.5" />
                             <span>Отдых</span>
                         </button>
+                        {hasAlternatives && (
+                            <button
+                                onClick={() => onAltMenuOpen?.()}
+                                className={`glass-button-secondary flex items-center gap-1.5 text-xs px-3 py-1.5 ${selectedAlt ? 'border-accent/40 text-accent' : ''}`}
+                                title="Альтернативные упражнения"
+                            >
+                                <span className="text-sm leading-none">⇄</span>
+                                <span>{selectedAlt ? 'Альтернатива' : 'Заменить'}</span>
+                            </button>
+                        )}
                         {onSupersetClick && (
                             <button
                                 onClick={onSupersetClick}
