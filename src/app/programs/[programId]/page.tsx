@@ -406,7 +406,7 @@ function ExerciseCard({
                             <div>Вес (кг)</div>
                             <div>Повт.</div>
                             <div>RIR</div>
-                            <div className="w-16 text-center">Метка</div>
+                            <div className="w-6" />
                         </div>
 
                         {Array.from({ length: totalSets }).map((_, setIdx) => {
@@ -450,18 +450,18 @@ function ExerciseCard({
                                             className={`glass-input text-sm py-2 px-2 text-center min-w-0 ${isWarmup ? 'opacity-70' : ''}`}
                                             placeholder="2" />
 
-                                        {/* Кнопка метки */}
-                                        <div className="w-16 flex justify-center">
+                                        {/* Кнопка метки — три точки */}
+                                        <div className="w-6 flex justify-center">
                                             <div className="relative group">
                                                 <button
-                                                    className={`text-xs px-1.5 py-1 rounded-lg border transition-all ${
+                                                    className={`w-6 h-7 flex items-center justify-center rounded transition-colors ${
                                                         labelInfo
-                                                            ? `${labelInfo.bg} ${labelInfo.color} font-semibold`
-                                                            : 'border-border text-text-muted hover:border-accent/40 hover:text-accent'
+                                                            ? `${labelInfo.color}`
+                                                            : 'text-text-muted hover:text-accent'
                                                     }`}
                                                     title="Метка подхода"
                                                 >
-                                                    {labelInfo ? labelInfo.label.slice(0, 3) : '···'}
+                                                    <span className="text-base leading-none select-none">⋮</span>
                                                 </button>
                                                 {/* Dropdown меток */}
                                                 <div className="absolute right-0 top-full mt-1 z-30 hidden group-hover:block glass-card border border-border shadow-xl min-w-[130px] p-1.5 space-y-1">
@@ -1153,14 +1153,13 @@ export default function ProgramDetailPage() {
 
                                 {/* Кнопка "Объединить в суперсет" между упражнениями */}
                                 {canAddSuperset && !isFirstInSS && (
-                                    <div className="flex justify-center py-1">
+                                    <div className="flex justify-center py-0.5">
                                         <button
                                             onClick={() => addSuperset(exercise.id, nextExercise.id)}
-                                            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs text-text-muted hover:text-accent hover:bg-accent/10 border border-dashed border-border hover:border-accent/40 transition-all"
-                                            title="Объединить в суперсет с следующим упражнением"
+                                            className="w-7 h-7 flex items-center justify-center rounded-full text-text-muted hover:text-accent hover:bg-accent/10 border border-dashed border-border/60 hover:border-accent/40 transition-all"
+                                            title="Объединить в суперсет"
                                         >
-                                            <Link2 className="w-3 h-3" />
-                                            Суперсет
+                                            <Link2 className="w-3.5 h-3.5" />
                                         </button>
                                     </div>
                                 )}
