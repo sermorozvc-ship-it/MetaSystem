@@ -495,6 +495,46 @@ function SupersetDivider({ label, onRemove }: { label: string; onRemove: () => v
     )
 }
 
+// ─── Простой inline-markdown рендерер ────────────────────────────────────────
+// Поддерживает: **bold**, > blockquote, - list item
+
+function renderSimpleMd(text: string): React.ReactNode {
+    return text.split('\n').map((line, i) => {
+        // Blockquote: > текст
+        if (line.startsWith('> ')) {
+            return (
+                <div key={i} className="border-l-2 border-accent/40 pl-3 my-1 text-text-muted italic text-xs">
+                    {renderInline(line.slice(2))}
+                </div>
+            )
+        }
+        // List item: - текст
+        if (line.startsWith('- ')) {
+            return (
+                <div key={i} className="flex gap-2 my-0.5">
+                    <span className="text-accent/60 flex-shrink-0 mt-0.5">·</span>
+                    <span>{renderInline(line.slice(2))}</span>
+                </div>
+            )
+        }
+        // Пустая строка
+        if (!line.trim()) return <div key={i} className="h-2" />
+        // Обычный текст
+        return <div key={i} className="my-0.5">{renderInline(line)}</div>
+    })
+}
+
+function renderInline(text: string): React.ReactNode {
+    // Разбиваем по **bold**
+    const parts = text.split(/(\*\*[^*]+\*\*)/)
+    return parts.map((part, i) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+            return <strong key={i} className="text-white font-semibold">{part.slice(2, -2)}</strong>
+        }
+        return <span key={i}>{part}</span>
+    })
+}
+
 // ─── Чек-ин блок ─────────────────────────────────────────────────────────────
 
 function CheckinBlock({ text }: { text: string }) {
@@ -510,31 +550,8 @@ function CheckinBlock({ text }: { text: string }) {
                 <ChevronDown className={`w-4 h-4 text-text-muted transition-transform duration-200 ${collapsed ? '' : 'rotate-180'}`} />
             </button>
             {!collapsed && (
-                <div className="px-5 pb-5">
-                    <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">{text}</p>
-                </div>
-            )}
-        </div>
-    )
-}
-
-// ─── Памятка по логированию ───────────────────────────────────────────────────
-
-function LoggingNoteBlock({ text }: { text: string }) {
-    const [collapsed, setCollapsed] = useState(true)
-    return (
-        <div className="glass-card mb-5 overflow-hidden">
-            <button
-                onClick={() => setCollapsed(v => !v)}
-                className="w-full flex items-center gap-2 px-5 py-4 text-left"
-            >
-                <span className="text-base flex-shrink-0">📝</span>
-                <span className="text-base font-display font-bold text-white flex-1">Памятка по логированию</span>
-                <ChevronDown className={`w-4 h-4 text-text-muted transition-transform duration-200 ${collapsed ? '' : 'rotate-180'}`} />
-            </button>
-            {!collapsed && (
-                <div className="px-5 pb-5">
-                    <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">{text}</p>
+                <div className="px-5 pb-5 text-sm text-text-secondary leading-relaxed">
+                    {renderSimpleMd(text)}
                 </div>
             )}
         </div>
@@ -1357,11 +1374,6 @@ export default function ProgramDetailPage() {
                 {/* Чек-ин в конце недели — показываем на последнем дне */}
                 {currentDayIndex === program.program_data.days.length - 1 && program.program_data.checkin && (
                     <CheckinBlock text={program.program_data.checkin} />
-                )}
-
-                {/* Памятка по логированию — показываем на последнем дне */}
-                {currentDayIndex === program.program_data.days.length - 1 && program.program_data.loggingNote && (
-                    <LoggingNoteBlock text={program.program_data.loggingNote} />
                 )}
 
                 {/* Статистика сессии */}
