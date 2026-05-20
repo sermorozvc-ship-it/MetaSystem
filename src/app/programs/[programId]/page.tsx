@@ -503,7 +503,7 @@ function renderSimpleMd(text: string): React.ReactNode {
         // Blockquote: > текст
         if (line.startsWith('> ')) {
             return (
-                <div key={i} className="border-l-2 border-accent/40 pl-3 my-1 text-text-muted italic text-xs">
+                <div key={i} className="border-l-2 border-accent/40 pl-3 my-2 text-text-muted italic text-xs">
                     {renderInline(line.slice(2))}
                 </div>
             )
@@ -511,16 +511,16 @@ function renderSimpleMd(text: string): React.ReactNode {
         // List item: - текст
         if (line.startsWith('- ')) {
             return (
-                <div key={i} className="flex gap-2 my-0.5">
+                <div key={i} className="flex gap-2 my-1">
                     <span className="text-accent/60 flex-shrink-0 mt-0.5">·</span>
                     <span>{renderInline(line.slice(2))}</span>
                 </div>
             )
         }
         // Пустая строка
-        if (!line.trim()) return <div key={i} className="h-2" />
+        if (!line.trim()) return <div key={i} className="h-3" />
         // Обычный текст
-        return <div key={i} className="my-0.5">{renderInline(line)}</div>
+        return <div key={i} className="my-1">{renderInline(line)}</div>
     })
 }
 
