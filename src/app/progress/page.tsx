@@ -2,10 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Loader2, TrendingUp } from 'lucide-react'
+import { ArrowLeft, Loader2, TrendingUp, BarChart3 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { getAllMyTrainingData, type TrainingProgram, type TrainingEntry } from '@/lib/services/training'
 import ExerciseProgressView from '@/components/ExerciseProgressView'
+import WeeklyTonnageChart from '@/components/WeeklyTonnageChart'
+
+type Tab = 'tonnage' | 'exercises'
 
 export default function ProgressPage() {
   const { user, isLoading: authLoading } = useAuth()
@@ -15,6 +18,7 @@ export default function ProgressPage() {
   const [entries, setEntries] = useState<TrainingEntry[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  const [activeTab, setActiveTab] = useState<Tab>('tonnage')
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth')
@@ -59,10 +63,10 @@ export default function ProgressPage() {
           <div>
             <h1 className="text-xl font-display font-bold text-white flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-accent" />
-              Прогресс упражнений
+              Прогресс
             </h1>
             <p className="text-xs text-text-muted mt-0.5">
-              Динамика рабочих весов по всем тренировкам
+              Статистика тренировок и динамика весов
             </p>
           </div>
         </div>
@@ -73,7 +77,40 @@ export default function ProgressPage() {
           </div>
         )}
 
-        <ExerciseProgressView programs={programs} entries={entries} />
+        {/* Вкладки */}
+        <div className="flex gap-2 mb-5 p-1 rounded-xl bg-bg-elevated border border-border">
+          <button
+            onClick={() => setActiveTab('tonnage')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all ${
+              activeTab === 'tonnage'
+                ? 'bg-accent text-bg-main'
+                : 'text-text-muted hover:text-white'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+            Тоннаж
+          </button>
+          <button
+            onClick={() => setActiveTab('exercises')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all ${
+              activeTab === 'exercises'
+                ? 'bg-accent text-bg-main'
+                : 'text-text-muted hover:text-white'
+            }`}
+          >
+            <TrendingUp className="w-4 h-4" />
+            Упражнения
+          </button>
+        </div>
+
+        {/* Контент вкладок */}
+        {activeTab === 'tonnage' && (
+          <WeeklyTonnageChart programs={programs} entries={entries} />
+        )}
+
+        {activeTab === 'exercises' && (
+          <ExerciseProgressView programs={programs} entries={entries} />
+        )}
       </div>
     </div>
   )

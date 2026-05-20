@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Play, CheckCircle2, Loader2, ChevronLeft, ChevronRight, X, Maximize2, Minimize2, ChevronDown, ChevronUp, Timer } from 'lucide-react'
+import {
+    ArrowLeft, Play, CheckCircle2, Loader2, ChevronLeft, ChevronRight,
+    X, Maximize2, Minimize2, ChevronDown, ChevronUp, Timer, Clock,
+    Lock, RefreshCw, GripVertical, Link2,
+} from 'lucide-react'
 import RestTimer from '@/components/RestTimer'
 import { useAuth } from '@/lib/auth'
 import {
@@ -12,27 +16,57 @@ import {
     completeTrainingDay,
     type TrainingProgram,
     type Exercise,
+    type AlternativeExercise,
 } from '@/lib/services/training'
+import { getMySubscriptionInfo } from '@/lib/services/renewal'
 
 // ─── Типы данных клиента ─────────────────────────────────────────────────────
+
+type SetLabel = 'warmup' | 'heavy' | 'dropset' | null
 
 interface SetData {
     weight: string
     reps: string
     rir: string
     setComment?: string
+    label?: SetLabel
 }
 
 interface ExerciseClientData {
     sets: SetData[]
     comment: string
+    selectedAlternativeId?: string
 }
 
-// ─── YouTube embed URL ───────────────────────────────────────────────────────
+// Суперсет: пара из двух exerciseId
+interface Superset {
+    id: string          // уникальный id суперсета
+    exerciseIds: [string, string]
+}
+
+// Порядок упражнений в дне
+type ExerciseOrder = string[]
+
+// Данные дня (хранятся в entry_data под ключом __meta__)
+interface DayMeta {
+    supersets?: Superset[]
+    exerciseOrder?: ExerciseOrder
+}
+
+// ─── Метки подходов ───────────────────────────────────────────────────────────
+
+const SET_LABELS: { value: SetLabel; label: string; color: string; bg: string }[] = [
+    { value: 'warmup',  label: 'Разминка',  color: 'text-blue-400',   bg: 'bg-blue-400/20 border-blue-400/40' },
+    { value: 'heavy',   label: 'Тяжело',    color: 'text-red-400',    bg: 'bg-red-400/20 border-red-400/40' },
+    { value: 'dropset', label: 'Дроп-сет',  color: 'text-purple-400', bg: 'bg-purple-400/20 border-purple-400/40' },
+]
+
+function getLabelInfo(label: SetLabel) {
+    return SET_LABELS.find(l => l.value === label) ?? null
+}
 
 function getYouTubeEmbedUrl(url: string): string | null {
     try {
-        // Форматы: youtu.be/ID, youtube.com/watch?v=ID, youtube.com/embed/ID
         const patterns = [
             /youtu\.be\/([^?&]+)/,
             /youtube\.com\/watch\?v=([^&]+)/,
@@ -48,13 +82,44 @@ function getYouTubeEmbedUrl(url: string): string | null {
     }
 }
 
+// ─── Экран истёкшей подписки ──────────────────────────────────────────────────
+
+function SubscriptionExpiredScreen() {
+    const router = useRouter()
+    return (
+        <div className="min-h-screen bg-bg-main flex items-center justify-center p-4">
+            <div className="max-w-sm w-full text-center">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-danger/20 border border-danger/30 mb-6">
+                    <Lock className="w-10 h-10 text-danger" />
+                </div>
+                <h1 className="text-2xl font-display font-bold text-white mb-3">Подписка истекла</h1>
+                <p className="text-text-secondary text-sm mb-8 leading-relaxed">
+                    Доступ к тренировочным программам приостановлен. Продлите подписку, чтобы продолжить тренировки.
+                </p>
+                <button
+                    onClick={() => router.push('/renew?expired=true')}
+                    className="glass-button w-full flex items-center justify-center gap-2 py-3 mb-3"
+                >
+                    <RefreshCw className="w-4 h-4" />
+                    Продлить подписку
+                </button>
+                <button
+                    onClick={() => router.push('/dashboard')}
+                    className="glass-button-secondary w-full py-3"
+                >
+                    На главную
+                </button>
+            </div>
+        </div>
+    )
+}
+
 // ─── Видео модал ─────────────────────────────────────────────────────────────
 
 function VideoModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
     const [large, setLarge] = useState(false)
     const embedUrl = getYouTubeEmbedUrl(url)
 
-    // Закрытие по Escape
     useEffect(() => {
         const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
         window.addEventListener('keydown', handler)
@@ -62,65 +127,38 @@ function VideoModal({ url, title, onClose }: { url: string; title: string; onClo
     }, [onClose])
 
     return (
-        <div className={`fixed inset-0 z-50 flex justify-center p-4 transition-all duration-300 ${
-            large ? 'items-center' : 'items-end sm:items-center'
-        }`}
+        <div className={`fixed inset-0 z-50 flex justify-center p-4 transition-all duration-300 ${large ? 'items-center' : 'items-end sm:items-center'}`}
             onClick={onClose}>
-            {/* Затемнение */}
             <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-
-            {/* Окно */}
             <div
-                className={`relative z-10 glass-card overflow-hidden transition-all duration-300 w-full ${
-                    large ? 'max-w-4xl' : 'max-w-lg'
-                }`}
+                className={`relative z-10 glass-card overflow-hidden transition-all duration-300 w-full ${large ? 'max-w-4xl' : 'max-w-lg'}`}
                 onClick={e => e.stopPropagation()}
             >
-                {/* Шапка */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                     <p className="text-sm font-semibold text-white truncate pr-4">{title}</p>
                     <div className="flex items-center gap-2 flex-shrink-0">
                         {embedUrl && (
-                            <button
-                                onClick={() => setLarge(v => !v)}
-                                className="glass-button-secondary p-1.5 rounded-lg"
-                                title={large ? 'Уменьшить' : 'Увеличить'}
-                            >
-                                {large
-                                    ? <Minimize2 className="w-4 h-4" />
-                                    : <Maximize2 className="w-4 h-4" />
-                                }
+                            <button onClick={() => setLarge(v => !v)} className="glass-button-secondary p-1.5 rounded-lg">
+                                {large ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
                             </button>
                         )}
-                        <button onClick={onClose} className="glass-button-secondary p-1.5 rounded-lg" title="Закрыть">
+                        <button onClick={onClose} className="glass-button-secondary p-1.5 rounded-lg">
                             <X className="w-4 h-4" />
                         </button>
                     </div>
                 </div>
-
                 {embedUrl ? (
-                    /* YouTube embed 16:9 */
                     <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
-                        <iframe
-                            src={embedUrl}
-                            className="absolute inset-0 w-full h-full"
+                        <iframe src={embedUrl} className="absolute inset-0 w-full h-full"
                             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                            title={title}
-                        />
+                            allowFullScreen title={title} />
                     </div>
                 ) : (
-                    /* Не YouTube — показываем кнопку открытия внутри модала */
                     <div className="p-6 flex flex-col items-center gap-4 text-center">
                         <Play className="w-12 h-12 text-accent opacity-60" />
                         <p className="text-sm text-text-secondary">Видео доступно по ссылке</p>
-                        <a
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="glass-button flex items-center gap-2 text-sm"
-                            onClick={onClose}
-                        >
+                        <a href={url} target="_blank" rel="noopener noreferrer"
+                            className="glass-button flex items-center gap-2 text-sm" onClick={onClose}>
                             <Play className="w-4 h-4" />Открыть видео
                         </a>
                     </div>
@@ -141,6 +179,9 @@ function ExerciseCard({
     onTimerStart,
     collapsed,
     onToggleCollapse,
+    supersetLabel,
+    isDragging,
+    dragHandleProps,
 }: {
     exercise: Exercise
     index: number
@@ -150,20 +191,64 @@ function ExerciseCard({
     onTimerStart: () => void
     collapsed: boolean
     onToggleCollapse: () => void
+    supersetLabel?: string   // напр. "A" или "B"
+    isDragging?: boolean
+    dragHandleProps?: React.HTMLAttributes<HTMLDivElement>
 }) {
-    const plannedSets = exercise.sets || 3
-    const targetWeights = exercise.targetWeights || Array(plannedSets).fill(0)
+    const [showAltMenu, setShowAltMenu] = useState(false)
+    const altMenuRef = useRef<HTMLDivElement>(null)
 
-    // Реальное количество подходов = max(плановые, введённые клиентом)
+    useEffect(() => {
+        if (!showAltMenu) return
+        const handler = (e: MouseEvent) => {
+            if (altMenuRef.current && !altMenuRef.current.contains(e.target as Node)) {
+                setShowAltMenu(false)
+            }
+        }
+        document.addEventListener('mousedown', handler)
+        return () => document.removeEventListener('mousedown', handler)
+    }, [showAltMenu])
+
+    const selectedAlt = data.selectedAlternativeId
+        ? exercise.alternatives?.find(a => a.id === data.selectedAlternativeId) ?? null
+        : null
+    const activeExercise = selectedAlt
+        ? { ...selectedAlt, targetWeights: [] as number[], targetWeight: undefined }
+        : exercise
+
+    const hasAlternatives = (exercise.alternatives?.length ?? 0) > 0
+    const plannedSets = activeExercise.sets || 3
+    const targetWeights = selectedAlt
+        ? Array(plannedSets).fill(0)
+        : (exercise.targetWeights || Array(plannedSets).fill(0))
+
     const totalSets = Math.max(plannedSets, data.sets.length)
-
-    // Считаем сколько подходов заполнено (для индикатора в свёрнутом виде)
     const filledSets = data.sets.filter(s => s.weight || s.reps).length
 
-    const updateSet = (setIdx: number, field: keyof SetData, value: string) => {
+    const updateSet = (setIdx: number, field: keyof SetData, value: string | SetLabel) => {
         const newSets = [...data.sets]
         while (newSets.length <= setIdx) newSets.push({ weight: '', reps: '', rir: '', setComment: '' })
         newSets[setIdx] = { ...newSets[setIdx], [field]: value }
+        onChange({ ...data, sets: newSets })
+    }
+
+    const toggleSetLabel = (setIdx: number, label: SetLabel) => {
+        const newSets = [...data.sets]
+        while (newSets.length <= setIdx) newSets.push({ weight: '', reps: '', rir: '', setComment: '' })
+        const current = newSets[setIdx]?.label
+        // Если нажали ту же метку — снимаем, иначе ставим
+        const newLabel: SetLabel = current === label ? null : label
+        newSets[setIdx] = { ...newSets[setIdx], label: newLabel }
+
+        // Если поставили "разминка" — автоматически добавляем рабочий подход после
+        if (newLabel === 'warmup') {
+            // Проверяем: есть ли уже рабочий подход после этого
+            const hasWorkingAfter = newSets.slice(setIdx + 1).some(s => !s.label || s.label !== 'warmup')
+            if (!hasWorkingAfter) {
+                newSets.push({ weight: '', reps: '', rir: '', setComment: '' })
+            }
+        }
+
         onChange({ ...data, sets: newSets })
     }
 
@@ -180,63 +265,131 @@ function ExerciseCard({
         onChange({ ...data, sets: newSets })
     }
 
-    return (
-        <div className={`glass-card overflow-hidden transition-all duration-200 ${collapsed ? 'opacity-70' : ''}`}>
-            {/* Заголовок — всегда виден */}
-            <div className="p-4 cursor-pointer select-none" onClick={onToggleCollapse}>
+    const selectExercise = (altId: string | undefined) => {
+        onChange({ sets: [], comment: '', selectedAlternativeId: altId })
+        setShowAltMenu(false)
+    }
 
-                {/* Строка 1: номер + название + кнопка свернуть */}
+    // Считаем рабочий тоннаж (без разминочных)
+    const workingTonnage = data.sets.reduce((sum, s) => {
+        if (s.label === 'warmup') return sum
+        const w = parseFloat(s.weight) || 0
+        const r = parseInt(s.reps) || 0
+        return sum + w * r
+    }, 0)
+
+    return (
+        <div className={`glass-card overflow-hidden transition-all duration-200 ${collapsed ? 'opacity-70' : ''} ${isDragging ? 'ring-2 ring-accent shadow-glow-accent' : ''}`}>
+            {/* Заголовок */}
+            <div className="p-4 cursor-pointer select-none" onClick={onToggleCollapse}>
                 <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex items-start gap-2 flex-1 min-w-0">
+                        {/* Drag handle */}
+                        <div
+                            {...dragHandleProps}
+                            className="flex-shrink-0 mt-1 cursor-grab active:cursor-grabbing touch-none p-1 -ml-1 rounded text-text-muted hover:text-accent transition-colors"
+                            onClick={e => e.stopPropagation()}
+                            title="Перетащить упражнение"
+                        >
+                            <GripVertical className="w-4 h-4" />
+                        </div>
+
+                        {/* Суперсет-метка */}
+                        {supersetLabel && (
+                            <span className="flex-shrink-0 mt-0.5 w-6 h-6 rounded-lg bg-accent/20 border border-accent/40 flex items-center justify-center text-xs font-bold text-accent">
+                                {supersetLabel}
+                            </span>
+                        )}
+
                         <span className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 mt-0.5 transition-colors ${
                             collapsed && filledSets > 0 ? 'bg-success/20 text-success' : 'bg-accent/20 text-accent'
                         }`}>
                             {collapsed && filledSets > 0 ? '✓' : index + 1}
                         </span>
                         <div className="min-w-0">
-                            <h3 className="text-base font-display font-bold text-white leading-tight break-words">{exercise.name}</h3>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                                <h3 className="text-base font-display font-bold text-white leading-tight break-words">
+                                    {activeExercise.name}
+                                </h3>
+                                {selectedAlt && (
+                                    <span className="text-xs text-accent/70 font-normal">(альтернатива)</span>
+                                )}
+                            </div>
                             <p className="text-xs text-text-secondary mt-0.5">
-                                {plannedSets} x {exercise.reps}
-                                {targetWeights.some((w: number) => w > 0) && (
+                                {plannedSets} x {activeExercise.reps}
+                                {!selectedAlt && targetWeights.some((w: number) => w > 0) && (
                                     <span className="text-accent ml-1">
                                         • {targetWeights.map((w: number) => w > 0 ? `${w}` : '—').join('/')} кг
                                     </span>
                                 )}
                                 {collapsed && filledSets > 0 && (
-                                    <span className="text-success ml-2">· {filledSets}/{totalSets} подх. заполнено</span>
+                                    <span className="text-success ml-2">· {filledSets}/{totalSets} подх.</span>
+                                )}
+                                {collapsed && workingTonnage > 0 && (
+                                    <span className="text-text-muted ml-2">· {workingTonnage.toLocaleString('ru-RU')} кг</span>
                                 )}
                             </p>
                         </div>
                     </div>
-                    {/* Кнопка свернуть — всегда справа в первой строке */}
-                    <button
-                        className="glass-button-secondary p-1.5 rounded-lg flex-shrink-0"
-                        title={collapsed ? 'Развернуть' : 'Свернуть'}
-                        onClick={e => { e.stopPropagation(); onToggleCollapse() }}
-                    >
-                        {collapsed
-                            ? <ChevronDown className="w-4 h-4 text-text-muted" />
-                            : <ChevronUp className="w-4 h-4 text-text-muted" />
-                        }
-                    </button>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {hasAlternatives && (
+                            <div className="relative" ref={altMenuRef} onClick={e => e.stopPropagation()}>
+                                <button
+                                    className={`glass-button-secondary p-1.5 rounded-lg text-xs flex items-center gap-1 ${selectedAlt ? 'border-accent/40 text-accent' : ''}`}
+                                    title="Альтернативные упражнения"
+                                    onClick={() => setShowAltMenu(v => !v)}
+                                >
+                                    <span className="text-sm leading-none">⇄</span>
+                                </button>
+                                {showAltMenu && (
+                                    <div className="absolute right-0 top-full mt-1 z-20 glass-card border border-border shadow-xl min-w-[220px] p-2 space-y-1">
+                                        <p className="text-xs text-text-muted px-2 pb-1 border-b border-border mb-1">Выбери упражнение:</p>
+                                        <button
+                                            onClick={() => selectExercise(undefined)}
+                                            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                                                !selectedAlt ? 'bg-accent/20 text-accent font-semibold' : 'text-text-secondary hover:bg-bg-elevated'
+                                            }`}
+                                        >
+                                            <span className="text-xs text-text-muted block mb-0.5">Основное</span>
+                                            {exercise.name}
+                                        </button>
+                                        {exercise.alternatives!.map(alt => (
+                                            <button
+                                                key={alt.id}
+                                                onClick={() => selectExercise(alt.id)}
+                                                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                                                    data.selectedAlternativeId === alt.id ? 'bg-accent/20 text-accent font-semibold' : 'text-text-secondary hover:bg-bg-elevated'
+                                                }`}
+                                            >
+                                                <span className="text-xs text-text-muted block mb-0.5">{alt.sets} x {alt.reps}</span>
+                                                {alt.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        <button
+                            className="glass-button-secondary p-1.5 rounded-lg"
+                            onClick={e => { e.stopPropagation(); onToggleCollapse() }}
+                        >
+                            {collapsed ? <ChevronDown className="w-4 h-4 text-text-muted" /> : <ChevronUp className="w-4 h-4 text-text-muted" />}
+                        </button>
+                    </div>
                 </div>
 
-                {/* Строка 2: кнопки Видео и Отдых — только когда развёрнуто */}
                 {!collapsed && (
                     <div className="flex items-center gap-2 pl-9" onClick={e => e.stopPropagation()}>
                         <button
                             onClick={() => {
-                                const url = exercise.videoUrl || `https://www.youtube.com/results?search_query=${encodeURIComponent(exercise.name + ' техника')}`
-                                onVideoClick(url, exercise.name)
+                                const url = activeExercise.videoUrl
+                                    || `https://www.youtube.com/results?search_query=${encodeURIComponent(activeExercise.name + ' техника')}`
+                                onVideoClick(url, activeExercise.name)
                             }}
                             className="glass-button-secondary flex items-center gap-1.5 text-xs px-3 py-1.5">
                             <Play className="w-3 h-3" />Видео
                         </button>
-                        <button
-                            onClick={onTimerStart}
-                            className="rest-timer-trigger"
-                            title="Таймер отдыха"
-                        >
+                        <button onClick={onTimerStart} className="rest-timer-trigger" title="Таймер отдыха">
                             <Timer className="w-3.5 h-3.5" />
                             <span>Отдых</span>
                         </button>
@@ -244,54 +397,107 @@ function ExerciseCard({
                 )}
             </div>
 
-            {/* Тело — скрывается при свёртывании */}
             {!collapsed && (
                 <div className="px-5 pb-5">
                     {/* Таблица подходов */}
                     <div className="space-y-2">
                         {/* Заголовок */}
-                        <div className="grid grid-cols-[auto_1fr_1fr_1fr] gap-2 text-xs text-text-muted px-1">
+                        <div className="grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 text-xs text-text-muted px-1">
                             <div className="min-w-[44px]">Подход</div>
                             <div>Вес (кг)</div>
                             <div>Повт.</div>
                             <div>RIR</div>
+                            <div className="w-16 text-center">Метка</div>
                         </div>
 
                         {Array.from({ length: totalSets }).map((_, setIdx) => {
                             const setData = data.sets[setIdx] || { weight: '', reps: '', rir: '', setComment: '' }
                             const plannedWeight = targetWeights[setIdx] ?? 0
                             const isExtra = setIdx >= plannedSets
+                            const labelInfo = getLabelInfo(setData.label ?? null)
+                            const isWarmup = setData.label === 'warmup'
 
                             return (
-                                <div key={setIdx} className="grid grid-cols-[auto_1fr_1fr_1fr] gap-2 items-center">
-                                    {/* Номер подхода */}
-                                    <div className="flex flex-col min-w-[44px]">
-                                        <div className="flex items-center gap-1">
-                                            <span className={`text-sm font-semibold ${isExtra ? 'text-accent' : 'text-white'}`}>
-                                                {setIdx + 1}
-                                                {isExtra && <span className="text-xs ml-0.5">+</span>}
-                                            </span>
-                                            {isExtra && (
-                                                <button onClick={() => removeExtraSet(setIdx)}
-                                                    className="text-text-muted hover:text-danger text-xs ml-1 leading-none">✕</button>
+                                <div key={setIdx}>
+                                    <div className={`grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 items-center rounded-lg px-1 py-0.5 transition-colors ${
+                                        isWarmup ? 'bg-blue-400/5 border border-blue-400/20' : ''
+                                    }`}>
+                                        {/* Номер подхода */}
+                                        <div className="flex flex-col min-w-[44px]">
+                                            <div className="flex items-center gap-1">
+                                                <span className={`text-sm font-semibold ${isExtra ? 'text-accent' : isWarmup ? 'text-blue-400' : 'text-white'}`}>
+                                                    {setIdx + 1}
+                                                    {isExtra && <span className="text-xs ml-0.5">+</span>}
+                                                </span>
+                                                {isExtra && (
+                                                    <button onClick={() => removeExtraSet(setIdx)}
+                                                        className="text-text-muted hover:text-danger text-xs ml-1 leading-none">✕</button>
+                                                )}
+                                            </div>
+                                            {plannedWeight > 0 && (
+                                                <span className="text-xs text-text-muted">{plannedWeight} кг</span>
                                             )}
                                         </div>
-                                        {plannedWeight > 0 && (
-                                            <span className="text-xs text-text-muted">{plannedWeight} кг</span>
-                                        )}
+                                        <input type="number" step="0.5" value={setData.weight}
+                                            onChange={e => updateSet(setIdx, 'weight', e.target.value)}
+                                            className={`glass-input text-sm py-2 px-2 text-center min-w-0 ${isWarmup ? 'opacity-70' : ''}`}
+                                            placeholder={plannedWeight > 0 ? String(plannedWeight) : '—'} />
+                                        <input type="number" value={setData.reps}
+                                            onChange={e => updateSet(setIdx, 'reps', e.target.value)}
+                                            className={`glass-input text-sm py-2 px-2 text-center min-w-0 ${isWarmup ? 'opacity-70' : ''}`}
+                                            placeholder={activeExercise.reps.split('-')[0] || '—'} />
+                                        <input type="number" min="0" max="5" value={setData.rir}
+                                            onChange={e => updateSet(setIdx, 'rir', e.target.value)}
+                                            className={`glass-input text-sm py-2 px-2 text-center min-w-0 ${isWarmup ? 'opacity-70' : ''}`}
+                                            placeholder="2" />
+
+                                        {/* Кнопка метки */}
+                                        <div className="w-16 flex justify-center">
+                                            <div className="relative group">
+                                                <button
+                                                    className={`text-xs px-1.5 py-1 rounded-lg border transition-all ${
+                                                        labelInfo
+                                                            ? `${labelInfo.bg} ${labelInfo.color} font-semibold`
+                                                            : 'border-border text-text-muted hover:border-accent/40 hover:text-accent'
+                                                    }`}
+                                                    title="Метка подхода"
+                                                >
+                                                    {labelInfo ? labelInfo.label.slice(0, 3) : '···'}
+                                                </button>
+                                                {/* Dropdown меток */}
+                                                <div className="absolute right-0 top-full mt-1 z-30 hidden group-hover:block glass-card border border-border shadow-xl min-w-[130px] p-1.5 space-y-1">
+                                                    {SET_LABELS.map(l => (
+                                                        <button
+                                                            key={l.value}
+                                                            onClick={() => toggleSetLabel(setIdx, l.value)}
+                                                            className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-2 ${
+                                                                setData.label === l.value
+                                                                    ? `${l.bg} ${l.color} font-semibold`
+                                                                    : 'text-text-secondary hover:bg-bg-elevated'
+                                                            }`}
+                                                        >
+                                                            {setData.label === l.value && <span>✓</span>}
+                                                            {l.label}
+                                                        </button>
+                                                    ))}
+                                                    {setData.label && (
+                                                        <button
+                                                            onClick={() => toggleSetLabel(setIdx, setData.label ?? null)}
+                                                            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-text-muted hover:bg-bg-elevated transition-colors"
+                                                        >
+                                                            Снять метку
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <input type="number" step="0.5" value={setData.weight}
-                                        onChange={e => updateSet(setIdx, 'weight', e.target.value)}
-                                        className="glass-input text-sm py-2 px-2 text-center min-w-0"
-                                        placeholder={plannedWeight > 0 ? String(plannedWeight) : '—'} />
-                                    <input type="number" value={setData.reps}
-                                        onChange={e => updateSet(setIdx, 'reps', e.target.value)}
-                                        className="glass-input text-sm py-2 px-2 text-center min-w-0"
-                                        placeholder={exercise.reps.split('-')[0] || '—'} />
-                                    <input type="number" min="0" max="5" value={setData.rir}
-                                        onChange={e => updateSet(setIdx, 'rir', e.target.value)}
-                                        className="glass-input text-sm py-2 px-2 text-center min-w-0"
-                                        placeholder="2" />
+                                    {/* Подпись разминки */}
+                                    {isWarmup && (
+                                        <p className="text-[10px] text-blue-400/70 pl-12 -mt-0.5 mb-0.5">
+                                            Разминочный — не учитывается в тоннаже
+                                        </p>
+                                    )}
                                 </div>
                             )
                         })}
@@ -315,6 +521,22 @@ function ExerciseCard({
     )
 }
 
+// ─── Суперсет-разделитель ─────────────────────────────────────────────────────
+
+function SupersetDivider({ label, onRemove }: { label: string; onRemove: () => void }) {
+    return (
+        <div className="flex items-center gap-2 py-1">
+            <div className="flex-1 h-px bg-accent/20" />
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent/10 border border-accent/30">
+                <Link2 className="w-3 h-3 text-accent" />
+                <span className="text-xs text-accent font-semibold">Суперсет {label}</span>
+                <button onClick={onRemove} className="text-accent/60 hover:text-danger ml-1 text-xs leading-none" title="Убрать суперсет">✕</button>
+            </div>
+            <div className="flex-1 h-px bg-accent/20" />
+        </div>
+    )
+}
+
 // ─── Главная страница ─────────────────────────────────────────────────────────
 
 export default function ProgramDetailPage() {
@@ -328,8 +550,8 @@ export default function ProgramDetailPage() {
     const [isLoading, setIsLoading] = useState(true)
     const [isSaving, setIsSaving] = useState(false)
     const [saveMessage, setSaveMessage] = useState('')
+    const [subscriptionExpired, setSubscriptionExpired] = useState(false)
 
-    // exerciseData[exerciseId] = ExerciseClientData
     const [exerciseData, setExerciseData] = useState<Record<string, ExerciseClientData>>({})
     const [energyLevel, setEnergyLevel] = useState(5)
     const [mood, setMood] = useState(3)
@@ -340,20 +562,34 @@ export default function ProgramDetailPage() {
     const [collapsedExercises, setCollapsedExercises] = useState<Set<string>>(new Set())
     const [restTimerVisible, setRestTimerVisible] = useState(false)
 
-    // Сворачиваем все упражнения при смене дня
-    useEffect(() => {
-        if (!program) return
-        const currentDay = program.program_data.days[currentDayIndex]
-        if (!currentDay) return
-        setCollapsedExercises(new Set(currentDay.exercises.map(e => e.id)))
-    }, [program, currentDayIndex])
+    // Суперсеты и порядок упражнений
+    const [supersets, setSupersets] = useState<Superset[]>([])
+    const [exerciseOrder, setExerciseOrder] = useState<ExerciseOrder>([])
+
+    // Drag-and-drop
+    const [draggedId, setDraggedId] = useState<string | null>(null)
+    const [dragOverId, setDragOverId] = useState<string | null>(null)
+
+    // Таймер тренировки
+    const [workoutStartTime, setWorkoutStartTime] = useState<number | null>(null)
+    const [elapsedSeconds, setElapsedSeconds] = useState(0)
+    const [savedDuration, setSavedDuration] = useState<number | null>(null)
 
     const dataLoadedRef = useRef(false)
     const userChangedRef = useRef(false)
+    const latestDataRef = useRef({ exerciseData, energyLevel, mood, sleepQuality, notes })
 
     useEffect(() => {
         if (!authLoading && !user) window.location.href = '/auth'
     }, [user, authLoading])
+
+    // Проверка подписки
+    useEffect(() => {
+        if (!user) return
+        getMySubscriptionInfo().then(info => {
+            if (info.isExpired) setSubscriptionExpired(true)
+        }).catch(() => {})
+    }, [user])
 
     // Загрузка программы
     useEffect(() => {
@@ -372,6 +608,14 @@ export default function ProgramDetailPage() {
         load()
     }, [user, programId, router])
 
+    // Сворачиваем все упражнения при смене дня
+    useEffect(() => {
+        if (!program) return
+        const currentDay = program.program_data.days[currentDayIndex]
+        if (!currentDay) return
+        setCollapsedExercises(new Set(currentDay.exercises.map(e => e.id)))
+    }, [program, currentDayIndex])
+
     // Загрузка записи текущего дня
     useEffect(() => {
         if (!program || !user) return
@@ -384,17 +628,14 @@ export default function ProgramDetailPage() {
             try {
                 const entry = await getTrainingEntry(program.id, currentDay.dayNumber)
                 if (entry) {
-                    // Конвертируем старый формат в новый если нужно
                     const converted: Record<string, ExerciseClientData> = {}
                     for (const ex of currentDay.exercises) {
                         const raw = entry.entry_data?.[ex.id]
                         if (!raw) {
                             converted[ex.id] = { sets: [], comment: '' }
                         } else if (raw.sets && Array.isArray(raw.sets)) {
-                            // Новый формат
-                            converted[ex.id] = { sets: raw.sets, comment: raw.comment || '' }
+                            converted[ex.id] = { sets: raw.sets, comment: raw.comment || '', selectedAlternativeId: raw.selectedAlternativeId }
                         } else {
-                            // Старый формат — конвертируем в новый
                             const legacySets: SetData[] = Array.from({ length: ex.sets }, () => ({
                                 weight: raw.actualWeight ? String(raw.actualWeight) : '',
                                 reps: raw.actualReps ? String(raw.actualReps) : '',
@@ -408,8 +649,26 @@ export default function ProgramDetailPage() {
                     setMood(entry.mood || 3)
                     setSleepQuality(entry.sleep_quality || 3)
                     setNotes(entry.notes || '')
+
+                    // Загружаем мета-данные (суперсеты, порядок)
+                    const meta: DayMeta = entry.entry_data?.__meta__ || {}
+                    setSupersets(meta.supersets || [])
+                    const savedOrder = meta.exerciseOrder || []
+                    const allIds = currentDay.exercises.map(e => e.id)
+                    // Восстанавливаем порядок, добавляя новые упражнения в конец
+                    const restoredOrder = [
+                        ...savedOrder.filter(id => allIds.includes(id)),
+                        ...allIds.filter(id => !savedOrder.includes(id)),
+                    ]
+                    setExerciseOrder(restoredOrder)
+
                     if (entry.completed_at) {
                         setCompletedDays(prev => new Set([...prev, currentDay.dayNumber]))
+                        setSavedDuration(entry.workout_duration_seconds ?? null)
+                        setWorkoutStartTime(null)
+                        setElapsedSeconds(0)
+                    } else {
+                        setSavedDuration(null)
                     }
                 } else {
                     setExerciseData({})
@@ -417,6 +676,11 @@ export default function ProgramDetailPage() {
                     setMood(3)
                     setSleepQuality(3)
                     setNotes('')
+                    setSavedDuration(null)
+                    setWorkoutStartTime(null)
+                    setElapsedSeconds(0)
+                    setSupersets([])
+                    setExerciseOrder(program.program_data.days[currentDayIndex]?.exercises.map(e => e.id) || [])
                 }
             } catch (e) {
                 console.error('Error loading entry:', e)
@@ -427,19 +691,45 @@ export default function ProgramDetailPage() {
         loadEntry()
     }, [program, currentDayIndex, user])
 
-    // Сохранение
+    useEffect(() => {
+        latestDataRef.current = { exerciseData, energyLevel, mood, sleepQuality, notes }
+    })
+
+    const startTimerIfNeeded = useCallback(() => {
+        if (workoutStartTime !== null) return
+        setWorkoutStartTime(Date.now())
+    }, [workoutStartTime])
+
+    useEffect(() => {
+        if (workoutStartTime === null) return
+        const interval = setInterval(() => {
+            setElapsedSeconds(Math.floor((Date.now() - workoutStartTime) / 1000))
+        }, 1000)
+        return () => clearInterval(interval)
+    }, [workoutStartTime])
+
+    // Сохранение — читает мета-данные из state через ref
+    const metaRef = useRef({ supersets, exerciseOrder })
+    useEffect(() => { metaRef.current = { supersets, exerciseOrder } }, [supersets, exerciseOrder])
+
     const saveEntry = useCallback(async (silent = false) => {
         if (!program || !user) return
         const currentDay = program.program_data.days[currentDayIndex]
         if (!currentDay) return
 
+        const { exerciseData: ed, energyLevel: el, mood: m, sleepQuality: sq, notes: n } = latestDataRef.current
+        const { supersets: ss, exerciseOrder: eo } = metaRef.current
+
+        // Добавляем мета-данные в entry_data
+        const entryDataWithMeta = {
+            ...ed,
+            __meta__: { supersets: ss, exerciseOrder: eo } as DayMeta,
+        }
+
         if (!silent) setIsSaving(true)
         try {
-            await upsertTrainingEntry(program.id, currentDay.dayNumber, exerciseData, {
-                energy_level: energyLevel,
-                mood,
-                sleep_quality: sleepQuality,
-                notes,
+            await upsertTrainingEntry(program.id, currentDay.dayNumber, entryDataWithMeta, {
+                energy_level: el, mood: m, sleep_quality: sq, notes: n,
             })
             if (!silent) {
                 setSaveMessage('✓ Сохранено')
@@ -451,17 +741,19 @@ export default function ProgramDetailPage() {
         } finally {
             if (!silent) setIsSaving(false)
         }
-    }, [program, currentDayIndex, exerciseData, energyLevel, mood, sleepQuality, notes, user])
+    }, [program, currentDayIndex, user])
 
-    // Автосейв
     useEffect(() => {
         if (!dataLoadedRef.current || !userChangedRef.current) return
         const t = setTimeout(() => saveEntry(true), 1500)
         return () => clearTimeout(t)
-    }, [exerciseData, energyLevel, mood, sleepQuality, notes, saveEntry])
+    }, [exerciseData, energyLevel, mood, sleepQuality, notes, supersets, exerciseOrder, saveEntry])
 
     const updateExercise = (exerciseId: string, data: ExerciseClientData) => {
         userChangedRef.current = true
+        if (!completedDays.has(program?.program_data.days[currentDayIndex]?.dayNumber ?? -1)) {
+            startTimerIfNeeded()
+        }
         setExerciseData(prev => ({ ...prev, [exerciseId]: data }))
     }
 
@@ -470,12 +762,21 @@ export default function ProgramDetailPage() {
         const currentDay = program.program_data.days[currentDayIndex]
         if (!currentDay) return
         setIsSaving(true)
+        const finalDuration = workoutStartTime !== null
+            ? Math.floor((Date.now() - workoutStartTime) / 1000)
+            : elapsedSeconds || undefined
         try {
-            await upsertTrainingEntry(program.id, currentDay.dayNumber, exerciseData, {
-                energy_level: energyLevel, mood, sleep_quality: sleepQuality, notes,
+            const { exerciseData: ed, energyLevel: el, mood: m, sleepQuality: sq, notes: n } = latestDataRef.current
+            const { supersets: ss, exerciseOrder: eo } = metaRef.current
+            const entryDataWithMeta = { ...ed, __meta__: { supersets: ss, exerciseOrder: eo } }
+            await upsertTrainingEntry(program.id, currentDay.dayNumber, entryDataWithMeta, {
+                energy_level: el, mood: m, sleep_quality: sq, notes: n,
+                workout_duration_seconds: finalDuration,
             })
             await completeTrainingDay(program.id, currentDay.dayNumber)
             setCompletedDays(prev => new Set([...prev, currentDay.dayNumber]))
+            setSavedDuration(finalDuration ?? null)
+            setWorkoutStartTime(null)
             setSaveMessage('✓ Тренировка завершена!')
             setTimeout(() => setSaveMessage(''), 3000)
         } catch (e) {
@@ -486,12 +787,154 @@ export default function ProgramDetailPage() {
         }
     }
 
+    const handleSaveCompleted = async () => {
+        if (!program) return
+        const currentDay = program.program_data.days[currentDayIndex]
+        if (!currentDay) return
+        setIsSaving(true)
+        try {
+            const { exerciseData: ed, energyLevel: el, mood: m, sleepQuality: sq, notes: n } = latestDataRef.current
+            const { supersets: ss, exerciseOrder: eo } = metaRef.current
+            const entryDataWithMeta = { ...ed, __meta__: { supersets: ss, exerciseOrder: eo } }
+            await upsertTrainingEntry(program.id, currentDay.dayNumber, entryDataWithMeta, {
+                energy_level: el, mood: m, sleep_quality: sq, notes: n,
+                workout_duration_seconds: savedDuration ?? undefined,
+            })
+            setSaveMessage('✓ Правки сохранены')
+            setTimeout(() => setSaveMessage(''), 2000)
+        } catch (e) {
+            console.error('Error saving completed entry:', e)
+            setSaveMessage('Ошибка сохранения')
+        } finally {
+            setIsSaving(false)
+        }
+    }
+
+    // ─── Суперсеты ────────────────────────────────────────────────────────────
+
+    const addSuperset = (id1: string, id2: string) => {
+        // Проверяем что оба упражнения не в другом суперсете
+        const alreadyInSuperset = supersets.some(ss =>
+            ss.exerciseIds.includes(id1) || ss.exerciseIds.includes(id2)
+        )
+        if (alreadyInSuperset) return
+        const newSS: Superset = {
+            id: `ss_${Date.now()}`,
+            exerciseIds: [id1, id2],
+        }
+        userChangedRef.current = true
+        setSupersets(prev => [...prev, newSS])
+    }
+
+    const removeSuperset = (ssId: string) => {
+        userChangedRef.current = true
+        setSupersets(prev => prev.filter(ss => ss.id !== ssId))
+    }
+
+    const getSupersetForExercise = (exerciseId: string): Superset | null => {
+        return supersets.find(ss => ss.exerciseIds.includes(exerciseId)) ?? null
+    }
+
+    const getSupersetLabel = (ssId: string): string => {
+        const idx = supersets.findIndex(ss => ss.id === ssId)
+        return String.fromCharCode(65 + idx) // A, B, C...
+    }
+
+    // ─── Drag-and-drop ────────────────────────────────────────────────────────
+
+    const handleDragStart = (exerciseId: string) => {
+        setDraggedId(exerciseId)
+    }
+
+    const handleDragOver = (e: React.DragEvent, exerciseId: string) => {
+        e.preventDefault()
+        if (exerciseId !== draggedId) setDragOverId(exerciseId)
+    }
+
+    const handleDrop = (e: React.DragEvent, targetId: string) => {
+        e.preventDefault()
+        if (!draggedId || draggedId === targetId) {
+            setDraggedId(null)
+            setDragOverId(null)
+            return
+        }
+
+        const currentOrder = exerciseOrder.length > 0
+            ? exerciseOrder
+            : (program?.program_data.days[currentDayIndex]?.exercises.map(e => e.id) || [])
+
+        const newOrder = [...currentOrder]
+        const fromIdx = newOrder.indexOf(draggedId)
+        const toIdx = newOrder.indexOf(targetId)
+        if (fromIdx === -1 || toIdx === -1) return
+
+        newOrder.splice(fromIdx, 1)
+        newOrder.splice(toIdx, 0, draggedId)
+
+        userChangedRef.current = true
+        setExerciseOrder(newOrder)
+        setDraggedId(null)
+        setDragOverId(null)
+    }
+
+    const handleDragEnd = () => {
+        setDraggedId(null)
+        setDragOverId(null)
+    }
+
+    // Touch drag (мобильный)
+    const touchStartY = useRef<number>(0)
+    const touchExerciseId = useRef<string | null>(null)
+
+    const handleTouchStart = (e: React.TouchEvent, exerciseId: string) => {
+        touchStartY.current = e.touches[0].clientY
+        touchExerciseId.current = exerciseId
+        setDraggedId(exerciseId)
+    }
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+        if (!touchExerciseId.current) return
+        const touch = e.touches[0]
+        const el = document.elementFromPoint(touch.clientX, touch.clientY)
+        const card = el?.closest('[data-exercise-id]')
+        const overId = card?.getAttribute('data-exercise-id')
+        if (overId && overId !== touchExerciseId.current) {
+            setDragOverId(overId)
+        }
+    }
+
+    const handleTouchEnd = () => {
+        if (touchExerciseId.current && dragOverId && touchExerciseId.current !== dragOverId) {
+            const currentOrder = exerciseOrder.length > 0
+                ? exerciseOrder
+                : (program?.program_data.days[currentDayIndex]?.exercises.map(e => e.id) || [])
+
+            const newOrder = [...currentOrder]
+            const fromIdx = newOrder.indexOf(touchExerciseId.current)
+            const toIdx = newOrder.indexOf(dragOverId)
+            if (fromIdx !== -1 && toIdx !== -1) {
+                newOrder.splice(fromIdx, 1)
+                newOrder.splice(toIdx, 0, touchExerciseId.current!)
+                userChangedRef.current = true
+                setExerciseOrder(newOrder)
+            }
+        }
+        touchExerciseId.current = null
+        setDraggedId(null)
+        setDragOverId(null)
+    }
+
     if (authLoading || isLoading || !program) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />
             </div>
         )
+    }
+
+    // Показываем экран истёкшей подписки
+    if (subscriptionExpired) {
+        return <SubscriptionExpiredScreen />
     }
 
     if (!program.program_data?.days || program.program_data.days.length === 0) {
@@ -521,6 +964,25 @@ export default function ProgramDetailPage() {
     const isCurrentDayCompleted = completedDays.has(currentDay.dayNumber)
     const allDaysCompleted = program.program_data.days.every(d => completedDays.has(d.dayNumber))
 
+    const formatDuration = (seconds: number): string => {
+        const h = Math.floor(seconds / 3600)
+        const m = Math.floor((seconds % 3600) / 60)
+        const s = seconds % 60
+        if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+        return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    }
+
+    const displayDuration = isCurrentDayCompleted
+        ? (savedDuration ?? null)
+        : (workoutStartTime !== null ? elapsedSeconds : null)
+
+    // Упорядоченный список упражнений
+    const allExerciseIds = currentDay.exercises.map(e => e.id)
+    const orderedIds = exerciseOrder.length > 0
+        ? [...exerciseOrder.filter(id => allExerciseIds.includes(id)), ...allExerciseIds.filter(id => !exerciseOrder.includes(id))]
+        : allExerciseIds
+    const orderedExercises = orderedIds.map(id => currentDay.exercises.find(e => e.id === id)!).filter(Boolean)
+
     return (
         <>
         <div className="min-h-screen bg-bg-main p-4 py-8">
@@ -533,7 +995,7 @@ export default function ProgramDetailPage() {
                     {saveMessage && <div className="text-sm text-accent font-medium">{saveMessage}</div>}
                 </div>
 
-                {/* Инфо о программе + прогресс */}
+                {/* Инфо о программе */}
                 <div className="glass-card p-5 mb-5">
                     <div className="flex items-start justify-between mb-3">
                         <div>
@@ -549,7 +1011,6 @@ export default function ProgramDetailPage() {
                         )}
                     </div>
 
-                    {/* Рекомендация тренера на неделю */}
                     {program.program_data.weeklyNote && (
                         <div className="mb-3 p-3 rounded-xl bg-accent/10 border border-accent/20 flex gap-2">
                             <span className="text-accent text-base flex-shrink-0">💬</span>
@@ -560,7 +1021,6 @@ export default function ProgramDetailPage() {
                         </div>
                     )}
 
-                    {/* Кнопки дней */}
                     <div className="flex gap-2">
                         {program.program_data.days.map((day, idx) => (
                             <button key={day.dayNumber} onClick={() => setCurrentDayIndex(idx)}
@@ -601,8 +1061,7 @@ export default function ProgramDetailPage() {
                 </div>
 
                 {/* Упражнения */}
-                <div className="space-y-4 mb-5">
-                    {/* Рекомендация тренера на день */}
+                <div className="space-y-2 mb-5">
                     {currentDay.coachNote && (
                         <div className="p-4 rounded-xl bg-accent/10 border border-accent/20 flex gap-3">
                             <span className="text-accent text-lg flex-shrink-0">📋</span>
@@ -620,11 +1079,7 @@ export default function ProgramDetailPage() {
                                 onClick={() => {
                                     const allIds = currentDay.exercises.map(e => e.id)
                                     const allCollapsed = allIds.every(id => collapsedExercises.has(id))
-                                    if (allCollapsed) {
-                                        setCollapsedExercises(new Set())
-                                    } else {
-                                        setCollapsedExercises(new Set(allIds))
-                                    }
+                                    setCollapsedExercises(allCollapsed ? new Set() : new Set(allIds))
                                 }}
                                 className="glass-button-secondary text-xs flex items-center gap-1.5 px-3 py-1.5"
                             >
@@ -636,24 +1091,83 @@ export default function ProgramDetailPage() {
                         </div>
                     )}
 
-                    {currentDay.exercises.map((exercise, idx) => (
-                        <ExerciseCard
-                            key={exercise.id}
-                            exercise={exercise}
-                            index={idx}
-                            data={exerciseData[exercise.id] || { sets: [], comment: '' }}
-                            onChange={d => updateExercise(exercise.id, d)}
-                            onVideoClick={(url, title) => setVideoModal({ url, title })}
-                            onTimerStart={() => setRestTimerVisible(true)}
-                            collapsed={collapsedExercises.has(exercise.id)}
-                            onToggleCollapse={() => setCollapsedExercises(prev => {
-                                const next = new Set(prev)
-                                if (next.has(exercise.id)) next.delete(exercise.id)
-                                else next.add(exercise.id)
-                                return next
-                            })}
-                        />
-                    ))}
+                    {/* Список упражнений с drag-and-drop */}
+                    {orderedExercises.map((exercise, idx) => {
+                        const ss = getSupersetForExercise(exercise.id)
+                        const isFirstInSS = ss ? ss.exerciseIds[0] === exercise.id : false
+                        const isSecondInSS = ss ? ss.exerciseIds[1] === exercise.id : false
+                        const ssLabel = ss ? getSupersetLabel(ss.id) : undefined
+
+                        // Следующее упражнение в порядке
+                        const nextExercise = orderedExercises[idx + 1]
+                        const canAddSuperset = nextExercise
+                            && !getSupersetForExercise(exercise.id)
+                            && !getSupersetForExercise(nextExercise.id)
+
+                        return (
+                            <div key={exercise.id}>
+                                {/* Суперсет-разделитель перед вторым упражнением */}
+                                {isSecondInSS && ss && (
+                                    <SupersetDivider
+                                        label={getSupersetLabel(ss.id)}
+                                        onRemove={() => removeSuperset(ss.id)}
+                                    />
+                                )}
+
+                                <div
+                                    data-exercise-id={exercise.id}
+                                    draggable
+                                    onDragStart={() => handleDragStart(exercise.id)}
+                                    onDragOver={e => handleDragOver(e, exercise.id)}
+                                    onDrop={e => handleDrop(e, exercise.id)}
+                                    onDragEnd={handleDragEnd}
+                                    onTouchStart={e => handleTouchStart(e, exercise.id)}
+                                    onTouchMove={handleTouchMove}
+                                    onTouchEnd={handleTouchEnd}
+                                    className={`transition-all duration-150 ${
+                                        dragOverId === exercise.id && draggedId !== exercise.id
+                                            ? 'ring-2 ring-accent/60 rounded-xl scale-[1.01]'
+                                            : ''
+                                    }`}
+                                >
+                                    <ExerciseCard
+                                        exercise={exercise}
+                                        index={idx}
+                                        data={exerciseData[exercise.id] || { sets: [], comment: '' }}
+                                        onChange={d => updateExercise(exercise.id, d)}
+                                        onVideoClick={(url, title) => setVideoModal({ url, title })}
+                                        onTimerStart={() => setRestTimerVisible(true)}
+                                        collapsed={collapsedExercises.has(exercise.id)}
+                                        onToggleCollapse={() => setCollapsedExercises(prev => {
+                                            const next = new Set(prev)
+                                            if (next.has(exercise.id)) next.delete(exercise.id)
+                                            else next.add(exercise.id)
+                                            return next
+                                        })}
+                                        supersetLabel={ssLabel}
+                                        isDragging={draggedId === exercise.id}
+                                        dragHandleProps={{
+                                            onTouchStart: (e: React.TouchEvent) => handleTouchStart(e, exercise.id),
+                                        }}
+                                    />
+                                </div>
+
+                                {/* Кнопка "Объединить в суперсет" между упражнениями */}
+                                {canAddSuperset && !isFirstInSS && (
+                                    <div className="flex justify-center py-1">
+                                        <button
+                                            onClick={() => addSuperset(exercise.id, nextExercise.id)}
+                                            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs text-text-muted hover:text-accent hover:bg-accent/10 border border-dashed border-border hover:border-accent/40 transition-all"
+                                            title="Объединить в суперсет с следующим упражнением"
+                                        >
+                                            <Link2 className="w-3 h-3" />
+                                            Суперсет
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    })}
                 </div>
 
                 {/* Статистика сессии */}
@@ -670,11 +1184,14 @@ export default function ProgramDetailPage() {
                         if (filledSets.length === 0) return
                         exercisesWithData.push(ex.id)
                         filledSets.forEach(s => {
-                            const w = parseFloat(s.weight) || 0
-                            const r = parseInt(s.reps) || 0
-                            totalTonnage += w * r
+                            // Разминочные подходы не учитываются в тоннаже
+                            if (s.label !== 'warmup') {
+                                const w = parseFloat(s.weight) || 0
+                                const r = parseInt(s.reps) || 0
+                                totalTonnage += w * r
+                            }
                             totalSetsCount += 1
-                            totalRepsCount += r
+                            totalRepsCount += parseInt(s.reps) || 0
                         })
                     })
 
@@ -682,10 +1199,18 @@ export default function ProgramDetailPage() {
 
                     return (
                         <div className="glass-card p-5 mb-5 border border-accent/20">
-                            <h3 className="text-base font-display font-bold text-white mb-4 flex items-center gap-2">
-                                <span className="text-accent">📊</span> Статистика сессии
+                            <h3 className="text-base font-display font-bold text-white mb-4 flex items-center justify-between gap-2">
+                                <span className="flex items-center gap-2">
+                                    <span className="text-accent">📊</span> Статистика сессии
+                                </span>
+                                {displayDuration !== null && (
+                                    <span className="flex items-center gap-1.5 text-sm font-mono font-bold text-accent">
+                                        <Clock className="w-4 h-4" />
+                                        {formatDuration(displayDuration)}
+                                    </span>
+                                )}
                             </h3>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                                 <div className="rounded-xl bg-bg-elevated p-3 text-center">
                                     <p className="text-2xl font-display font-bold text-accent">{totalTonnage.toLocaleString('ru-RU')}</p>
                                     <p className="text-xs text-text-muted mt-0.5">Тоннаж (кг)</p>
@@ -702,13 +1227,20 @@ export default function ProgramDetailPage() {
                                     <p className="text-2xl font-display font-bold text-white">{totalRepsCount}</p>
                                     <p className="text-xs text-text-muted mt-0.5">Повторений</p>
                                 </div>
+                                <div className="rounded-xl bg-bg-elevated p-3 text-center col-span-2 sm:col-span-1">
+                                    <p className="text-2xl font-display font-bold text-white font-mono">
+                                        {displayDuration !== null ? formatDuration(displayDuration) : '—'}
+                                    </p>
+                                    <p className="text-xs text-text-muted mt-0.5">Время</p>
+                                </div>
                             </div>
                         </div>
                     )
                 })()}
 
                 {/* Кардио */}
-                {currentDay.cardio && (                    <div className="glass-card p-5 mb-5">
+                {currentDay.cardio && (
+                    <div className="glass-card p-5 mb-5">
                         <h3 className="text-base font-display font-bold text-white mb-1">Кардио</h3>
                         <p className="text-text-secondary text-sm">{currentDay.cardio}</p>
                     </div>
@@ -757,24 +1289,25 @@ export default function ProgramDetailPage() {
                         </button>
                     </div>
                 ) : (
-                    <div className="glass-card p-4 flex items-center justify-center gap-2 text-success">
-                        <CheckCircle2 className="w-5 h-5" />
-                        <span className="font-semibold">День {currentDay.dayNumber} завершён</span>
+                    <div className="space-y-3">
+                        <div className="glass-card p-4 flex items-center justify-center gap-2 text-success">
+                            <CheckCircle2 className="w-5 h-5" />
+                            <span className="font-semibold">День {currentDay.dayNumber} завершён</span>
+                        </div>
+                        <button onClick={handleSaveCompleted} disabled={isSaving}
+                            className="glass-button-secondary w-full flex items-center justify-center gap-2 py-3 text-sm">
+                            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : '✏️'}
+                            Сохранить правки в дневник
+                        </button>
                     </div>
                 )}
             </div>
         </div>
 
-        {/* Видео модал */}
         {videoModal && (
-            <VideoModal
-                url={videoModal.url}
-                title={videoModal.title}
-                onClose={() => setVideoModal(null)}
-            />
+            <VideoModal url={videoModal.url} title={videoModal.title} onClose={() => setVideoModal(null)} />
         )}
 
-        {/* Таймер отдыха */}
         {restTimerVisible && (
             <RestTimer onClose={() => setRestTimerVisible(false)} />
         )}
