@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Dumbbell, Activity } from 'lucide-react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { CalendarMonth, CalendarDay, WeekStatus } from '@/lib/services/streaks'
 
 interface Props {
@@ -63,9 +63,8 @@ export default function CalendarGrid({
 
   const navMonth = (delta: number) => {
     if (!onMonthChange) return
-    const nm = month.month + delta
     let y = month.year
-    let m = nm
+    let m = month.month + delta
     if (m < 1) { m = 12; y-- }
     if (m > 12) { m = 1; y++ }
     onMonthChange(y, m)
@@ -78,46 +77,46 @@ export default function CalendarGrid({
   }
 
   return (
-    <div className="glass-card p-4 sm:p-6">
+    <div className="glass-card p-3 sm:p-5">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-display font-bold text-white">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-base font-display font-bold text-white">
           {MONTHS_RU[month.month - 1]} {month.year}
         </h3>
         {onMonthChange && (
           <div className="flex items-center gap-1">
             <button
               onClick={() => navMonth(-1)}
-              className="glass-button-secondary p-2 rounded-xl"
+              className="glass-button-secondary p-1.5 rounded-lg"
               aria-label="Предыдущий месяц"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => navMonth(1)}
-              className="glass-button-secondary p-2 rounded-xl"
+              className="glass-button-secondary p-1.5 rounded-lg"
               aria-label="Следующий месяц"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
       </div>
 
       {/* Weekday headers */}
-      <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2">
+      <div className="grid grid-cols-7 gap-1 mb-1">
         {WEEKDAYS_SHORT.map(d => (
-          <div key={d} className="text-center text-[10px] sm:text-xs text-text-muted font-medium">
+          <div key={d} className="text-center text-[10px] text-text-muted font-medium py-0.5">
             {d}
           </div>
         ))}
       </div>
 
-      {/* Grid */}
-      <div className="grid grid-cols-7 gap-1 sm:gap-2">
+      {/* Grid — фиксированная высота строки */}
+      <div className="grid grid-cols-7 gap-1 auto-rows-[2.5rem] sm:auto-rows-[3rem]">
         {cells.map((cell, i) => {
           if (!cell.date) {
-            return <div key={i} className="aspect-square" />
+            return <div key={i} />
           }
 
           const isToday = cell.date === today
@@ -126,12 +125,15 @@ export default function CalendarGrid({
           const data = cell.data
           const inWeek = cell.inWeek
 
+          const hasCheckin = data?.isScheduledCheckin
+          const checkinDone = data?.checkinCompleted
+
           // Цветовое окрашивание клетки
           let bg = 'bg-bg-elevated/40'
           let textColor = 'text-text-secondary'
 
           if (data?.isTrainingCompleted) {
-            bg = 'bg-accent/30 border-accent/50'
+            bg = 'bg-accent/30'
             textColor = 'text-white'
           } else if (inWeek?.isComplete) {
             bg = 'bg-accent/10'
@@ -140,63 +142,103 @@ export default function CalendarGrid({
             bg = 'bg-danger/10'
             textColor = 'text-text-secondary'
           } else if (inWeek?.isCurrent) {
-            bg = 'bg-accent/5 border-accent/20'
+            bg = 'bg-accent/5'
+          }
+
+          // Чекин — особая рамка
+          if (hasCheckin && !checkinDone) {
+            bg += ' !border-warning/60'
+          } else if (hasCheckin && checkinDone) {
+            bg += ' !border-success/50'
           }
 
           return (
             <button
               key={i}
               onClick={() => handleDayClick(cell)}
-              className={`relative aspect-square rounded-lg border border-transparent flex flex-col items-center justify-center transition-all hover:scale-105 active:scale-95 ${bg} ${
-                isSelected ? 'ring-2 ring-accent' : ''
-              } ${isToday ? 'ring-1 ring-white/40' : ''}`}
+              className={`relative rounded-lg border border-accent/20 flex flex-col items-center transition-all hover:scale-105 active:scale-95 overflow-hidden
+                ${bg}
+                ${isSelected ? 'ring-2 ring-accent' : ''}
+                ${isToday ? 'border-accent/70' : ''}
+              `}
             >
-              <span className={`text-[11px] sm:text-sm font-semibold ${textColor} ${isToday ? 'text-white' : ''}`}>
+              {/* Число */}
+              <span className={`text-[11px] sm:text-xs font-semibold mt-1.5 leading-none ${textColor} ${isToday ? 'text-white' : ''}`}>
                 {day}
               </span>
-              {/* Индикаторы внизу клетки */}
-              <div className="absolute bottom-1 flex gap-0.5">
-                {data?.isTrainingCompleted && (
-                  <span className="w-1 h-1 rounded-full bg-accent" />
-                )}
-                {data?.hasMetric && (
-                  <span className="w-1 h-1 rounded-full bg-info" />
-                )}
-              </div>
+
+              {/* Текст чекина прямо в клетке */}
+              {hasCheckin && (
+                <span className={`text-[8px] leading-tight px-0.5 mt-0.5 text-center line-clamp-2 ${
+                  checkinDone ? 'text-success/80' : 'text-warning/90'
+                }`}>
+                  {checkinDone ? '✓ чекин' : data?.checkinNotes
+                    ? data.checkinNotes.slice(0, 18)
+                    : '📏 чекин'}
+                </span>
+              )}
+
+              {/* Точки-индикаторы (только если нет чекина — иначе текст уже есть) */}
+              {!hasCheckin && (
+                <div className="flex gap-0.5 mt-auto mb-1">
+                  {data?.isTrainingCompleted && (
+                    <span className="w-1 h-1 rounded-full bg-accent" />
+                  )}
+                  {data?.hasMetric && (
+                    <span className="w-1 h-1 rounded-full bg-info" />
+                  )}
+                </div>
+              )}
+
+              {/* Если чекин + тренировка/замер — маленькие точки под текстом */}
+              {hasCheckin && (data?.isTrainingCompleted || data?.hasMetric) && (
+                <div className="flex gap-0.5 mb-0.5">
+                  {data?.isTrainingCompleted && (
+                    <span className="w-1 h-1 rounded-full bg-accent" />
+                  )}
+                  {data?.hasMetric && (
+                    <span className="w-1 h-1 rounded-full bg-info" />
+                  )}
+                </div>
+              )}
             </button>
           )
         })}
       </div>
 
       {/* Legend + summary */}
-      <div className="mt-4 pt-4 border-t border-border space-y-2">
-        <div className="flex items-center gap-4 text-xs text-text-muted flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm bg-accent/50 border border-accent/60" />
-            <span>Тренировка</span>
+      <div className="mt-3 pt-3 border-t border-border space-y-2">
+        {/* Легенда цветов */}
+        <div className="flex items-center gap-3 text-[10px] sm:text-xs text-text-muted flex-wrap">
+          <div className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-sm bg-accent/50 border border-accent/60" />
+            <span>Тренировка выполнена</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm bg-accent/10" />
-            <span>Закрытая неделя</span>
+          <div className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-sm bg-accent/10 border border-accent/20" />
+            <span>Неделя закрыта</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm bg-danger/20" />
-            <span>Пропуски</span>
+          <div className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-sm bg-danger/20 border border-danger/30" />
+            <span>Пропущенная неделя</span>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-info" />
-            <span>Замер</span>
+            <span>Есть замер</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-warning" />
+            <span>Запланирован чекин</span>
           </div>
         </div>
-        <div className="flex items-center gap-4 text-xs text-text-secondary flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <Dumbbell className="w-3.5 h-3.5 text-accent" />
-            <span>{month.trainingsCompleted} тренировок</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Activity className="w-3.5 h-3.5 text-info" />
-            <span>{month.metricsAdded} замеров</span>
-          </div>
+        {/* Итоги месяца */}
+        <div className="flex items-center gap-3 text-[10px] sm:text-xs text-text-secondary flex-wrap">
+          <span className="text-text-muted">За месяц:</span>
+          <span>💪 {month.trainingsCompleted} {month.trainingsCompleted === 1 ? 'тренировка' : month.trainingsCompleted >= 2 && month.trainingsCompleted <= 4 ? 'тренировки' : 'тренировок'}</span>
+          <span>📐 {month.metricsAdded} {month.metricsAdded === 1 ? 'замер' : month.metricsAdded >= 2 && month.metricsAdded <= 4 ? 'замера' : 'замеров'}</span>
+          {month.scheduledCheckins > 0 && (
+            <span>📏 {month.scheduledCheckins} {month.scheduledCheckins === 1 ? 'чекин' : month.scheduledCheckins >= 2 && month.scheduledCheckins <= 4 ? 'чекина' : 'чекинов'} запланировано</span>
+          )}
         </div>
       </div>
     </div>
