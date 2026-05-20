@@ -45,12 +45,22 @@ export interface Exercise {
   reps: string
   targetWeights: number[]   // вес для каждого подхода, длина = sets
   targetWeight?: number     // legacy fallback
+  alternatives?: AlternativeExercise[]  // альтернативные упражнения (2-3 варианта)
   clientData?: {
     actualWeight?: number
     actualReps?: number
     rpe?: number
     comment?: string
   }
+}
+
+export interface AlternativeExercise {
+  id: string
+  name: string
+  videoUrl?: string
+  sets: number
+  reps: string
+  // Веса для альтернатив не проставляются по умолчанию
 }
 
 export interface TrainingEntry {
@@ -63,6 +73,7 @@ export interface TrainingEntry {
   mood?: number
   sleep_quality?: number
   notes?: string
+  workout_duration_seconds?: number
   completed_at?: string
   created_at: string
   updated_at: string
@@ -292,6 +303,7 @@ export async function upsertTrainingEntry(
     mood?: number
     sleep_quality?: number
     notes?: string
+    workout_duration_seconds?: number
   }
 ): Promise<TrainingEntry> {
   const supabase = createClient()
@@ -474,17 +486,41 @@ export async function exportFilledProgram(programId: string): Promise<string> {
     markdown += `## День ${day.dayNumber}: ${day.title}\n\n`
     
     day.exercises.forEach((exercise) => {
-      markdown += `### ${exercise.name}\n`
-      if (exercise.videoUrl) markdown += `[Видео](${exercise.videoUrl})\n`
-      markdown += `- План: ${exercise.sets} x ${exercise.reps}\n`
-      
-      if (entry?.entry_data[exercise.id]) {
-        const clientData = entry.entry_data[exercise.id]
-        markdown += `- Факт: ${clientData.actualWeight || '—'} кг x ${clientData.actualReps || '—'} повт.\n`
-        markdown += `- RPE: ${clientData.rpe || '—'}/10\n`
-        if (clientData.comment) markdown += `- Комментарий: ${clientData.comment}\n`
+      const entryForEx = entry?.entry_data[exercise.id]
+      // Определяем какое упражнение было выполнено (основное или альтернатива)
+      const selectedAltId = entryForEx?.selectedAlternativeId
+      const selectedAlt = selectedAltId
+        ? exercise.alternatives?.find(a => a.id === selectedAltId)
+        : null
+      const performedName = selectedAlt ? selectedAlt.name : exercise.name
+      const performedSets = selectedAlt ? selectedAlt.sets : exercise.sets
+      const performedReps = selectedAlt ? selectedAlt.reps : exercise.reps
+
+      markdown += `### ${performedName}`
+      if (selectedAlt) markdown += ` *(альтернатива к: ${exercise.name})*`
+      markdown += '\n'
+      if (exercise.videoUrl && !selectedAlt) markdown += `[Видео](${exercise.videoUrl})\n`
+      if (selectedAlt?.videoUrl) markdown += `[Видео](${selectedAlt.videoUrl})\n`
+      markdown += `- План: ${performedSets} x ${performedReps}\n`
+
+      if (entryForEx) {
+        if (entryForEx.sets && Array.isArray(entryForEx.sets)) {
+          // Новый формат с подходами
+          const filledSets = entryForEx.sets.filter((s: any) => s.weight || s.reps)
+          if (filledSets.length > 0) {
+            markdown += `- Факт подходов:\n`
+            filledSets.forEach((s: any, i: number) => {
+              markdown += `  - Подход ${i + 1}: ${s.weight || '—'} кг × ${s.reps || '—'} повт.${s.rir ? ` RIR ${s.rir}` : ''}\n`
+            })
+          }
+        } else {
+          // Старый формат
+          markdown += `- Факт: ${entryForEx.actualWeight || '—'} кг x ${entryForEx.actualReps || '—'} повт.\n`
+          markdown += `- RPE: ${entryForEx.rpe || '—'}/10\n`
+        }
+        if (entryForEx.comment) markdown += `- Комментарий: ${entryForEx.comment}\n`
       }
-      
+
       markdown += '\n'
     })
 
@@ -493,6 +529,15 @@ export async function exportFilledProgram(programId: string): Promise<string> {
       markdown += `- Энергия: ${entry.energy_level || '—'}/10\n`
       markdown += `- Настроение: ${entry.mood || '—'}/5\n`
       markdown += `- Сон: ${entry.sleep_quality || '—'}/5\n`
+      if (entry.workout_duration_seconds) {
+        const h = Math.floor(entry.workout_duration_seconds / 3600)
+        const m = Math.floor((entry.workout_duration_seconds % 3600) / 60)
+        const s = entry.workout_duration_seconds % 60
+        const timeStr = h > 0
+          ? `${h}ч ${m}мин`
+          : s > 0 ? `${m}мин ${s}с` : `${m}мин`
+        markdown += `- Время тренировки: ${timeStr}\n`
+      }
       if (entry.notes) markdown += `- Заметки: ${entry.notes}\n`
     }
 
