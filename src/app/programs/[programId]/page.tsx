@@ -55,7 +55,6 @@ interface DayMeta {
 // ─── Метки подходов ───────────────────────────────────────────────────────────
 
 const SET_LABELS: { value: SetLabel; label: string; color: string; bg: string }[] = [
-    { value: 'warmup',  label: 'Разминка',  color: 'text-blue-400',   bg: 'bg-blue-400/20 border-blue-400/40' },
     { value: 'heavy',   label: 'Тяжело',    color: 'text-red-400',    bg: 'bg-red-400/20 border-red-400/40' },
     { value: 'dropset', label: 'Дроп-сет',  color: 'text-purple-400', bg: 'bg-purple-400/20 border-purple-400/40' },
 ]
@@ -240,16 +239,6 @@ function ExerciseCard({
         // Если нажали ту же метку — снимаем, иначе ставим
         const newLabel: SetLabel = current === label ? null : label
         newSets[setIdx] = { ...newSets[setIdx], label: newLabel }
-
-        // Если поставили "разминка" — автоматически добавляем рабочий подход после
-        if (newLabel === 'warmup') {
-            // Проверяем: есть ли уже рабочий подход после этого
-            const hasWorkingAfter = newSets.slice(setIdx + 1).some(s => !s.label || s.label !== 'warmup')
-            if (!hasWorkingAfter) {
-                newSets.push({ weight: '', reps: '', rir: '', setComment: '' })
-            }
-        }
-
         onChange({ ...data, sets: newSets })
     }
 
@@ -415,17 +404,14 @@ function ExerciseCard({
                             const plannedWeight = targetWeights[setIdx] ?? 0
                             const isExtra = setIdx >= plannedSets
                             const labelInfo = getLabelInfo(setData.label ?? null)
-                            const isWarmup = setData.label === 'warmup'
 
                             return (
                                 <div key={setIdx}>
-                                    <div className={`grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 items-center rounded-lg px-1 py-0.5 transition-colors ${
-                                        isWarmup ? 'bg-blue-400/5 border border-blue-400/20' : ''
-                                    }`}>
+                                    <div className={`grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 items-center rounded-lg px-1 py-0.5`}>
                                         {/* Номер подхода */}
                                         <div className="flex flex-col min-w-[44px]">
                                             <div className="flex items-center gap-1">
-                                                <span className={`text-sm font-semibold ${isExtra ? 'text-accent' : isWarmup ? 'text-blue-400' : 'text-white'}`}>
+                                                <span className={`text-sm font-semibold ${isExtra ? 'text-accent' : 'text-white'}`}>
                                                     {setIdx + 1}
                                                     {isExtra && <span className="text-xs ml-0.5">+</span>}
                                                 </span>
@@ -440,15 +426,15 @@ function ExerciseCard({
                                         </div>
                                         <input type="number" step="0.5" value={setData.weight}
                                             onChange={e => updateSet(setIdx, 'weight', e.target.value)}
-                                            className={`glass-input text-sm py-2 px-2 text-center min-w-0 ${isWarmup ? 'opacity-70' : ''}`}
+                                            className="glass-input text-sm py-2 px-2 text-center min-w-0"
                                             placeholder={plannedWeight > 0 ? String(plannedWeight) : '—'} />
                                         <input type="number" value={setData.reps}
                                             onChange={e => updateSet(setIdx, 'reps', e.target.value)}
-                                            className={`glass-input text-sm py-2 px-2 text-center min-w-0 ${isWarmup ? 'opacity-70' : ''}`}
+                                            className="glass-input text-sm py-2 px-2 text-center min-w-0"
                                             placeholder={activeExercise.reps.split('-')[0] || '—'} />
                                         <input type="number" min="0" max="5" value={setData.rir}
                                             onChange={e => updateSet(setIdx, 'rir', e.target.value)}
-                                            className={`glass-input text-sm py-2 px-2 text-center min-w-0 ${isWarmup ? 'opacity-70' : ''}`}
+                                            className="glass-input text-sm py-2 px-2 text-center min-w-0"
                                             placeholder="2" />
 
                                         {/* Кнопка метки — три точки */}
@@ -492,12 +478,6 @@ function ExerciseCard({
                                             </div>
                                         </div>
                                     </div>
-                                    {/* Подпись разминки */}
-                                    {isWarmup && (
-                                        <p className="text-[10px] text-blue-400/70 pl-12 -mt-0.5 mb-0.5">
-                                            Разминочный — не учитывается в тоннаже
-                                        </p>
-                                    )}
                                 </div>
                             )
                         })}
