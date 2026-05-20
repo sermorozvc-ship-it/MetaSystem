@@ -18,6 +18,7 @@ import {
     type Exercise,
 } from '@/lib/services/training'
 import { getMySubscriptionInfo } from '@/lib/services/renewal'
+import { parseMdToJson } from '@/lib/utils/md-parser'
 
 // ─── Типы данных клиента ─────────────────────────────────────────────────────
 
@@ -568,6 +569,33 @@ export default function ProgramDetailPage() {
             try {
                 const data = await getProgramById(programId)
                 if (!data) { router.replace('/programs'); return }
+
+                // Если program_data не содержит новых полей (weekContext, redFlags, dayContext),
+                // дополняем их из program_md на лету — без записи в БД
+                const pd = data.program_data
+                const needsEnrich = data.program_md && (
+                    !pd.weekContext && !pd.redFlags &&
+                    !pd.days?.some(d => d.dayContext)
+                )
+                if (needsEnrich) {
+                    try {
+                        const parsed = parseMdToJson(data.program_md)
+                        data.program_data = {
+                            ...pd,
+                            weeklyNote: pd.weeklyNote ?? parsed.weeklyNote,
+                            weekContext: parsed.weekContext,
+                            redFlags: parsed.redFlags,
+                            days: pd.days.map((day, i) => ({
+                                ...day,
+                                coachNote: day.coachNote ?? parsed.days[i]?.coachNote,
+                                dayContext: parsed.days[i]?.dayContext,
+                            })),
+                        }
+                    } catch (e) {
+                        console.warn('[program] md enrich failed:', e)
+                    }
+                }
+
                 setProgram(data)
             } catch (e) {
                 console.error('Error loading program:', e)
