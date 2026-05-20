@@ -54,9 +54,9 @@ interface DayMeta {
 
 // ─── Метки подходов ───────────────────────────────────────────────────────────
 
-const SET_LABELS: { value: SetLabel; label: string; color: string; bg: string }[] = [
-    { value: 'heavy',   label: 'Тяжело',    color: 'text-red-400',    bg: 'bg-red-400/20 border-red-400/40' },
-    { value: 'dropset', label: 'Дроп-сет',  color: 'text-purple-400', bg: 'bg-purple-400/20 border-purple-400/40' },
+const SET_LABELS: { value: SetLabel; label: string; color: string; bg: string; inputColor: string }[] = [
+    { value: 'heavy',   label: 'Тяжело',    color: 'text-red-400',    bg: 'bg-red-400/20 border-red-400/40',       inputColor: '#f87171' },
+    { value: 'dropset', label: 'Дроп-сет',  color: 'text-purple-400', bg: 'bg-purple-400/20 border-purple-400/40', inputColor: '#c084fc' },
 ]
 
 function getLabelInfo(label: SetLabel) {
@@ -426,15 +426,18 @@ function ExerciseCard({
                                         </div>
                                         <input type="number" step="0.5" value={setData.weight}
                                             onChange={e => updateSet(setIdx, 'weight', e.target.value)}
-                                            className="glass-input text-sm py-2 px-2 text-center min-w-0"
+                                            className="glass-input text-sm py-2 px-2 text-center min-w-0 font-semibold"
+                                            style={labelInfo ? { color: labelInfo.inputColor } : undefined}
                                             placeholder={plannedWeight > 0 ? String(plannedWeight) : '—'} />
                                         <input type="number" value={setData.reps}
                                             onChange={e => updateSet(setIdx, 'reps', e.target.value)}
-                                            className="glass-input text-sm py-2 px-2 text-center min-w-0"
+                                            className="glass-input text-sm py-2 px-2 text-center min-w-0 font-semibold"
+                                            style={labelInfo ? { color: labelInfo.inputColor } : undefined}
                                             placeholder={activeExercise.reps.split('-')[0] || '—'} />
                                         <input type="number" min="0" max="5" value={setData.rir}
                                             onChange={e => updateSet(setIdx, 'rir', e.target.value)}
-                                            className="glass-input text-sm py-2 px-2 text-center min-w-0"
+                                            className="glass-input text-sm py-2 px-2 text-center min-w-0 font-semibold"
+                                            style={labelInfo ? { color: labelInfo.inputColor } : undefined}
                                             placeholder="2" />
 
                                         {/* Кнопка метки — три точки */}
