@@ -16,7 +16,6 @@ import {
     completeTrainingDay,
     type TrainingProgram,
     type Exercise,
-    type AlternativeExercise,
 } from '@/lib/services/training'
 import { getMySubscriptionInfo } from '@/lib/services/renewal'
 
