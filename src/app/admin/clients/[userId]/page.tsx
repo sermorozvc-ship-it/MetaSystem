@@ -748,7 +748,8 @@ function buildFilledMd(program: TrainingProgram, entries: TrainingEntry[]): stri
                             const w = s.weight ? `${s.weight} кг` : '—'
                             const r = s.reps ? `${s.reps} повт.` : '—'
                             const rir = s.rir !== undefined && s.rir !== '' ? `RIR ${s.rir}` : ''
-                            const setLine = `- **Подход ${i + 1}:** ${w} × ${r}${rir ? ` • ${rir}` : ''}${s.setComment ? ` _(${s.setComment})_` : ''}`
+                            const labelStr = s.label === 'heavy' ? ' 🔴 Тяжело' : s.label === 'dropset' ? ' 🟣 Дроп-сет' : s.label === 'warmup' ? ' 🔵 Разминка' : ''
+                            const setLine = `- **Подход ${i + 1}:** ${w} × ${r}${rir ? ` • ${rir}` : ''}${labelStr}${s.setComment ? ` _(${s.setComment})_` : ''}`
                             lines.push(setLine)
                             // Считаем статистику
                             const wNum = parseFloat(s.weight) || 0
@@ -1181,8 +1182,13 @@ function ProgramCard({ program, onDelete, onUpdate }: {
                                                                 {cd.sets && Array.isArray(cd.sets) ? (
                                                                     <div className="space-y-0.5">
                                                                         {cd.sets.map((s: any, i: number) => (
-                                                                            <div key={i} className="text-xs text-accent">
-                                                                                Подход {i + 1}: {s.weight ? `${s.weight} кг` : '—'} × {s.reps ? `${s.reps} повт.` : '—'}{s.rir !== undefined && s.rir !== '' ? ` • RIR ${s.rir}` : ''}
+                                                                            <div key={i} className="text-xs">
+                                                                                <span className={s.label === 'heavy' ? 'text-red-400' : s.label === 'dropset' ? 'text-purple-400' : s.label === 'warmup' ? 'text-blue-400' : 'text-accent'}>
+                                                                                    Подход {i + 1}: {s.weight ? `${s.weight} кг` : '—'} × {s.reps ? `${s.reps} повт.` : '—'}{s.rir !== undefined && s.rir !== '' ? ` • RIR ${s.rir}` : ''}
+                                                                                    {s.label === 'heavy' && <span className="ml-1 text-red-400/80">🔴 Тяжело</span>}
+                                                                                    {s.label === 'dropset' && <span className="ml-1 text-purple-400/80">🟣 Дроп-сет</span>}
+                                                                                    {s.label === 'warmup' && <span className="ml-1 text-blue-400/80">🔵 Разминка</span>}
+                                                                                </span>
                                                                                 {s.setComment && <span className="text-text-muted ml-1">— {s.setComment}</span>}
                                                                             </div>
                                                                         ))}
@@ -1229,15 +1235,29 @@ function ProgramCard({ program, onDelete, onUpdate }: {
                                                     }
                                                 })
                                                 if (exCount === 0) return null
+                                                const dur = entry.workout_duration_seconds
+                                                const durStr = dur
+                                                    ? (() => {
+                                                        const h = Math.floor(dur / 3600)
+                                                        const m = Math.floor((dur % 3600) / 60)
+                                                        const s = dur % 60
+                                                        return h > 0
+                                                            ? `${h}ч ${m}мин`
+                                                            : m > 0
+                                                                ? `${m}мин ${s}с`
+                                                                : `${s}с`
+                                                    })()
+                                                    : null
                                                 return (
                                                     <div className="mt-3 pt-3 border-t border-border/40">
                                                         <p className="text-xs text-text-muted mb-2 font-semibold">📊 Статистика сессии</p>
-                                                        <div className="grid grid-cols-4 gap-2">
+                                                        <div className={`grid gap-2 ${durStr ? 'grid-cols-5' : 'grid-cols-4'}`}>
                                                             {[
                                                                 { label: 'Тоннаж', value: `${tonnage.toLocaleString('ru-RU')} кг`, color: 'text-accent' },
                                                                 { label: 'Упражнений', value: exCount, color: 'text-white' },
                                                                 { label: 'Подходов', value: setsCount, color: 'text-white' },
                                                                 { label: 'Повторений', value: repsCount, color: 'text-white' },
+                                                                ...(durStr ? [{ label: 'Время', value: durStr, color: 'text-white' }] : []),
                                                             ].map(stat => (
                                                                 <div key={stat.label} className="rounded-lg bg-bg-main p-2 text-center">
                                                                     <p className={`text-sm font-bold ${stat.color}`}>{stat.value}</p>
