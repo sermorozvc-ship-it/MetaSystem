@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import {
     ArrowLeft, Play, CheckCircle2, Loader2, ChevronLeft, ChevronRight,
     X, Maximize2, Minimize2, ChevronDown, ChevronUp, Timer, Clock,
-    Lock, RefreshCw, GripVertical, Link2,
+    Lock, RefreshCw, Link2,
 } from 'lucide-react'
 import RestTimer from '@/components/RestTimer'
 import { useAuth } from '@/lib/auth'
@@ -180,7 +180,6 @@ function ExerciseCard({
     onToggleCollapse,
     supersetLabel,
     isDragging,
-    dragHandleProps,
 }: {
     exercise: Exercise
     index: number
@@ -190,9 +189,8 @@ function ExerciseCard({
     onTimerStart: () => void
     collapsed: boolean
     onToggleCollapse: () => void
-    supersetLabel?: string   // напр. "A" или "B"
+    supersetLabel?: string
     isDragging?: boolean
-    dragHandleProps?: React.HTMLAttributes<HTMLDivElement>
 }) {
     const [showAltMenu, setShowAltMenu] = useState(false)
     const altMenuRef = useRef<HTMLDivElement>(null)
@@ -279,17 +277,7 @@ function ExerciseCard({
 
     return (
         <div className={`overflow-hidden transition-all duration-200 ${isDragging ? 'opacity-50' : ''}`}>
-            {/* Drag handle — отдельная полоска над карточкой */}
-            <div
-                {...dragHandleProps}
-                className="flex items-center justify-center h-5 cursor-grab active:cursor-grabbing touch-none rounded-t-xl bg-bg-elevated/60 border border-b-0 border-border/40 hover:bg-accent/10 transition-colors group"
-                onClick={e => e.stopPropagation()}
-                title="Перетащить упражнение"
-            >
-                <GripVertical className="w-3.5 h-3.5 text-border/60 group-hover:text-accent transition-colors" />
-            </div>
-
-            <div className={`glass-card rounded-t-none transition-all duration-200 ${collapsed ? 'opacity-70' : ''} ${isDragging ? 'ring-2 ring-accent shadow-glow-accent' : ''}`}>
+            <div className={`glass-card transition-all duration-200 ${collapsed ? 'opacity-70' : ''} ${isDragging ? 'ring-2 ring-accent shadow-glow-accent' : ''}`}>
             {/* Заголовок */}
             <div className="p-4 cursor-pointer select-none" onClick={onToggleCollapse}>
                 <div className="flex items-start justify-between gap-2 mb-2">
@@ -1146,9 +1134,6 @@ export default function ProgramDetailPage() {
                                         })}
                                         supersetLabel={ssLabel}
                                         isDragging={draggedId === exercise.id}
-                                        dragHandleProps={{
-                                            onTouchStart: (e: React.TouchEvent) => handleTouchStart(e, exercise.id),
-                                        }}
                                     />
                                 </div>
 
