@@ -278,21 +278,22 @@ function ExerciseCard({
     }, 0)
 
     return (
-        <div className={`glass-card overflow-hidden transition-all duration-200 ${collapsed ? 'opacity-70' : ''} ${isDragging ? 'ring-2 ring-accent shadow-glow-accent' : ''}`}>
+        <div className={`overflow-hidden transition-all duration-200 ${isDragging ? 'opacity-50' : ''}`}>
+            {/* Drag handle — отдельная полоска над карточкой */}
+            <div
+                {...dragHandleProps}
+                className="flex items-center justify-center h-5 cursor-grab active:cursor-grabbing touch-none rounded-t-xl bg-bg-elevated/60 border border-b-0 border-border/40 hover:bg-accent/10 transition-colors group"
+                onClick={e => e.stopPropagation()}
+                title="Перетащить упражнение"
+            >
+                <GripVertical className="w-3.5 h-3.5 text-border/60 group-hover:text-accent transition-colors" />
+            </div>
+
+            <div className={`glass-card rounded-t-none transition-all duration-200 ${collapsed ? 'opacity-70' : ''} ${isDragging ? 'ring-2 ring-accent shadow-glow-accent' : ''}`}>
             {/* Заголовок */}
             <div className="p-4 cursor-pointer select-none" onClick={onToggleCollapse}>
                 <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex items-start gap-2 flex-1 min-w-0">
-                        {/* Drag handle */}
-                        <div
-                            {...dragHandleProps}
-                            className="flex-shrink-0 mt-1 cursor-grab active:cursor-grabbing touch-none p-1 -ml-1 rounded text-text-muted hover:text-accent transition-colors"
-                            onClick={e => e.stopPropagation()}
-                            title="Перетащить упражнение"
-                        >
-                            <GripVertical className="w-4 h-4" />
-                        </div>
-
                         {/* Суперсет-метка */}
                         {supersetLabel && (
                             <span className="flex-shrink-0 mt-0.5 w-6 h-6 rounded-lg bg-accent/20 border border-accent/40 flex items-center justify-center text-xs font-bold text-accent">
@@ -408,7 +409,6 @@ function ExerciseCard({
                             <div>RIR</div>
                             <div className="w-6" />
                         </div>
-
                         {Array.from({ length: totalSets }).map((_, setIdx) => {
                             const setData = data.sets[setIdx] || { weight: '', reps: '', rir: '', setComment: '' }
                             const plannedWeight = targetWeights[setIdx] ?? 0
@@ -516,6 +516,7 @@ function ExerciseCard({
                     </div>
                 </div>
             )}
+            </div>
         </div>
     )
 }
