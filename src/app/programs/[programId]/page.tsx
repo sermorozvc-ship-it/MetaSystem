@@ -632,6 +632,17 @@ export default function ProgramDetailPage() {
                         setElapsedSeconds(0)
                     } else {
                         setSavedDuration(null)
+                        // Восстанавливаем таймер из localStorage если был запущен
+                        const key = `workout_start_${program.id}_${currentDay.dayNumber}`
+                        const saved = localStorage.getItem(key)
+                        if (saved) {
+                            const startTime = parseInt(saved)
+                            setWorkoutStartTime(startTime)
+                            setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000))
+                        } else {
+                            setWorkoutStartTime(null)
+                            setElapsedSeconds(0)
+                        }
                     }
                 } else {
                     setExerciseData({})
@@ -640,8 +651,17 @@ export default function ProgramDetailPage() {
                     setSleepQuality(3)
                     setNotes('')
                     setSavedDuration(null)
-                    setWorkoutStartTime(null)
-                    setElapsedSeconds(0)
+                    // Восстанавливаем таймер из localStorage если был запущен
+                    const key = `workout_start_${program.id}_${currentDay.dayNumber}`
+                    const saved = localStorage.getItem(key)
+                    if (saved) {
+                        const startTime = parseInt(saved)
+                        setWorkoutStartTime(startTime)
+                        setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000))
+                    } else {
+                        setWorkoutStartTime(null)
+                        setElapsedSeconds(0)
+                    }
                     setSupersets([])
                     setExerciseOrder(program.program_data.days[currentDayIndex]?.exercises.map(e => e.id) || [])
                 }
@@ -660,8 +680,14 @@ export default function ProgramDetailPage() {
 
     const startTimerIfNeeded = useCallback(() => {
         if (workoutStartTime !== null) return
-        setWorkoutStartTime(Date.now())
-    }, [workoutStartTime])
+        const now = Date.now()
+        // Сохраняем в localStorage чтобы пережить перезагрузку
+        if (program) {
+            const key = `workout_start_${program.id}_${program.program_data.days[currentDayIndex]?.dayNumber}`
+            localStorage.setItem(key, String(now))
+        }
+        setWorkoutStartTime(now)
+    }, [workoutStartTime, program, currentDayIndex])
 
     useEffect(() => {
         if (workoutStartTime === null) return
@@ -740,6 +766,8 @@ export default function ProgramDetailPage() {
             setCompletedDays(prev => new Set([...prev, currentDay.dayNumber]))
             setSavedDuration(finalDuration ?? null)
             setWorkoutStartTime(null)
+            // Очищаем сохранённое время старта
+            localStorage.removeItem(`workout_start_${program.id}_${currentDay.dayNumber}`)
             setSaveMessage('✓ Тренировка завершена!')
             setTimeout(() => setSaveMessage(''), 3000)
         } catch (e) {
