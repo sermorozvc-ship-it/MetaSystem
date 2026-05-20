@@ -27,6 +27,8 @@ export interface ProgramData {
   weeklyNote?: string    // краткая рекомендация тренера на неделю (**Рекомендация:**)
   weekContext?: string   // контекст недели (**Контекст недели:**), многострочный
   redFlags?: string      // красные флаги (**Красные флаги:**), многострочный
+  checkin?: string       // блок чек-ина (## 📊 Чек-ин в конце недели)
+  loggingNote?: string   // памятка по логированию (## Памятка по логированию)
 }
 
 export interface TrainingDay {

@@ -29,6 +29,8 @@ type MultilineBlock =
   | 'redFlags'
   | 'coachNote'
   | 'dayContext'
+  | 'checkin'
+  | 'loggingNote'
   | null
 
 export function parseMdToJson(markdown: string): ProgramData {
@@ -58,6 +60,8 @@ export function parseMdToJson(markdown: string): ProgramData {
   let weeklyNote = ''
   let weekContext = ''
   let redFlags = ''
+  let checkin = ''
+  let loggingNote = ''
 
   // Текущий активный многострочный блок
   let currentBlock: MultilineBlock = null
@@ -69,6 +73,8 @@ export function parseMdToJson(markdown: string): ProgramData {
     if (currentBlock === 'weeklyNote') weeklyNote += (weeklyNote ? sep : '') + text
     else if (currentBlock === 'weekContext') weekContext += (weekContext ? sep : '') + text
     else if (currentBlock === 'redFlags') redFlags += (redFlags ? sep : '') + text
+    else if (currentBlock === 'checkin') checkin += (checkin ? sep : '') + text
+    else if (currentBlock === 'loggingNote') loggingNote += (loggingNote ? sep : '') + text
     else if (currentBlock === 'coachNote' && currentDay) {
       currentDay.coachNote = (currentDay.coachNote ? currentDay.coachNote + sep : '') + text
     } else if (currentBlock === 'dayContext' && currentDay) {
@@ -77,6 +83,22 @@ export function parseMdToJson(markdown: string): ProgramData {
   }
 
   for (const line of lines) {
+    // ── Специальные ## секции (Чек-ин, Памятка) ────────────────────────────
+    if (line.match(/^##\s+.*чек.?ин/i)) {
+      if (currentExercise && currentDay) { currentDay.exercises.push(currentExercise); currentExercise = null }
+      if (currentDay) { days.push(currentDay); currentDay = null }
+      parsingAlternatives = false
+      currentBlock = 'checkin'
+      continue
+    }
+    if (line.match(/^##\s+.*памятк/i) || line.match(/^##\s+.*логирован/i)) {
+      if (currentExercise && currentDay) { currentDay.exercises.push(currentExercise); currentExercise = null }
+      if (currentDay) { days.push(currentDay); currentDay = null }
+      parsingAlternatives = false
+      currentBlock = 'loggingNote'
+      continue
+    }
+
     // ── Переход к новому дню — сбрасываем всё ──────────────────────────────
     const dayMatch =
       line.match(/^##\s+(?:.*?)?День\s*(\d+):?\s*(.*)/i) ||
@@ -298,6 +320,8 @@ export function parseMdToJson(markdown: string): ProgramData {
     weeklyNote: trim(weeklyNote) || undefined,
     weekContext: trim(weekContext) || undefined,
     redFlags: trim(redFlags) || undefined,
+    checkin: trim(checkin) || undefined,
+    loggingNote: trim(loggingNote) || undefined,
   }
 }
 

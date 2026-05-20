@@ -495,6 +495,52 @@ function SupersetDivider({ label, onRemove }: { label: string; onRemove: () => v
     )
 }
 
+// ─── Чек-ин блок ─────────────────────────────────────────────────────────────
+
+function CheckinBlock({ text }: { text: string }) {
+    const [collapsed, setCollapsed] = useState(true)
+    return (
+        <div className="glass-card mb-5 overflow-hidden">
+            <button
+                onClick={() => setCollapsed(v => !v)}
+                className="w-full flex items-center gap-2 px-5 py-4 text-left"
+            >
+                <span className="text-base flex-shrink-0">📊</span>
+                <span className="text-base font-display font-bold text-white flex-1">Чек-ин в конце недели</span>
+                <ChevronDown className={`w-4 h-4 text-text-muted transition-transform duration-200 ${collapsed ? '' : 'rotate-180'}`} />
+            </button>
+            {!collapsed && (
+                <div className="px-5 pb-5">
+                    <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">{text}</p>
+                </div>
+            )}
+        </div>
+    )
+}
+
+// ─── Памятка по логированию ───────────────────────────────────────────────────
+
+function LoggingNoteBlock({ text }: { text: string }) {
+    const [collapsed, setCollapsed] = useState(true)
+    return (
+        <div className="glass-card mb-5 overflow-hidden">
+            <button
+                onClick={() => setCollapsed(v => !v)}
+                className="w-full flex items-center gap-2 px-5 py-4 text-left"
+            >
+                <span className="text-base flex-shrink-0">📝</span>
+                <span className="text-base font-display font-bold text-white flex-1">Памятка по логированию</span>
+                <ChevronDown className={`w-4 h-4 text-text-muted transition-transform duration-200 ${collapsed ? '' : 'rotate-180'}`} />
+            </button>
+            {!collapsed && (
+                <div className="px-5 pb-5">
+                    <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">{text}</p>
+                </div>
+            )}
+        </div>
+    )
+}
+
 // ─── Главная страница ─────────────────────────────────────────────────────────
 
 export default function ProgramDetailPage() {
@@ -523,7 +569,7 @@ export default function ProgramDetailPage() {
     const [isWeeklyNoteCollapsed, setIsWeeklyNoteCollapsed] = useState(false)
     const [isWeekContextCollapsed, setIsWeekContextCollapsed] = useState(true)
     const [isRedFlagsCollapsed, setIsRedFlagsCollapsed] = useState(true)
-    const [isDayNoteCollapsed, setIsDayNoteCollapsed] = useState(false)
+    const [isDayNoteCollapsed, setIsDayNoteCollapsed] = useState(true)
     const [isDayContextCollapsed, setIsDayContextCollapsed] = useState(true)
     const [restTimerVisible, setRestTimerVisible] = useState(false)
 
@@ -585,6 +631,8 @@ export default function ProgramDetailPage() {
                             weeklyNote: pd.weeklyNote ?? parsed.weeklyNote,
                             weekContext: parsed.weekContext,
                             redFlags: parsed.redFlags,
+                            checkin: parsed.checkin,
+                            loggingNote: parsed.loggingNote,
                             days: pd.days.map((day, i) => ({
                                 ...day,
                                 coachNote: day.coachNote ?? parsed.days[i]?.coachNote,
@@ -613,7 +661,7 @@ export default function ProgramDetailPage() {
         if (!currentDay) return
         setCollapsedExercises(new Set(currentDay.exercises.map(e => e.id)))
         // Сбрасываем состояние дневных блоков
-        setIsDayNoteCollapsed(false)
+        setIsDayNoteCollapsed(true)
         setIsDayContextCollapsed(true)
         setIsWeekContextCollapsed(true)
     }, [program, currentDayIndex])
@@ -1304,6 +1352,16 @@ export default function ProgramDetailPage() {
                         <h3 className="text-base font-display font-bold text-white mb-1">Кардио</h3>
                         <p className="text-text-secondary text-sm">{currentDay.cardio}</p>
                     </div>
+                )}
+
+                {/* Чек-ин в конце недели — показываем на последнем дне */}
+                {currentDayIndex === program.program_data.days.length - 1 && program.program_data.checkin && (
+                    <CheckinBlock text={program.program_data.checkin} />
+                )}
+
+                {/* Памятка по логированию — показываем на последнем дне */}
+                {currentDayIndex === program.program_data.days.length - 1 && program.program_data.loggingNote && (
+                    <LoggingNoteBlock text={program.program_data.loggingNote} />
                 )}
 
                 {/* Статистика сессии */}
