@@ -30,12 +30,20 @@ export interface StreakStats {
   weeksToMilestone: number | null
   history: WeekStatus[]       // от старых к новым
   isInDanger: boolean         // текущая неделя завершилась, но не закрыта (streak порвётся со следующей закрытой)
+  currentWeekProgress: {      // прогресс текущей (незакрытой) недели
+    completed: number
+    required: number
+  } | null
 }
 
 export interface CalendarDay {
   date: string                // ISO YYYY-MM-DD
   isTrainingCompleted: boolean    // в этот день клиент завершил тренировку
   hasMetric: boolean              // в этот день есть запись метрик
+  isScheduledCheckin: boolean     // в этот день запланирован чекин (замеры/фото)
+  checkinId?: string              // id записи в scheduled_checkins
+  checkinNotes?: string           // заметка тренера к чекину
+  checkinCompleted: boolean       // чекин уже выполнен
   programId?: string
   programWeek?: number
   dayNumber?: number              // номер дня в программе (если завершено)
@@ -49,6 +57,7 @@ export interface CalendarMonth {
   // Сводка по месяцу
   trainingsCompleted: number
   metricsAdded: number
+  scheduledCheckins: number   // кол-во запланированных чекинов в месяце
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -181,6 +190,12 @@ export function calculateStreakStats(history: WeekStatus[]): StreakStats {
   const nextMilestone = MILESTONES.find(m => m > currentStreak) ?? null
   const weeksToMilestone = nextMilestone ? nextMilestone - currentStreak : null
 
+  // Прогресс текущей незакрытой недели (для мотивационного отображения)
+  const currentWeek = history.find(w => w.isCurrent)
+  const currentWeekProgress = (currentWeek && !currentWeek.isComplete)
+    ? { completed: currentWeek.completedCount, required: currentWeek.requiredCount }
+    : null
+
   return {
     currentStreak,
     bestStreak,
@@ -190,6 +205,7 @@ export function calculateStreakStats(history: WeekStatus[]): StreakStats {
     weeksToMilestone,
     history,
     isInDanger,
+    currentWeekProgress,
   }
 }
 
@@ -272,7 +288,8 @@ export function buildCalendarMonth(
   month: number, // 1-12
   programs: TrainingProgram[],
   entries: TrainingEntry[],
-  metrics: ClientMetric[]
+  metrics: ClientMetric[],
+  scheduledCheckins: Array<{ id: string; scheduled_date: string; notes?: string; completed_at?: string }> = []
 ): CalendarMonth {
   const days: Record<string, CalendarDay> = {}
 
@@ -281,7 +298,13 @@ export function buildCalendarMonth(
   const lastDay = `${year}-${String(month).padStart(2, '0')}-${String(lastDate).padStart(2, '0')}`
 
   const ensureDay = (d: string): CalendarDay => {
-    if (!days[d]) days[d] = { date: d, isTrainingCompleted: false, hasMetric: false }
+    if (!days[d]) days[d] = {
+      date: d,
+      isTrainingCompleted: false,
+      hasMetric: false,
+      isScheduledCheckin: false,
+      checkinCompleted: false,
+    }
     return days[d]
   }
 
@@ -314,26 +337,53 @@ export function buildCalendarMonth(
     day.hasMetric = true
   }
 
+  // Запланированные чекины → жёлтая точка
+  for (const c of scheduledCheckins) {
+    const d = isoDateOnly(c.scheduled_date)
+    if (d < firstDay || d > lastDay) continue
+    const day = ensureDay(d)
+    day.isScheduledCheckin = true
+    day.checkinId = c.id
+    day.checkinNotes = c.notes
+    day.checkinCompleted = !!c.completed_at
+  }
+
   const trainingsCompleted = Object.values(days).filter(d => d.isTrainingCompleted).length
   const metricsAdded = Object.values(days).filter(d => d.hasMetric).length
+  const scheduledCheckinsCount = Object.values(days).filter(d => d.isScheduledCheckin).length
 
-  return { year, month, days, trainingsCompleted, metricsAdded }
+  return { year, month, days, trainingsCompleted, metricsAdded, scheduledCheckins: scheduledCheckinsCount }
 }
 
 export async function getMyCalendarMonth(year: number, month: number): Promise<CalendarMonth> {
-  const [{ programs, entries }, metrics] = await Promise.all([
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return buildCalendarMonth(year, month, [], [], [], [])
+
+  const [{ programs, entries }, metrics, checkinsRes] = await Promise.all([
     loadMyTrainingData(),
     loadMyMetrics(),
+    supabase
+      .from('scheduled_checkins')
+      .select('id,scheduled_date,notes,completed_at')
+      .eq('user_id', user.id),
   ])
-  return buildCalendarMonth(year, month, programs, entries, metrics)
+  const checkins = (checkinsRes.data || []) as Array<{ id: string; scheduled_date: string; notes?: string; completed_at?: string }>
+  return buildCalendarMonth(year, month, programs, entries, metrics, checkins)
 }
 
 export async function getClientCalendarMonth(userId: string, year: number, month: number): Promise<CalendarMonth> {
-  const [{ programs, entries }, metrics] = await Promise.all([
+  const supabase = createClient()
+  const [{ programs, entries }, metrics, checkinsRes] = await Promise.all([
     loadClientTrainingData(userId),
     loadClientMetrics(userId),
+    supabase
+      .from('scheduled_checkins')
+      .select('id,scheduled_date,notes,completed_at')
+      .eq('user_id', userId),
   ])
-  return buildCalendarMonth(year, month, programs, entries, metrics)
+  const checkins = (checkinsRes.data || []) as Array<{ id: string; scheduled_date: string; notes?: string; completed_at?: string }>
+  return buildCalendarMonth(year, month, programs, entries, metrics, checkins)
 }
 
 /**
@@ -346,13 +396,19 @@ export async function getClientStreakAndCalendar(
   year: number,
   month: number
 ): Promise<{ stats: StreakStats; calendar: CalendarMonth }> {
-  const [{ programs, entries }, metrics] = await Promise.all([
+  const supabase = createClient()
+  const [{ programs, entries }, metrics, checkinsRes] = await Promise.all([
     loadClientTrainingData(userId),
     loadClientMetrics(userId),
+    supabase
+      .from('scheduled_checkins')
+      .select('id,scheduled_date,notes,completed_at')
+      .eq('user_id', userId),
   ])
+  const checkins = (checkinsRes.data || []) as Array<{ id: string; scheduled_date: string; notes?: string; completed_at?: string }>
   const history = buildWeeksHistory(programs, entries)
   const stats = calculateStreakStats(history)
-  const calendar = buildCalendarMonth(year, month, programs, entries, metrics)
+  const calendar = buildCalendarMonth(year, month, programs, entries, metrics, checkins)
   return { stats, calendar }
 }
 
@@ -365,7 +421,8 @@ export function rebuildCalendarMonth(
   month: number,
   programs: TrainingProgram[],
   entries: TrainingEntry[],
-  metrics: ClientMetric[]
+  metrics: ClientMetric[],
+  scheduledCheckins: Array<{ id: string; scheduled_date: string; notes?: string; completed_at?: string }> = []
 ): CalendarMonth {
-  return buildCalendarMonth(year, month, programs, entries, metrics)
+  return buildCalendarMonth(year, month, programs, entries, metrics, scheduledCheckins)
 }

@@ -13,6 +13,7 @@ export type NotificationType =
   | 'message_received'
   | 'subscription_expiring'
   | 'subscription_expired'
+  | 'scheduled_checkin'
 
 export interface Notification {
   id: string

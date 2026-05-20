@@ -273,36 +273,60 @@ async function getClientStreakAndCalendarFull(userId: string, year: number, mont
     const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
 
-    const [programsRes, entriesRes, metricsRes] = await Promise.all([
+    const [programsRes, entriesRes, metricsRes, checkinsRes] = await Promise.all([
         supabase.from('training_programs').select('*').eq('user_id', userId).order('week_number'),
         supabase.from('training_entries').select('*').eq('user_id', userId),
         supabase.from('client_metrics').select('id,user_id,measured_at,weight_kg,notes').eq('user_id', userId),
+        supabase.from('scheduled_checkins').select('id,scheduled_date,notes,completed_at').eq('user_id', userId),
     ])
 
     const programs = (programsRes.data || []) as TP[]
     const entries = (entriesRes.data || []) as TE[]
     const metrics = (metricsRes.data || []) as CM[]
+    const checkins = (checkinsRes.data || []) as Array<{ id: string; scheduled_date: string; notes?: string; completed_at?: string }>
 
     const history = buildWeeksHistory(programs, entries)
     const stats = calculateStreakStats(history)
-    const calendar = buildCalendarMonth(year, month, programs, entries, metrics)
+    const calendar = buildCalendarMonth(year, month, programs, entries, metrics, checkins)
 
-    return { stats, calendar, programs, entries, metrics }
+    return { stats, calendar, programs, entries, metrics, checkins }
 }
 
 // ─── Модалка деталей дня для админа ────────────────────────────────────────
 function AdminDayDetailsModal({
     date,
     data,
+    userId,
     onClose,
+    onCheckinDeleted,
 }: {
     date: string
     data: CalendarDay | null
+    userId: string
     onClose: () => void
+    onCheckinDeleted?: (checkinId: string) => void
 }) {
+    const [deletingCheckin, setDeletingCheckin] = useState(false)
+
     const formattedDate = new Date(date + 'T12:00:00').toLocaleDateString('ru-RU', {
         weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
     })
+
+    const handleDeleteCheckin = async () => {
+        if (!data?.checkinId) return
+        setDeletingCheckin(true)
+        try {
+            const { createClient } = await import('@/lib/supabase/client')
+            const supabase = createClient()
+            await supabase.from('scheduled_checkins').delete().eq('id', data.checkinId)
+            onCheckinDeleted?.(data.checkinId)
+            onClose()
+        } catch (e) {
+            console.error('Delete checkin error:', e)
+        } finally {
+            setDeletingCheckin(false)
+        }
+    }
 
     return (
         <div
@@ -357,6 +381,38 @@ function AdminDayDetailsModal({
                             </div>
                         </div>
                     )}
+
+                    {data?.isScheduledCheckin && (
+                        <div className={`p-4 rounded-xl border flex items-start gap-3 ${
+                            data.checkinCompleted
+                                ? 'bg-success/10 border-success/20'
+                                : 'bg-warning/10 border-warning/20'
+                        }`}>
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                                data.checkinCompleted ? 'bg-success/20' : 'bg-warning/20'
+                            }`}>
+                                <span className="text-lg">{data.checkinCompleted ? '✅' : '📏'}</span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-white">
+                                    {data.checkinCompleted ? 'Чекин выполнен' : 'Запланирован чекин'}
+                                </p>
+                                {data.checkinNotes && (
+                                    <p className="text-xs text-text-muted mt-0.5">{data.checkinNotes}</p>
+                                )}
+                                {!data.checkinCompleted && (
+                                    <button
+                                        onClick={handleDeleteCheckin}
+                                        disabled={deletingCheckin}
+                                        className="mt-2 text-xs text-danger hover:underline flex items-center gap-1"
+                                    >
+                                        {deletingCheckin ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                                        Удалить чекин
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
@@ -370,10 +426,17 @@ function ClientActivityView({ userId }: { userId: string }) {
     // Кешируем сырые данные чтобы не перезапрашивать при смене месяца
     const [rawData, setRawData] = useState<{
         programs: TP[]; entries: TE[]; metrics: CM[]
+        checkins: Array<{ id: string; scheduled_date: string; notes?: string; completed_at?: string }>
     } | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [selected, setSelected] = useState<{ date: string; data: CalendarDay | null } | null>(null)
+
+    // Форма добавления чекина
+    const [checkinDate, setCheckinDate] = useState('')
+    const [checkinNotes, setCheckinNotes] = useState('')
+    const [addingCheckin, setAddingCheckin] = useState(false)
+    const [checkinMsg, setCheckinMsg] = useState('')
 
     const today = new Date()
     const [ym, setYm] = useState({ year: today.getFullYear(), month: today.getMonth() + 1 })
@@ -385,12 +448,12 @@ function ClientActivityView({ userId }: { userId: string }) {
             setLoading(true)
             setError(null)
             try {
-                const { stats: s, calendar: c, programs, entries, metrics } =
+                const { stats: s, calendar: c, programs, entries, metrics, checkins } =
                     await getClientStreakAndCalendarFull(userId, ym.year, ym.month)
                 if (cancelled) return
                 setStats(s)
                 setCalendar(c)
-                setRawData({ programs, entries, metrics })
+                setRawData({ programs, entries, metrics, checkins })
             } catch (e: any) {
                 if (cancelled) return
                 setError(e?.message || 'Не удалось загрузить активность')
@@ -406,9 +469,74 @@ function ClientActivityView({ userId }: { userId: string }) {
     // При смене месяца — пересчитываем календарь из кеша, без новых запросов
     useEffect(() => {
         if (!rawData) return
-        const c = rebuildCalendarMonth(ym.year, ym.month, rawData.programs, rawData.entries, rawData.metrics)
+        const c = rebuildCalendarMonth(ym.year, ym.month, rawData.programs, rawData.entries, rawData.metrics, rawData.checkins)
         setCalendar(c)
     }, [ym, rawData])
+
+    const handleAddCheckin = async () => {
+        if (!checkinDate) return
+        setAddingCheckin(true)
+        setCheckinMsg('')
+        try {
+            const { createClient } = await import('@/lib/supabase/client')
+            const supabase = createClient()
+            const { data: { user } } = await supabase.auth.getUser()
+
+            // Upsert чекина
+            const { data, error } = await supabase
+                .from('scheduled_checkins')
+                .upsert(
+                    {
+                        user_id: userId,
+                        scheduled_date: checkinDate,
+                        notes: checkinNotes.trim() || null,
+                        created_by: user?.id || null,
+                        updated_at: new Date().toISOString(),
+                    },
+                    { onConflict: 'user_id,scheduled_date' }
+                )
+                .select()
+                .single()
+
+            if (error) throw error
+
+            // Уведомление клиенту
+            const dateFormatted = new Date(checkinDate + 'T12:00:00').toLocaleDateString('ru-RU', {
+                day: 'numeric', month: 'long',
+            })
+            await supabase.from('notifications').insert({
+                user_id: userId,
+                type: 'scheduled_checkin',
+                title: '📏 Запланирован чекин',
+                message: `Тренер назначил замеры и фото-контроль на ${dateFormatted}.${checkinNotes.trim() ? ` ${checkinNotes.trim()}` : ''}`,
+                link: '/metrics',
+                read: false,
+            })
+
+            // Обновляем кеш
+            const newCheckin = { id: data.id, scheduled_date: checkinDate, notes: checkinNotes.trim() || undefined, completed_at: undefined }
+            setRawData(prev => prev ? {
+                ...prev,
+                checkins: [...prev.checkins.filter(c => c.scheduled_date !== checkinDate), newCheckin],
+            } : prev)
+
+            setCheckinMsg('✓ Чекин назначен, клиент уведомлён')
+            setCheckinDate('')
+            setCheckinNotes('')
+            setTimeout(() => setCheckinMsg(''), 3000)
+        } catch (e: any) {
+            setCheckinMsg('Ошибка: ' + (e?.message || 'неизвестная'))
+        } finally {
+            setAddingCheckin(false)
+        }
+    }
+
+    const handleCheckinDeleted = (checkinId: string) => {
+        setRawData(prev => prev ? {
+            ...prev,
+            checkins: prev.checkins.filter(c => c.id !== checkinId),
+        } : prev)
+    }
 
     if (loading && !stats) {
         return (
@@ -427,6 +555,13 @@ function ClientActivityView({ userId }: { userId: string }) {
     }
 
     const last8 = stats ? [...stats.history].filter(w => w.isPast || w.isCurrent).slice(-8) : []
+
+    // Предстоящие чекины (от сегодня, не выполненные)
+    const todayStr = new Date().toISOString().split('T')[0]
+    const upcomingCheckins = rawData?.checkins
+        .filter(c => c.scheduled_date >= todayStr && !c.completed_at)
+        .sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date))
+        .slice(0, 5) || []
 
     return (
         <div className="space-y-6">
@@ -465,6 +600,83 @@ function ClientActivityView({ userId }: { userId: string }) {
                 </div>
             )}
 
+            {/* Управление чекинами */}
+            <div className="glass-card p-5">
+                <h3 className="text-sm font-semibold text-white mb-4 uppercase tracking-wider flex items-center gap-2">
+                    <span className="text-warning">📏</span> Запланировать чекин
+                </h3>
+
+                {/* Предстоящие чекины */}
+                {upcomingCheckins.length > 0 && (
+                    <div className="mb-4 space-y-2">
+                        <p className="text-xs text-text-muted mb-2">Запланировано:</p>
+                        {upcomingCheckins.map(c => (
+                            <div key={c.id} className="flex items-center justify-between p-3 rounded-xl bg-warning/10 border border-warning/20">
+                                <div>
+                                    <p className="text-sm font-semibold text-white">
+                                        {new Date(c.scheduled_date + 'T12:00:00').toLocaleDateString('ru-RU', {
+                                            day: 'numeric', month: 'long', year: 'numeric',
+                                        })}
+                                    </p>
+                                    {c.notes && <p className="text-xs text-text-muted mt-0.5">{c.notes}</p>}
+                                </div>
+                                <button
+                                    onClick={async () => {
+                                        const { createClient } = await import('@/lib/supabase/client')
+                                        const supabase = createClient()
+                                        await supabase.from('scheduled_checkins').delete().eq('id', c.id)
+                                        handleCheckinDeleted(c.id)
+                                    }}
+                                    className="text-text-muted hover:text-danger transition-colors p-1"
+                                    title="Удалить чекин"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* Форма добавления */}
+                <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="flex-1">
+                        <label className="block text-xs text-text-muted mb-1">Дата чекина</label>
+                        <input
+                            type="date"
+                            value={checkinDate}
+                            min={todayStr}
+                            onChange={e => setCheckinDate(e.target.value)}
+                            className="glass-input w-full text-sm"
+                        />
+                    </div>
+                    <div className="flex-1">
+                        <label className="block text-xs text-text-muted mb-1">Заметка (необязательно)</label>
+                        <input
+                            type="text"
+                            value={checkinNotes}
+                            onChange={e => setCheckinNotes(e.target.value)}
+                            placeholder="Замеры + фото спереди и сбоку"
+                            className="glass-input w-full text-sm"
+                        />
+                    </div>
+                    <div className="flex items-end">
+                        <button
+                            onClick={handleAddCheckin}
+                            disabled={!checkinDate || addingCheckin}
+                            className="glass-button flex items-center gap-2 px-4 py-2.5 text-sm whitespace-nowrap disabled:opacity-50"
+                        >
+                            {addingCheckin ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                            Назначить
+                        </button>
+                    </div>
+                </div>
+                {checkinMsg && (
+                    <p className={`text-xs mt-2 ${checkinMsg.startsWith('✓') ? 'text-success' : 'text-danger'}`}>
+                        {checkinMsg}
+                    </p>
+                )}
+            </div>
+
             {calendar && (
                 <CalendarGrid
                     month={calendar}
@@ -478,7 +690,9 @@ function ClientActivityView({ userId }: { userId: string }) {
                 <AdminDayDetailsModal
                     date={selected.date}
                     data={selected.data}
+                    userId={userId}
                     onClose={() => setSelected(null)}
+                    onCheckinDeleted={handleCheckinDeleted}
                 />
             )}
         </div>

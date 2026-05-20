@@ -39,6 +39,7 @@ export default function CalendarPage() {
     if (!user) return
     let cancelled = false
 
+    setIsLoading(true)
     const load = async () => {
       try {
         setError(null)
@@ -76,7 +77,6 @@ export default function CalendarPage() {
       </div>
     )
   }
-
   if (!user) return null
 
   return (
@@ -179,8 +179,43 @@ export default function CalendarPage() {
           />
         )}
 
-        {/* Подсказка про стрик по неделям */}
-        <div className="mt-6 glass-card p-4 sm:p-6 border-info/20 bg-info/5">
+        {/* Предстоящие чекины */}
+        {calendar && Object.values(calendar.days).some(d => d.isScheduledCheckin && !d.checkinCompleted) && (() => {
+          const todayStr = new Date().toISOString().split('T')[0]
+          const upcoming = Object.values(calendar.days)
+            .filter(d => d.isScheduledCheckin && !d.checkinCompleted && d.date >= todayStr)
+            .sort((a, b) => a.date.localeCompare(b.date))
+          if (upcoming.length === 0) return null
+          return (
+            <div className="mt-6 glass-card p-4 sm:p-6 border-warning/20 bg-warning/5">
+              <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                <span>📏</span> Предстоящие чекины
+              </h3>
+              <div className="space-y-2">
+                {upcoming.map(d => (
+                  <div key={d.date} className="flex items-center justify-between p-3 rounded-xl bg-warning/10 border border-warning/20">
+                    <div>
+                      <p className="text-sm font-semibold text-white">
+                        {new Date(d.date + 'T12:00:00').toLocaleDateString('ru-RU', {
+                          weekday: 'long', day: 'numeric', month: 'long',
+                        })}
+                      </p>
+                      {d.checkinNotes && <p className="text-xs text-text-muted mt-0.5">{d.checkinNotes}</p>}
+                    </div>
+                    <button
+                      onClick={() => router.push('/metrics')}
+                      className="glass-button-secondary text-xs px-3 py-1.5 flex items-center gap-1.5"
+                    >
+                      Замеры <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Подсказка про стрик по неделям */}        <div className="mt-6 glass-card p-4 sm:p-6 border-info/20 bg-info/5">
           <h3 className="text-sm font-semibold text-white mb-2">Как считается стрик</h3>
           <p className="text-sm text-text-secondary leading-relaxed">
             Стрик растёт за каждую закрытую неделю — когда ты завершил <span className="text-white font-semibold">все запланированные тренировки</span> за неделю.
@@ -281,6 +316,36 @@ function DayDetailsModal({
               <div>
                 <p className="text-sm font-semibold text-white">Замер добавлен</p>
                 <p className="text-xs text-text-muted">Запись в метриках за этот день</p>
+              </div>
+            </div>
+          )}
+
+          {data?.isScheduledCheckin && (
+            <div className={`p-4 rounded-xl border flex items-start gap-3 ${
+              data.checkinCompleted
+                ? 'bg-success/10 border-success/20'
+                : 'bg-warning/10 border-warning/20'
+            }`}>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                data.checkinCompleted ? 'bg-success/20' : 'bg-warning/20'
+              }`}>
+                <span className="text-lg">{data.checkinCompleted ? '✅' : '📏'}</span>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-white">
+                  {data.checkinCompleted ? 'Чекин выполнен' : 'Запланирован чекин'}
+                </p>
+                {data.checkinNotes && (
+                  <p className="text-xs text-text-muted mt-0.5">{data.checkinNotes}</p>
+                )}
+                {!data.checkinCompleted && (
+                  <button
+                    onClick={() => { onClose(); window.location.href = '/metrics' }}
+                    className="mt-2 text-xs text-warning hover:underline"
+                  >
+                    Перейти к замерам →
+                  </button>
+                )}
               </div>
             </div>
           )}

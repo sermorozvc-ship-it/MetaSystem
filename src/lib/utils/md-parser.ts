@@ -1,6 +1,6 @@
 // MetaSystem v2 — Markdown Parser
 
-import type { ProgramData, TrainingDay, Exercise } from '@/lib/services/training'
+import type { ProgramData, TrainingDay, Exercise, AlternativeExercise } from '@/lib/services/training'
 
 /**
  * Формат MD:
@@ -15,6 +15,9 @@ import type { ProgramData, TrainingDay, Exercise } from '@/lib/services/training
  * ### Жим гантелей лёжа
  * [Видео](url)
  * - 4 x 10-12 • 20/22.5/25/30 кг
+ * **Альтернативы:**
+ * - Жим штанги лёжа | [Видео](url) | 4 x 10-12
+ * - Отжимания на брусьях | 4 x 10-12
  */
 export function parseMdToJson(markdown: string): ProgramData {
   const lines = markdown.split('\n').map((line) => line.trim())
@@ -45,6 +48,7 @@ export function parseMdToJson(markdown: string): ProgramData {
   const days: TrainingDay[] = []
   let currentDay: TrainingDay | null = null
   let currentExercise: Exercise | null = null
+  let parsingAlternatives = false  // флаг: сейчас читаем блок альтернатив
 
   for (const line of lines) {
     // День: ## День N: Название
@@ -56,6 +60,7 @@ export function parseMdToJson(markdown: string): ProgramData {
     if (dayMatch) {
       if (currentExercise && currentDay) { currentDay.exercises.push(currentExercise); currentExercise = null }
       if (currentDay) days.push(currentDay)
+      parsingAlternatives = false
       currentDay = {
         dayNumber: parseInt(dayMatch[1]),
         dayOfWeek: getDayOfWeek(parseInt(dayMatch[1])),
@@ -75,6 +80,7 @@ export function parseMdToJson(markdown: string): ProgramData {
     // Упражнение: ### Название
     if (line.startsWith('###')) {
       if (currentExercise && currentDay) currentDay.exercises.push(currentExercise)
+      parsingAlternatives = false
       const exerciseName = line.replace(/^###\s*/, '').trim()
       currentExercise = {
         id: generateExerciseId(exerciseName),
@@ -82,21 +88,70 @@ export function parseMdToJson(markdown: string): ProgramData {
         sets: 3,
         reps: '10-12',
         targetWeights: [],
+        alternatives: [],
       }
       continue
     }
 
     if (!currentExercise && !currentDay) continue
 
-    // Видео
-    if (currentExercise && line.includes('[Видео]')) {
+    // Видео основного упражнения
+    if (currentExercise && !parsingAlternatives && line.includes('[Видео]')) {
       const m = line.match(/\[Видео\]\((.*?)\)/)
       if (m) currentExercise.videoUrl = m[1]
       continue
     }
 
+    // Начало блока альтернатив
+    if (currentExercise && line.match(/^\*\*Альтернатив[ыа]:\*\*/i)) {
+      parsingAlternatives = true
+      continue
+    }
+
+    // Строка альтернативы: - Название | [Видео](url) | N x reps
+    // или: - Название | N x reps
+    // или: - Название
+    if (currentExercise && parsingAlternatives && line.startsWith('- ')) {
+      const altLine = line.slice(2).trim()
+      if (!altLine) continue
+
+      const parts = altLine.split('|').map(p => p.trim())
+      const altName = parts[0]
+      if (!altName) continue
+
+      const alt: AlternativeExercise = {
+        id: generateExerciseId(altName),
+        name: altName,
+        sets: currentExercise.sets,
+        reps: currentExercise.reps,
+      }
+
+      // Ищем видео и параметры в остальных частях
+      for (const part of parts.slice(1)) {
+        const videoMatch = part.match(/\[Видео\]\((.*?)\)/)
+        if (videoMatch) { alt.videoUrl = videoMatch[1]; continue }
+
+        const setsRepsMatch = part.match(/(\d+)\s*x\s*([\d\-]+)/)
+        if (setsRepsMatch) {
+          alt.sets = parseInt(setsRepsMatch[1])
+          alt.reps = setsRepsMatch[2]
+        }
+      }
+
+      if (!currentExercise.alternatives) currentExercise.alternatives = []
+      currentExercise.alternatives.push(alt)
+      continue
+    }
+
+    // Если встретили не-список после начала альтернатив — выходим из режима
+    if (parsingAlternatives && !line.startsWith('- ') && line !== '') {
+      parsingAlternatives = false
+    }
+
+    if (!currentExercise) continue
+
     // НОВЫЙ формат: - 4 x 10-12 • 20/22.5/25/30 кг
-    if (currentExercise) {
+    if (!parsingAlternatives) {
       const newFmt = line.match(/^-\s*(\d+)\s*x\s*([\d\-]+)\s*[•·]\s*([\d./\s]+)\s*кг/i)
       if (newFmt) {
         currentExercise.sets = parseInt(newFmt[1])
@@ -173,10 +228,16 @@ export const EXAMPLE_PROGRAM_MD = `# Неделя 1
 ### Жим гантелей лёжа
 [Видео](https://youtube.com/watch?v=example1)
 - 4 x 10-12 • 20/22.5/25/30 кг
+**Альтернативы:**
+- Жим штанги лёжа | [Видео](https://youtube.com/watch?v=example1b) | 4 x 10-12
+- Отжимания на брусьях | 4 x 10-12
 
 ### Жим гантелей на наклонной скамье
 [Видео](https://youtube.com/watch?v=example2)
 - 3 x 10-12 • 18/20/20 кг
+**Альтернативы:**
+- Жим штанги на наклонной | 3 x 10-12
+- Отжимания с ногами на скамье | 3 x 12-15
 
 ### Разводка гантелей
 - 3 x 12-15 • 12/12/14 кг
@@ -191,6 +252,9 @@ export const EXAMPLE_PROGRAM_MD = `# Неделя 1
 ### Приседания со штангой
 [Видео](https://youtube.com/watch?v=example3)
 - 4 x 8-10 • 60/65/70/70 кг
+**Альтернативы:**
+- Приседания с гантелями | 4 x 10-12
+- Жим ногами | 4 x 12-15
 
 ### Румынская тяга
 - 3 x 10-12 • 50/55/55 кг
@@ -208,6 +272,9 @@ export const EXAMPLE_PROGRAM_MD = `# Неделя 1
 ### Подтягивания
 [Видео](https://youtube.com/watch?v=example4)
 - 3 x 8-10 • 0/0/0 кг
+**Альтернативы:**
+- Тяга верхнего блока | [Видео](https://youtube.com/watch?v=example4b) | 3 x 10-12
+- Тяга горизонтального блока | 3 x 10-12
 
 ### Тяга штанги в наклоне
 - 3 x 10-12 • 40/45/45 кг

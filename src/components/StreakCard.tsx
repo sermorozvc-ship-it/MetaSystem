@@ -11,13 +11,15 @@ interface Props {
 }
 
 export default function StreakCard({ stats, compact, showLink, onLinkClick }: Props) {
-  const { currentStreak, bestStreak, nextMilestone, weeksToMilestone, isInDanger } = stats
+  const { currentStreak, bestStreak, nextMilestone, weeksToMilestone, isInDanger, currentWeekProgress } = stats
 
   const flameColor = currentStreak >= 4
     ? 'text-orange-400'
     : currentStreak >= 1
       ? 'text-accent'
-      : 'text-text-muted'
+      : currentWeekProgress && currentWeekProgress.completed > 0
+        ? 'text-accent/60'
+        : 'text-text-muted'
 
   if (compact) {
     return (
@@ -38,6 +40,11 @@ export default function StreakCard({ stats, compact, showLink, onLinkClick }: Pr
                 {currentStreak === 1 ? 'неделя' : currentStreak >= 2 && currentStreak <= 4 ? 'недели' : 'недель'}
               </span>
             </p>
+            {currentStreak === 0 && currentWeekProgress && currentWeekProgress.completed > 0 && (
+              <p className="text-xs text-accent mt-0.5">
+                {currentWeekProgress.completed}/{currentWeekProgress.required} тренировок на этой неделе
+              </p>
+            )}
           </div>
         </div>
       </button>
@@ -49,7 +56,7 @@ export default function StreakCard({ stats, compact, showLink, onLinkClick }: Pr
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
-            currentStreak >= 1 ? 'bg-accent/15' : 'bg-bg-elevated'
+            currentStreak >= 1 ? 'bg-accent/15' : currentWeekProgress && currentWeekProgress.completed > 0 ? 'bg-accent/10' : 'bg-bg-elevated'
           }`}>
             <Flame className={`w-6 h-6 ${flameColor}`} />
           </div>
@@ -78,6 +85,34 @@ export default function StreakCard({ stats, compact, showLink, onLinkClick }: Pr
         </div>
       )}
 
+      {/* Прогресс текущей незакрытой недели */}
+      {currentWeekProgress && currentWeekProgress.completed > 0 && (
+        <div className="mb-4 p-3 rounded-xl bg-accent/10 border border-accent/20">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-accent font-semibold">Текущая неделя в процессе</span>
+            <span className="text-xs font-bold text-white">
+              {currentWeekProgress.completed}/{currentWeekProgress.required}
+            </span>
+          </div>
+          <div className="h-1.5 bg-bg-elevated rounded-full overflow-hidden">
+            <div
+              className="h-full bg-accent rounded-full transition-all"
+              style={{
+                width: `${Math.min(100, (currentWeekProgress.completed / currentWeekProgress.required) * 100)}%`,
+              }}
+            />
+          </div>
+          <p className="text-xs text-text-muted mt-1.5">
+            {currentWeekProgress.required - currentWeekProgress.completed === 0
+              ? 'Все тренировки выполнены — неделя закроется!'
+              : `Ещё ${currentWeekProgress.required - currentWeekProgress.completed} ${
+                  currentWeekProgress.required - currentWeekProgress.completed === 1 ? 'тренировка' : 'тренировки'
+                } до закрытия недели`
+            }
+          </p>
+        </div>
+      )}
+
       {nextMilestone && weeksToMilestone !== null && weeksToMilestone > 0 && (
         <div>
           <div className="flex items-center justify-between text-xs text-text-muted mb-1.5">
@@ -95,7 +130,7 @@ export default function StreakCard({ stats, compact, showLink, onLinkClick }: Pr
         </div>
       )}
 
-      {currentStreak === 0 && bestStreak === 0 && (
+      {currentStreak === 0 && bestStreak === 0 && !currentWeekProgress?.completed && (
         <p className="text-xs text-text-muted">
           Закрой первую неделю — все запланированные тренировки — и стрик начнёт расти.
         </p>
