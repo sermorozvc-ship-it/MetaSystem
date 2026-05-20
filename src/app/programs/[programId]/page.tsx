@@ -388,11 +388,10 @@ function ExerciseCard({
                         {onSupersetClick && (
                             <button
                                 onClick={onSupersetClick}
-                                className={`glass-button-secondary flex items-center gap-1.5 text-xs px-3 py-1.5 ${supersetLabel ? 'border-accent/40 text-accent' : ''}`}
-                                title="Суперсет"
+                                className={`glass-button-secondary p-1.5 rounded-lg ${supersetLabel ? 'border-accent/40 text-accent' : ''}`}
+                                title={supersetLabel ? `Суперсет ${supersetLabel} (нажми чтобы убрать)` : 'Суперсет'}
                             >
-                                <Link2 className="w-3 h-3" />
-                                {supersetLabel ? `Сет ${supersetLabel}` : 'Суперсет'}
+                                <Link2 className="w-3.5 h-3.5" />
                             </button>
                         )}
                     </div>
