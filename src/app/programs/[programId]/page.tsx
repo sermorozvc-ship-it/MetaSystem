@@ -1181,6 +1181,14 @@ export default function ProgramDetailPage() {
                     })}
                 </div>
 
+                {/* Кардио */}
+                {currentDay.cardio && (
+                    <div className="glass-card p-5 mb-5">
+                        <h3 className="text-base font-display font-bold text-white mb-1">Кардио</h3>
+                        <p className="text-text-secondary text-sm">{currentDay.cardio}</p>
+                    </div>
+                )}
+
                 {/* Статистика сессии */}
                 {(() => {
                     let totalTonnage = 0
@@ -1264,14 +1272,6 @@ export default function ProgramDetailPage() {
                         </div>
                     )
                 })()}
-
-                {/* Кардио */}
-                {currentDay.cardio && (
-                    <div className="glass-card p-5 mb-5">
-                        <h3 className="text-base font-display font-bold text-white mb-1">Кардио</h3>
-                        <p className="text-text-secondary text-sm">{currentDay.cardio}</p>
-                    </div>
-                )}
 
                 {/* Самочувствие */}
                 <div className="glass-card mb-5 overflow-hidden">
