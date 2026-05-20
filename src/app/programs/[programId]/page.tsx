@@ -540,17 +540,20 @@ function renderInline(text: string): React.ReactNode {
 function CheckinBlock({ text }: { text: string }) {
     const [collapsed, setCollapsed] = useState(true)
     return (
-        <div className="glass-card mb-5 overflow-hidden">
+        <div className="mb-5 rounded-2xl border-2 border-accent/40 bg-accent/5 overflow-hidden shadow-glow-accent">
             <button
                 onClick={() => setCollapsed(v => !v)}
-                className="w-full flex items-center gap-2 px-5 py-4 text-left"
+                className="w-full flex items-center gap-3 px-5 py-4 text-left"
             >
-                <span className="text-base flex-shrink-0">📊</span>
-                <span className="text-base font-display font-bold text-white flex-1">Чек-ин в конце недели</span>
-                <ChevronDown className={`w-4 h-4 text-text-muted transition-transform duration-200 ${collapsed ? '' : 'rotate-180'}`} />
+                <span className="text-xl flex-shrink-0">📊</span>
+                <div className="flex-1">
+                    <span className="text-base font-display font-bold text-accent">Чек-ин в конце недели</span>
+                    <p className="text-xs text-accent/60 mt-0.5">Обязательно перед следующей неделей</p>
+                </div>
+                <ChevronDown className={`w-4 h-4 text-accent/60 transition-transform duration-200 ${collapsed ? '' : 'rotate-180'}`} />
             </button>
             {!collapsed && (
-                <div className="px-5 pb-5 text-sm text-text-secondary leading-relaxed">
+                <div className="px-5 pb-5 text-sm text-text-secondary leading-relaxed border-t border-accent/20 pt-4">
                     {renderSimpleMd(text)}
                 </div>
             )}
