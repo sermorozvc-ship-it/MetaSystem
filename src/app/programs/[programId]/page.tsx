@@ -176,6 +176,7 @@ function ExerciseCard({
     onVideoClick,
     onTimerStart,
     onSupersetClick,
+    onAltMenuOpen,
     collapsed,
     onToggleCollapse,
     supersetLabel,
@@ -188,28 +189,25 @@ function ExerciseCard({
     onChange: (d: ExerciseClientData) => void
     onVideoClick: (url: string, title: string) => void
     onTimerStart: () => void
-    onSupersetClick?: () => void   // открыть модалку суперсета
+    onSupersetClick?: () => void
+    onAltMenuOpen?: () => void   // открыть модалку выбора альтернатив
     collapsed: boolean
     onToggleCollapse: () => void
     supersetLabel?: string
     isDragging?: boolean
-    nextExerciseName?: string      // название следующего упражнения для модалки
+    nextExerciseName?: string
 }) {
-    const [showAltMenu, setShowAltMenu] = useState(false)
     const altMenuRef = useRef<HTMLDivElement>(null)
-    const altBtnRef = useRef<HTMLButtonElement>(null)
-    const [altMenuPos, setAltMenuPos] = useState({ top: 0, right: 0 })
-
     useEffect(() => {
-        if (!showAltMenu) return
+        if (!altMenuRef.current) return
         const handler = (e: MouseEvent) => {
             if (altMenuRef.current && !altMenuRef.current.contains(e.target as Node)) {
-                setShowAltMenu(false)
+                // no-op — altMenu теперь управляется снаружи
             }
         }
         document.addEventListener('mousedown', handler)
         return () => document.removeEventListener('mousedown', handler)
-    }, [showAltMenu])
+    }, [])
 
     const selectedAlt = data.selectedAlternativeId
         ? exercise.alternatives?.find(a => a.id === data.selectedAlternativeId) ?? null
@@ -259,7 +257,6 @@ function ExerciseCard({
 
     const selectExercise = (altId: string | undefined) => {
         onChange({ sets: [], comment: '', selectedAlternativeId: altId })
-        setShowAltMenu(false)
     }
 
     // Считаем рабочий тоннаж (без разминочных)
@@ -316,53 +313,14 @@ function ExerciseCard({
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                         {hasAlternatives && (
-                            <div className="relative" ref={altMenuRef} onClick={e => e.stopPropagation()}>
+                            <div ref={altMenuRef} onClick={e => e.stopPropagation()}>
                                 <button
-                                    ref={altBtnRef}
                                     className={`glass-button-secondary p-1.5 rounded-lg text-xs flex items-center gap-1 ${selectedAlt ? 'border-accent/40 text-accent' : ''}`}
                                     title="Альтернативные упражнения"
-                                    onClick={() => {
-                                        if (!showAltMenu && altBtnRef.current) {
-                                            const rect = altBtnRef.current.getBoundingClientRect()
-                                            setAltMenuPos({
-                                                top: rect.bottom + 4,
-                                                right: window.innerWidth - rect.right,
-                                            })
-                                        }
-                                        setShowAltMenu(v => !v)
-                                    }}
+                                    onClick={() => onAltMenuOpen?.()}
                                 >
                                     <span className="text-sm leading-none">⇄</span>
                                 </button>
-                                {showAltMenu && (
-                                    <div
-                                        className="fixed z-[200] glass-card border border-border shadow-xl min-w-[220px] p-2 space-y-1"
-                                        style={{ top: altMenuPos.top, right: altMenuPos.right }}
-                                    >
-                                        <p className="text-xs text-text-muted px-2 pb-1 border-b border-border mb-1">Выбери упражнение:</p>
-                                        <button
-                                            onClick={() => selectExercise(undefined)}
-                                            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                                                !selectedAlt ? 'bg-accent/20 text-accent font-semibold' : 'text-text-secondary hover:bg-bg-elevated'
-                                            }`}
-                                        >
-                                            <span className="text-xs text-text-muted block mb-0.5">Основное</span>
-                                            {exercise.name}
-                                        </button>
-                                        {exercise.alternatives!.map(alt => (
-                                            <button
-                                                key={alt.id}
-                                                onClick={() => selectExercise(alt.id)}
-                                                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                                                    data.selectedAlternativeId === alt.id ? 'bg-accent/20 text-accent font-semibold' : 'text-text-secondary hover:bg-bg-elevated'
-                                                }`}
-                                            >
-                                                <span className="text-xs text-text-muted block mb-0.5">{alt.sets} x {alt.reps}</span>
-                                                {alt.name}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
                             </div>
                         )}
                         <button
@@ -567,6 +525,9 @@ export default function ProgramDetailPage() {
 
     // Модалка суперсета
     const [supersetModal, setSupersetModal] = useState<{ exerciseId: string; nextExerciseId: string; nextName: string } | null>(null)
+
+    // Модалка альтернатив
+    const [altModal, setAltModal] = useState<{ exercise: Exercise; onSelect: (altId: string | undefined) => void } | null>(null)
 
     // Drag-and-drop
     const [draggedId, setDraggedId] = useState<string | null>(null)
@@ -1137,6 +1098,22 @@ export default function ProgramDetailPage() {
                                         onChange={d => updateExercise(exercise.id, d)}
                                         onVideoClick={(url, title) => setVideoModal({ url, title })}
                                         onTimerStart={() => setRestTimerVisible(true)}
+                                        onAltMenuOpen={
+                                            (exercise.alternatives?.length ?? 0) > 0
+                                                ? () => setAltModal({
+                                                    exercise,
+                                                    onSelect: (altId) => {
+                                                        updateExercise(exercise.id, {
+                                                            ...(exerciseData[exercise.id] || { sets: [], comment: '' }),
+                                                            sets: [],
+                                                            comment: '',
+                                                            selectedAlternativeId: altId,
+                                                        })
+                                                        setAltModal(null)
+                                                    },
+                                                })
+                                                : undefined
+                                        }
                                         onSupersetClick={
                                             // Показываем кнопку только если есть следующее упражнение
                                             nextExercise
@@ -1316,9 +1293,53 @@ export default function ProgramDetailPage() {
             <RestTimer onClose={() => setRestTimerVisible(false)} />
         )}
 
+        {/* Модалка альтернативных упражнений */}
+        {altModal && (
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setAltModal(null)}>
+                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+                <div className="relative z-10 glass-card w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-base font-display font-bold text-white">Выбери упражнение</h3>
+                        <button onClick={() => setAltModal(null)} className="glass-button-secondary p-1.5 rounded-lg">
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                    <div className="space-y-2">
+                        {/* Основное */}
+                        <button
+                            onClick={() => altModal.onSelect(undefined)}
+                            className={`w-full text-left px-4 py-3 rounded-xl text-sm transition-colors border ${
+                                !exerciseData[altModal.exercise.id]?.selectedAlternativeId
+                                    ? 'bg-accent/20 border-accent/40 text-accent font-semibold'
+                                    : 'border-border text-text-secondary hover:bg-bg-elevated'
+                            }`}
+                        >
+                            <span className="text-xs text-text-muted block mb-0.5">Основное</span>
+                            {altModal.exercise.name}
+                            <span className="text-xs text-text-muted ml-2">{altModal.exercise.sets} x {altModal.exercise.reps}</span>
+                        </button>
+                        {/* Альтернативы */}
+                        {altModal.exercise.alternatives!.map(alt => (
+                            <button
+                                key={alt.id}
+                                onClick={() => altModal.onSelect(alt.id)}
+                                className={`w-full text-left px-4 py-3 rounded-xl text-sm transition-colors border ${
+                                    exerciseData[altModal.exercise.id]?.selectedAlternativeId === alt.id
+                                        ? 'bg-accent/20 border-accent/40 text-accent font-semibold'
+                                        : 'border-border text-text-secondary hover:bg-bg-elevated'
+                                }`}
+                            >
+                                <span className="text-xs text-text-muted block mb-0.5">Альтернатива · {alt.sets} x {alt.reps}</span>
+                                {alt.name}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        )}
+
         {/* Модалка суперсета */}
-        {supersetModal && (
-            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setSupersetModal(null)}>
+        {supersetModal && (            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setSupersetModal(null)}>
                 <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
                 <div className="relative z-10 glass-card w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center gap-3 mb-4">
