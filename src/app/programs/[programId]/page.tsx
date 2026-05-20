@@ -322,21 +322,20 @@ function ExerciseCard({
                                     || `https://www.youtube.com/results?search_query=${encodeURIComponent(activeExercise.name + ' техника')}`
                                 onVideoClick(url, activeExercise.name)
                             }}
-                            className="glass-button-secondary flex items-center gap-1.5 text-xs px-3 py-1.5">
-                            <Play className="w-3 h-3" />Видео
+                            className="glass-button-secondary p-1.5 rounded-lg"
+                            title="Видео">
+                            <Play className="w-3.5 h-3.5" />
                         </button>
-                        <button onClick={onTimerStart} className="rest-timer-trigger" title="Таймер отдыха">
+                        <button onClick={onTimerStart} className="glass-button-secondary p-1.5 rounded-lg" title="Таймер отдыха">
                             <Timer className="w-3.5 h-3.5" />
-                            <span>Отдых</span>
                         </button>
                         {hasAlternatives && (
                             <button
                                 onClick={() => onAltMenuOpen?.()}
-                                className={`glass-button-secondary flex items-center gap-1.5 text-xs px-3 py-1.5 ${selectedAlt ? 'border-accent/40 text-accent' : ''}`}
-                                title="Альтернативные упражнения"
+                                className={`glass-button-secondary p-1.5 rounded-lg ${selectedAlt ? 'border-accent/40 text-accent' : ''}`}
+                                title={selectedAlt ? 'Активна альтернатива' : 'Заменить упражнение'}
                             >
                                 <span className="text-sm leading-none">⇄</span>
-                                <span>{selectedAlt ? 'Альтернатива' : 'Заменить'}</span>
                             </button>
                         )}
                         {onSupersetClick && (
