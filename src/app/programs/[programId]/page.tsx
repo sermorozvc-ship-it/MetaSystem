@@ -44,13 +44,9 @@ interface Superset {
     exerciseIds: [string, string]
 }
 
-// Порядок упражнений в дне
-type ExerciseOrder = string[]
-
 // Данные дня (хранятся в entry_data под ключом __meta__)
 interface DayMeta {
     supersets?: Superset[]
-    exerciseOrder?: ExerciseOrder
 }
 
 // ─── Метки подходов ───────────────────────────────────────────────────────────
@@ -181,8 +177,6 @@ function ExerciseCard({
     collapsed,
     onToggleCollapse,
     supersetLabel,
-    isDragging,
-    nextExerciseName,
 }: {
     exercise: Exercise
     index: number
@@ -195,8 +189,6 @@ function ExerciseCard({
     collapsed: boolean
     onToggleCollapse: () => void
     supersetLabel?: string
-    isDragging?: boolean
-    nextExerciseName?: string
 }) {
     const altMenuRef = useRef<HTMLDivElement>(null)
     useEffect(() => {
@@ -269,8 +261,8 @@ function ExerciseCard({
     }, 0)
 
     return (
-        <div className={`transition-all duration-200 ${isDragging ? 'opacity-50' : ''}`}>
-            <div className={`glass-card transition-all duration-200 ${collapsed ? 'opacity-70' : ''} ${isDragging ? 'ring-2 ring-accent shadow-glow-accent' : ''}`}>
+        <div className="transition-all duration-200">
+            <div className={`glass-card transition-all duration-200 ${collapsed ? 'opacity-70' : ''}`}>
             {/* Заголовок */}
             <div className="p-4 cursor-pointer select-none" onClick={onToggleCollapse}>
                 <div className="flex items-start justify-between gap-2 mb-2">
@@ -593,19 +585,14 @@ export default function ProgramDetailPage() {
     const [isDayContextCollapsed, setIsDayContextCollapsed] = useState(true)
     const [restTimerVisible, setRestTimerVisible] = useState(false)
 
-    // Суперсеты и порядок упражнений
+    // Суперсеты
     const [supersets, setSupersets] = useState<Superset[]>([])
-    const [exerciseOrder, setExerciseOrder] = useState<ExerciseOrder>([])
 
     // Модалка суперсета
     const [supersetModal, setSupersetModal] = useState<{ exerciseId: string; nextExerciseId: string; nextName: string } | null>(null)
 
     // Модалка альтернатив
     const [altModal, setAltModal] = useState<{ exercise: Exercise; onSelect: (altId: string | undefined) => void } | null>(null)
-
-    // Drag-and-drop
-    const [draggedId, setDraggedId] = useState<string | null>(null)
-    const [dragOverId, setDragOverId] = useState<string | null>(null)
 
     // Таймер тренировки
     const [workoutStartTime, setWorkoutStartTime] = useState<number | null>(null)
@@ -720,17 +707,9 @@ export default function ProgramDetailPage() {
                     setSleepQuality(entry.sleep_quality || 3)
                     setNotes(entry.notes || '')
 
-                    // Загружаем мета-данные (суперсеты, порядок)
+                    // Загружаем мета-данные (суперсеты)
                     const meta: DayMeta = entry.entry_data?.__meta__ || {}
                     setSupersets(meta.supersets || [])
-                    const savedOrder = meta.exerciseOrder || []
-                    const allIds = currentDay.exercises.map(e => e.id)
-                    // Восстанавливаем порядок, добавляя новые упражнения в конец
-                    const restoredOrder = [
-                        ...savedOrder.filter(id => allIds.includes(id)),
-                        ...allIds.filter(id => !savedOrder.includes(id)),
-                    ]
-                    setExerciseOrder(restoredOrder)
 
                     if (entry.completed_at) {
                         setCompletedDays(prev => new Set([...prev, currentDay.dayNumber]))
@@ -770,7 +749,6 @@ export default function ProgramDetailPage() {
                         setElapsedSeconds(0)
                     }
                     setSupersets([])
-                    setExerciseOrder(program.program_data.days[currentDayIndex]?.exercises.map(e => e.id) || [])
                 }
             } catch (e) {
                 console.error('Error loading entry:', e)
@@ -805,8 +783,8 @@ export default function ProgramDetailPage() {
     }, [workoutStartTime])
 
     // Сохранение — читает мета-данные из state через ref
-    const metaRef = useRef({ supersets, exerciseOrder })
-    useEffect(() => { metaRef.current = { supersets, exerciseOrder } }, [supersets, exerciseOrder])
+    const metaRef = useRef({ supersets })
+    useEffect(() => { metaRef.current = { supersets } }, [supersets])
 
     const saveEntry = useCallback(async (silent = false) => {
         if (!program || !user) return
@@ -814,12 +792,12 @@ export default function ProgramDetailPage() {
         if (!currentDay) return
 
         const { exerciseData: ed, energyLevel: el, mood: m, sleepQuality: sq, notes: n } = latestDataRef.current
-        const { supersets: ss, exerciseOrder: eo } = metaRef.current
+        const { supersets: ss } = metaRef.current
 
         // Добавляем мета-данные в entry_data
         const entryDataWithMeta = {
             ...ed,
-            __meta__: { supersets: ss, exerciseOrder: eo } as DayMeta,
+            __meta__: { supersets: ss } as DayMeta,
         }
 
         if (!silent) setIsSaving(true)
@@ -843,7 +821,7 @@ export default function ProgramDetailPage() {
         if (!dataLoadedRef.current || !userChangedRef.current) return
         const t = setTimeout(() => saveEntry(true), 1500)
         return () => clearTimeout(t)
-    }, [exerciseData, energyLevel, mood, sleepQuality, notes, supersets, exerciseOrder, saveEntry])
+    }, [exerciseData, energyLevel, mood, sleepQuality, notes, supersets, saveEntry])
 
     const updateExercise = (exerciseId: string, data: ExerciseClientData) => {
         userChangedRef.current = true
@@ -863,8 +841,8 @@ export default function ProgramDetailPage() {
             : elapsedSeconds || undefined
         try {
             const { exerciseData: ed, energyLevel: el, mood: m, sleepQuality: sq, notes: n } = latestDataRef.current
-            const { supersets: ss, exerciseOrder: eo } = metaRef.current
-            const entryDataWithMeta = { ...ed, __meta__: { supersets: ss, exerciseOrder: eo } }
+            const { supersets: ss } = metaRef.current
+            const entryDataWithMeta = { ...ed, __meta__: { supersets: ss } }
             await upsertTrainingEntry(program.id, currentDay.dayNumber, entryDataWithMeta, {
                 energy_level: el, mood: m, sleep_quality: sq, notes: n,
                 workout_duration_seconds: finalDuration,
@@ -892,8 +870,8 @@ export default function ProgramDetailPage() {
         setIsSaving(true)
         try {
             const { exerciseData: ed, energyLevel: el, mood: m, sleepQuality: sq, notes: n } = latestDataRef.current
-            const { supersets: ss, exerciseOrder: eo } = metaRef.current
-            const entryDataWithMeta = { ...ed, __meta__: { supersets: ss, exerciseOrder: eo } }
+            const { supersets: ss } = metaRef.current
+            const entryDataWithMeta = { ...ed, __meta__: { supersets: ss } }
             await upsertTrainingEntry(program.id, currentDay.dayNumber, entryDataWithMeta, {
                 energy_level: el, mood: m, sleep_quality: sq, notes: n,
                 workout_duration_seconds: savedDuration ?? undefined,
@@ -936,90 +914,6 @@ export default function ProgramDetailPage() {
     const getSupersetLabel = (ssId: string): string => {
         const idx = supersets.findIndex(ss => ss.id === ssId)
         return String.fromCharCode(65 + idx) // A, B, C...
-    }
-
-    // ─── Drag-and-drop ────────────────────────────────────────────────────────
-
-    const handleDragStart = (exerciseId: string) => {
-        setDraggedId(exerciseId)
-    }
-
-    const handleDragOver = (e: React.DragEvent, exerciseId: string) => {
-        e.preventDefault()
-        if (exerciseId !== draggedId) setDragOverId(exerciseId)
-    }
-
-    const handleDrop = (e: React.DragEvent, targetId: string) => {
-        e.preventDefault()
-        if (!draggedId || draggedId === targetId) {
-            setDraggedId(null)
-            setDragOverId(null)
-            return
-        }
-
-        const currentOrder = exerciseOrder.length > 0
-            ? exerciseOrder
-            : (program?.program_data.days[currentDayIndex]?.exercises.map(e => e.id) || [])
-
-        const newOrder = [...currentOrder]
-        const fromIdx = newOrder.indexOf(draggedId)
-        const toIdx = newOrder.indexOf(targetId)
-        if (fromIdx === -1 || toIdx === -1) return
-
-        newOrder.splice(fromIdx, 1)
-        newOrder.splice(toIdx, 0, draggedId)
-
-        userChangedRef.current = true
-        setExerciseOrder(newOrder)
-        setDraggedId(null)
-        setDragOverId(null)
-    }
-
-    const handleDragEnd = () => {
-        setDraggedId(null)
-        setDragOverId(null)
-    }
-
-    // Touch drag (мобильный)
-    const touchStartY = useRef<number>(0)
-    const touchExerciseId = useRef<string | null>(null)
-
-    const handleTouchStart = (e: React.TouchEvent, exerciseId: string) => {
-        touchStartY.current = e.touches[0].clientY
-        touchExerciseId.current = exerciseId
-        setDraggedId(exerciseId)
-    }
-
-    const handleTouchMove = (e: React.TouchEvent) => {
-        if (!touchExerciseId.current) return
-        const touch = e.touches[0]
-        const el = document.elementFromPoint(touch.clientX, touch.clientY)
-        const card = el?.closest('[data-exercise-id]')
-        const overId = card?.getAttribute('data-exercise-id')
-        if (overId && overId !== touchExerciseId.current) {
-            setDragOverId(overId)
-        }
-    }
-
-    const handleTouchEnd = () => {
-        if (touchExerciseId.current && dragOverId && touchExerciseId.current !== dragOverId) {
-            const currentOrder = exerciseOrder.length > 0
-                ? exerciseOrder
-                : (program?.program_data.days[currentDayIndex]?.exercises.map(e => e.id) || [])
-
-            const newOrder = [...currentOrder]
-            const fromIdx = newOrder.indexOf(touchExerciseId.current)
-            const toIdx = newOrder.indexOf(dragOverId)
-            if (fromIdx !== -1 && toIdx !== -1) {
-                newOrder.splice(fromIdx, 1)
-                newOrder.splice(toIdx, 0, touchExerciseId.current!)
-                userChangedRef.current = true
-                setExerciseOrder(newOrder)
-            }
-        }
-        touchExerciseId.current = null
-        setDraggedId(null)
-        setDragOverId(null)
     }
 
     if (authLoading || isLoading || !program) {
@@ -1075,11 +969,7 @@ export default function ProgramDetailPage() {
         : (workoutStartTime !== null ? elapsedSeconds : null)
 
     // Упорядоченный список упражнений
-    const allExerciseIds = currentDay.exercises.map(e => e.id)
-    const orderedIds = exerciseOrder.length > 0
-        ? [...exerciseOrder.filter(id => allExerciseIds.includes(id)), ...allExerciseIds.filter(id => !exerciseOrder.includes(id))]
-        : allExerciseIds
-    const orderedExercises = orderedIds.map(id => currentDay.exercises.find(e => e.id === id)!).filter(Boolean)
+    const orderedExercises = currentDay.exercises
 
     return (
         <>
@@ -1292,19 +1182,7 @@ export default function ProgramDetailPage() {
                                     />
                                 )}                                <div
                                     data-exercise-id={exercise.id}
-                                    draggable
-                                    onDragStart={() => handleDragStart(exercise.id)}
-                                    onDragOver={e => handleDragOver(e, exercise.id)}
-                                    onDrop={e => handleDrop(e, exercise.id)}
-                                    onDragEnd={handleDragEnd}
-                                    onTouchStart={e => handleTouchStart(e, exercise.id)}
-                                    onTouchMove={handleTouchMove}
-                                    onTouchEnd={handleTouchEnd}
-                                    className={`transition-all duration-150 ${
-                                        dragOverId === exercise.id && draggedId !== exercise.id
-                                            ? 'ring-2 ring-accent/60 rounded-xl scale-[1.01]'
-                                            : ''
-                                    }`}
+                                    className="transition-all duration-150"
                                 >
                                     <ExerciseCard
                                         exercise={exercise}
@@ -1355,8 +1233,6 @@ export default function ProgramDetailPage() {
                                             return next
                                         })}
                                         supersetLabel={ssLabel}
-                                        isDragging={draggedId === exercise.id}
-                                        nextExerciseName={nextExercise?.name}
                                     />
                                 </div>
 
