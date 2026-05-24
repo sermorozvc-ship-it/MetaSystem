@@ -11,6 +11,11 @@ import type { ProgramData, TrainingDay, Exercise, AlternativeExercise } from '@/
  * **Контекст недели:** Многострочный текст...
  * **Красные флаги:** Многострочный текст...
  *
+ * Опционально — статистика за прошлую неделю (показывается клиенту вверху страницы):
+ * **Резюме прошлой недели:** Что сделано, недочёты, общий обзор и мысли тренера.
+ * **Объём прошлой недели:** Тоннаж, интенсивность, выполнение плана (объективно по фактам).
+ * **Самочувствие прошлой недели:** Обобщение комментариев клиента (сон, энергия, жалобы).
+ *
  * ## День 1: Верх тела (Push)
  * **Рекомендация дня:** Сегодня работаем не до отказа, RIR 2-3 на всех подходах.
  *
@@ -31,6 +36,9 @@ type MultilineBlock =
   | 'dayContext'
   | 'checkin'
   | 'loggingNote'
+  | 'prevCoachSummary'
+  | 'prevVolumeSummary'
+  | 'prevWellnessSummary'
   | null
 
 export function parseMdToJson(markdown: string): ProgramData {
@@ -63,6 +71,11 @@ export function parseMdToJson(markdown: string): ProgramData {
   let checkin = ''
   let loggingNote = ''
 
+  // Статистика за прошлую неделю — три независимых многострочных блока
+  let prevCoachSummary = ''
+  let prevVolumeSummary = ''
+  let prevWellnessSummary = ''
+
   // Текущий активный многострочный блок
   let currentBlock: MultilineBlock = null
 
@@ -75,6 +88,9 @@ export function parseMdToJson(markdown: string): ProgramData {
     else if (currentBlock === 'redFlags') redFlags += (redFlags ? sep : '') + text
     else if (currentBlock === 'checkin') checkin += (checkin ? sep : '') + text
     else if (currentBlock === 'loggingNote') loggingNote += (loggingNote ? sep : '') + text
+    else if (currentBlock === 'prevCoachSummary') prevCoachSummary += (prevCoachSummary ? sep : '') + text
+    else if (currentBlock === 'prevVolumeSummary') prevVolumeSummary += (prevVolumeSummary ? sep : '') + text
+    else if (currentBlock === 'prevWellnessSummary') prevWellnessSummary += (prevWellnessSummary ? sep : '') + text
     else if (currentBlock === 'coachNote' && currentDay) {
       currentDay.coachNote = (currentDay.coachNote ? currentDay.coachNote + sep : '') + text
     } else if (currentBlock === 'dayContext' && currentDay) {
@@ -165,6 +181,29 @@ export function parseMdToJson(markdown: string): ProgramData {
         currentBlock = 'redFlags'
         const inline = redFlagsMatch[1].trim()
         if (inline) redFlags = inline
+        continue
+      }
+
+      // Статистика за прошлую неделю — три блока
+      const prevCoachMatch = line.match(/^\*\*(?:Резюме|Итоги|Обзор)[^:]*:\*\*\s*(.*)/i)
+      if (prevCoachMatch) {
+        currentBlock = 'prevCoachSummary'
+        const inline = prevCoachMatch[1].trim()
+        if (inline) prevCoachSummary = inline
+        continue
+      }
+      const prevVolumeMatch = line.match(/^\*\*(?:Объ[её]м|Тоннаж|Нагрузка)[^:]*:\*\*\s*(.*)/i)
+      if (prevVolumeMatch) {
+        currentBlock = 'prevVolumeSummary'
+        const inline = prevVolumeMatch[1].trim()
+        if (inline) prevVolumeSummary = inline
+        continue
+      }
+      const prevWellnessMatch = line.match(/^\*\*Самочувствие[^:]*:\*\*\s*(.*)/i)
+      if (prevWellnessMatch) {
+        currentBlock = 'prevWellnessSummary'
+        const inline = prevWellnessMatch[1].trim()
+        if (inline) prevWellnessSummary = inline
         continue
       }
     }
@@ -312,6 +351,18 @@ export function parseMdToJson(markdown: string): ProgramData {
   // Обрезаем лишние пустые строки по краям многострочных блоков
   const trim = (s: string) => s.replace(/^\n+|\n+$/g, '').trim()
 
+  // Собираем prevWeekStats только если хотя бы одно поле заполнено
+  const prevCoach = trim(prevCoachSummary)
+  const prevVolume = trim(prevVolumeSummary)
+  const prevWellness = trim(prevWellnessSummary)
+  const prevWeekStats = (prevCoach || prevVolume || prevWellness)
+    ? {
+        coachSummary: prevCoach || undefined,
+        volumeSummary: prevVolume || undefined,
+        wellnessSummary: prevWellness || undefined,
+      }
+    : undefined
+
   return {
     weekNumber,
     startDate,
@@ -322,6 +373,7 @@ export function parseMdToJson(markdown: string): ProgramData {
     redFlags: trim(redFlags) || undefined,
     checkin: trim(checkin) || undefined,
     loggingNote: trim(loggingNote) || undefined,
+    prevWeekStats,
   }
 }
 
@@ -336,44 +388,55 @@ function getDayOfWeek(dayNumber: number): string {
 /**
  * Пример программы с рекомендациями
  */
-export const EXAMPLE_PROGRAM_MD = `# Неделя 1
+export const EXAMPLE_PROGRAM_MD = `---
+client_id: client-slug
+client_name: Имя клиента
+mesocycle: 1
+week: 2
+period_start: 2026-05-21
+period_end: 2026-05-28
+type: standard
+---
 
-**Период:** 2026-05-14 — 2026-05-21
-**Рекомендация:** Неделя средняя по нагрузке. Закрываем базовый объём. Фокус на технике и контроле веса.
+# Неделя 2
+
+**Период:** 2026-05-21 — 2026-05-28
+**Рекомендация:** Поднимаем рабочие веса на 2.5 кг там, где RIR на прошлой неделе был ≥3. Жим штанги — техника прежняя.
+
+**Контекст недели:** Вторая неделя адаптационного блока. Объём держим, добавляем интенсивность только там, где запас по RIR позволяет. Если в течение недели появляется усталость — снижаем вес на 5%, подходы и повторы оставляем как есть.
+
+**Красные флаги:** Любая острая боль (а не «непривычное ощущение») в спине или коленях — стоп упражнение, сообщить в чат. Если сон проседает 2 дня подряд (≤4/5) — пропускаем тренировку с приседом, не двигаем её на другой день.
+
+**Резюме прошлой недели:** Неделя выполнена полностью, все 3 тренировки закрыты. Технику жима ты подтянул — комментарий «локоть стал на месте» это подтверждает. Из недочётов: на приседаниях во второй и третий день RIR был 0-1, ты на грани отказа — это слишком тяжело для адаптационного блока, на этой неделе снизим вес и поднимем повторы.
+
+**Объём прошлой недели:** Суммарный тоннаж 14 280 кг (+8% к плану — ты осознанно докинул вес в подтягиваниях). Интенсивность по жиму 72.5% от 1ПМ (план 70%), по приседу 78% (план 75% — отсюда низкий RIR). Все запланированные подходы выполнены, дроп-сетов не было.
+
+**Самочувствие прошлой недели:** По комментариям: сон 4/5 в среднем, в день 2 «не выспался» — это совпало с просадкой на приседе. Энергия стабильно 6-7/10. Жалобы на тянущее ощущение в пояснице после тяги в день 3, ты написал «непривычно, но не больно». Учли — на этой неделе тяга идёт первой, пока спина свежая.
 
 ## День 1: Верх тела (Push)
-**Рекомендация дня:** Сегодня работаем не до отказа. RIR 2-3 на всех подходах. Если чувствуешь усталость — снижай вес.
+**Рекомендация дня:** Жим штанги — рабочий вес 65 кг. Если первый подход идёт легко (RIR 4+), во втором накидываем 2.5 кг.
 
-### Жим гантелей лёжа
-[Видео](https://youtube.com/watch?v=example1)
-- 4 x 10-12 • 20/22.5/25/30 кг
+### Жим штанги лёжа
+- 4 x 8-10 • 60/65/65/65 кг
 **Альтернативы:**
-- Жим штанги лёжа | [Видео](https://youtube.com/watch?v=example1b) | 4 x 10-12
+- Жим гантелей лёжа | 4 x 10-12
 - Отжимания на брусьях | 4 x 10-12
 
 ### Жим гантелей на наклонной скамье
-[Видео](https://youtube.com/watch?v=example2)
-- 3 x 10-12 • 18/20/20 кг
-**Альтернативы:**
-- Жим штанги на наклонной | 3 x 10-12
-- Отжимания с ногами на скамье | 3 x 12-15
+- 3 x 10-12 • 22/24/24 кг
 
-### Разводка гантелей
-- 3 x 12-15 • 12/12/14 кг
+### Разводка гантелей лёжа
+- 3 x 12-15 • 12/14/14 кг
 
 **Кардио:** 15 мин ходьба (ЧСС 120-130)
 
 ---
 
 ## День 2: Низ тела
-**Рекомендация дня:** Приседания — полная амплитуда. Не торопись, контролируй опускание.
+**Рекомендация дня:** Присед — снижаем до 65 кг (с 70). Цель — 10 чистых повторов с RIR 2-3, не до отказа.
 
 ### Приседания со штангой
-[Видео](https://youtube.com/watch?v=example3)
-- 4 x 8-10 • 60/65/70/70 кг
-**Альтернативы:**
-- Приседания с гантелями | 4 x 10-12
-- Жим ногами | 4 x 12-15
+- 4 x 10-12 • 55/60/65/65 кг
 
 ### Румынская тяга
 - 3 x 10-12 • 50/55/55 кг
@@ -386,22 +449,35 @@ export const EXAMPLE_PROGRAM_MD = `# Неделя 1
 ---
 
 ## День 3: Верх тела (Pull)
-**Рекомендация дня:** Тяги — локоть ведёт движение, не кисть. Пауза в нижней точке 1 сек.
-
-### Подтягивания
-[Видео](https://youtube.com/watch?v=example4)
-- 3 x 8-10 • 0/0/0 кг
-**Альтернативы:**
-- Тяга верхнего блока | [Видео](https://youtube.com/watch?v=example4b) | 3 x 10-12
-- Тяга горизонтального блока | 3 x 10-12
+**Рекомендация дня:** Тяга идёт первой — пока спина свежая. Локоть ведёт движение.
 
 ### Тяга штанги в наклоне
-- 3 x 10-12 • 40/45/45 кг
+- 4 x 8-10 • 40/45/45/45 кг
 
-### Тяга верхнего блока
+### Подтягивания прямым хватом
+- 3 x 8-10 • 0/0/0 кг
+
+### Тяга верхнего блока (паралл. хват)
 - 3 x 12-15 • 50/55/55 кг
 
 **Кардио:** 15 мин ходьба
 
 ---
+
+## 📊 Чек-ин в конце недели
+
+> Заполни в свободной форме и отправь отдельным сообщением тренеру (мне), без этого следующая неделя не строится.
+
+- **Качество сна (1-10):**
+- **Мышечная боль / DOMS (1-10):**
+- **Уровень энергии (1-10):**
+- **Мотивация (1-10):**
+- **Состояние суставов и зон-ограничений (плечи, локти):**
+- **Вес на конец недели:**
+- **Все ли тренировки выполнены?** (да / пропущено, причина)
+- **На каких упражнениях оставался запас (RIR выше планового)?**
+- **На каких было тяжелее планового?**
+- **Заметки и вопросы тренеру:**
+
+> Это критически важно для построения следующей недели.
 `

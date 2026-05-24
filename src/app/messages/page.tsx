@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { Send, Loader2, MessageCircle, ArrowLeft, Users } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import {
@@ -312,10 +313,11 @@ function AdminChat() {
 
 export default function MessagesPage() {
     const { user, isLoading: authLoading } = useAuth()
+    const router = useRouter()
 
     useEffect(() => {
-        if (!authLoading && !user) window.location.href = '/auth'
-    }, [user, authLoading])
+        if (!authLoading && !user) router.replace('/auth')
+    }, [user, authLoading, router])
 
     if (!authLoading && !user) {
         return null

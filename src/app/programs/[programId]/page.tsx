@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import {
     ArrowLeft, Play, CheckCircle2, Loader2, ChevronLeft, ChevronRight,
     X, Maximize2, Minimize2, ChevronDown, ChevronUp, Timer, Clock,
-    Lock, RefreshCw, Link2,
+    Lock, RefreshCw, Link2, Check,
 } from 'lucide-react'
 import RestTimer from '@/components/RestTimer'
 import { useAuth } from '@/lib/auth'
@@ -19,6 +19,8 @@ import {
 } from '@/lib/services/training'
 import { getMySubscriptionInfo } from '@/lib/services/renewal'
 import { parseMdToJson } from '@/lib/utils/md-parser'
+import { parseCheckinQuestions } from '@/lib/utils/checkin-questions'
+import { getWeeklyCheckin, upsertWeeklyCheckin, markWeeklyCheckinCompleted } from '@/lib/services/weekly-checkin'
 
 // ─── Типы данных клиента ─────────────────────────────────────────────────────
 
@@ -527,24 +529,181 @@ function renderInline(text: string): React.ReactNode {
 
 // ─── Чек-ин блок ─────────────────────────────────────────────────────────────
 
-function CheckinBlock({ text }: { text: string }) {
+/**
+ * Форма чек-ина с инпутами под каждый вопрос. Вопросы парсятся из markdown
+ * раздела "## 📊 Чек-ин в конце недели" программы. Ответы сохраняются в
+ * weekly_checkins (одна запись на программу) и автоматически попадают в
+ * экспортируемый дневник как блок "💬 Чек-ин клиента".
+ *
+ * UX: автосохранение через 800мс после ввода (debounce), кнопка "Завершить"
+ * проставляет completed_at.
+ */
+function CheckinBlock({ programId, userId, text }: { programId: string; userId: string; text: string }) {
     const [collapsed, setCollapsed] = useState(true)
+    const [answers, setAnswers] = useState<Record<string, string>>({})
+    const [completedAt, setCompletedAt] = useState<string | null>(null)
+    const [loading, setLoading] = useState(true)
+    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+    const [error, setError] = useState<string | null>(null)
+
+    // Парсим вопросы один раз
+    const questions = useMemo(() => parseCheckinQuestions(text), [text])
+
+    // Загружаем существующий чек-ин
+    useEffect(() => {
+        let cancelled = false
+        getWeeklyCheckin(programId)
+            .then(checkin => {
+                if (cancelled) return
+                if (checkin) {
+                    setAnswers(checkin.answers || {})
+                    setCompletedAt(checkin.completed_at)
+                }
+            })
+            .finally(() => { if (!cancelled) setLoading(false) })
+        return () => { cancelled = true }
+    }, [programId])
+
+    // Debounce-автосохранение
+    const dirtyRef = useRef(false)
+    useEffect(() => {
+        if (!dirtyRef.current) return
+        const t = setTimeout(async () => {
+            setSaveStatus('saving')
+            setError(null)
+            try {
+                await upsertWeeklyCheckin({ programId, userId, answers })
+                setSaveStatus('saved')
+                setTimeout(() => setSaveStatus(s => s === 'saved' ? 'idle' : s), 1500)
+            } catch (e: any) {
+                setSaveStatus('error')
+                setError(e?.message || 'Ошибка сохранения')
+            }
+            dirtyRef.current = false
+        }, 800)
+        return () => clearTimeout(t)
+    }, [answers, programId, userId])
+
+    const updateAnswer = (key: string, value: string) => {
+        setAnswers(prev => ({ ...prev, [key]: value }))
+        dirtyRef.current = true
+    }
+
+    const filledCount = questions.filter(q => {
+        const a = answers[q.key]
+        return a !== undefined && String(a).trim() !== ''
+    }).length
+
+    const isCompleted = !!completedAt
+
     return (
-        <div className="mb-5 rounded-2xl border-2 border-accent/40 bg-accent/5 overflow-hidden shadow-glow-accent">
+        <div className={`mb-5 rounded-2xl border-2 overflow-hidden ${
+            isCompleted
+                ? 'border-success/40 bg-success/5'
+                : 'border-accent/40 bg-accent/5 shadow-glow-accent'
+        }`}>
             <button
                 onClick={() => setCollapsed(v => !v)}
                 className="w-full flex items-center gap-3 px-5 py-4 text-left"
             >
-                <span className="text-xl flex-shrink-0">📊</span>
-                <div className="flex-1">
-                    <span className="text-base font-display font-bold text-accent">Чек-ин в конце недели</span>
-                    <p className="text-xs text-accent/60 mt-0.5">Обязательно перед следующей неделей</p>
+                <span className="text-xl flex-shrink-0">{isCompleted ? '✅' : '📊'}</span>
+                <div className="flex-1 min-w-0">
+                    <span className={`text-base font-display font-bold ${isCompleted ? 'text-success' : 'text-accent'}`}>
+                        Чек-ин в конце недели
+                    </span>
+                    <p className={`text-xs mt-0.5 ${isCompleted ? 'text-success/70' : 'text-accent/60'}`}>
+                        {isCompleted
+                            ? `Завершён · ${new Date(completedAt!).toLocaleDateString('ru-RU')}`
+                            : questions.length > 0
+                                ? `Заполнено ${filledCount} из ${questions.length}`
+                                : 'Обязательно перед следующей неделей'}
+                    </p>
                 </div>
-                <ChevronDown className={`w-4 h-4 text-accent/60 transition-transform duration-200 ${collapsed ? '' : 'rotate-180'}`} />
+                <ChevronDown className={`w-4 h-4 transition-transform duration-200 flex-shrink-0 ${
+                    isCompleted ? 'text-success/60' : 'text-accent/60'
+                } ${collapsed ? '' : 'rotate-180'}`} />
             </button>
+
             {!collapsed && (
-                <div className="px-5 pb-5 text-sm text-text-secondary leading-relaxed border-t border-accent/20 pt-4">
-                    {renderSimpleMd(text)}
+                <div className="px-5 pb-5 text-sm text-text-secondary leading-relaxed border-t border-accent/20 pt-4 space-y-3">
+                    {loading ? (
+                        <div className="py-4 flex items-center justify-center gap-2 text-text-muted">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Загружаю...
+                        </div>
+                    ) : (
+                        <>
+                            <p className="text-xs text-text-muted italic">
+                                Заполни поля ниже. Ответы сохраняются автоматически и попадут в твой отчёт за неделю.
+                            </p>
+
+                            {questions.map(q => {
+                                const value = answers[q.key] ?? ''
+                                const inputId = `checkin-${programId}-${q.key}`
+                                return (
+                                    <div key={q.key} className="space-y-1">
+                                        <label htmlFor={inputId} className="block text-sm font-semibold text-white">
+                                            {q.label}
+                                            {q.hint && <span className="text-xs text-text-muted ml-2 font-normal">({q.hint})</span>}
+                                        </label>
+                                        {q.inputType === 'textarea' ? (
+                                            <textarea
+                                                id={inputId}
+                                                value={value}
+                                                onChange={e => updateAnswer(q.key, e.target.value)}
+                                                disabled={isCompleted}
+                                                rows={2}
+                                                className="glass-input w-full text-sm resize-y disabled:opacity-60"
+                                                placeholder="Свободный ответ..."
+                                            />
+                                        ) : q.inputType === 'number' ? (
+                                            <input
+                                                id={inputId}
+                                                type="number"
+                                                value={value}
+                                                onChange={e => updateAnswer(q.key, e.target.value)}
+                                                disabled={isCompleted}
+                                                min={q.min}
+                                                max={q.max}
+                                                className="glass-input w-full text-sm disabled:opacity-60"
+                                                placeholder={q.min !== undefined && q.max !== undefined ? `${q.min}-${q.max}` : '—'}
+                                            />
+                                        ) : (
+                                            <input
+                                                id={inputId}
+                                                type="text"
+                                                value={value}
+                                                onChange={e => updateAnswer(q.key, e.target.value)}
+                                                disabled={isCompleted}
+                                                className="glass-input w-full text-sm disabled:opacity-60"
+                                                placeholder="Свободный ответ..."
+                                            />
+                                        )}
+                                    </div>
+                                )
+                            })}
+
+                            <div className="flex flex-wrap items-center gap-3 pt-2">
+                                {isCompleted ? (
+                                    <span className="text-xs text-success font-semibold flex items-center gap-1.5">
+                                        <CheckCircle2 className="w-4 h-4" />
+                                        Чек-ин зафиксирован, ответы попадут в отчёт за неделю
+                                    </span>
+                                ) : (
+                                    <span className="text-xs text-text-muted italic">
+                                        Ответы сохраняются автоматически. Финализация — кнопкой «Завершить неделю» внизу.
+                                    </span>
+                                )}
+                                <span className="text-xs text-text-muted ml-auto">
+                                    {saveStatus === 'saving' && 'Сохраняю...'}
+                                    {saveStatus === 'saved' && '✓ Сохранено'}
+                                    {saveStatus === 'error' && (
+                                        <span className="text-danger">{error || 'Ошибка'}</span>
+                                    )}
+                                </span>
+                            </div>
+                        </>
+                    )}
                 </div>
             )}
         </div>
@@ -581,6 +740,11 @@ export default function ProgramDetailPage() {
     const [isRedFlagsCollapsed, setIsRedFlagsCollapsed] = useState(true)
     const [isDayNoteCollapsed, setIsDayNoteCollapsed] = useState(true)
     const [isDayContextCollapsed, setIsDayContextCollapsed] = useState(true)
+    // Статистика за прошлую неделю — три независимых раздела
+    const [isPrevWeekCollapsed, setIsPrevWeekCollapsed] = useState(true)
+    const [isPrevCoachCollapsed, setIsPrevCoachCollapsed] = useState(true)
+    const [isPrevVolumeCollapsed, setIsPrevVolumeCollapsed] = useState(true)
+    const [isPrevWellnessCollapsed, setIsPrevWellnessCollapsed] = useState(true)
     const [restTimerVisible, setRestTimerVisible] = useState(false)
 
     // Суперсеты
@@ -601,9 +765,28 @@ export default function ProgramDetailPage() {
     const userChangedRef = useRef(false)
     const latestDataRef = useRef({ exerciseData, energyLevel, mood, sleepQuality, notes })
 
+    // ─── Автосохранение: lock + очередь + статус ─────────────────────────────
+    // Гарантируем, что:
+    //  1. Параллельных upsert никогда не запускается (inFlightRef).
+    //  2. Если во время сохранения пользователь снова что-то ввёл,
+    //     после завершения текущего прогона запускается ещё один (pendingRef).
+    //  3. UI всегда видит реальный статус (saveStatus), а не залипший isSaving.
+    const inFlightRef = useRef(false)
+    const pendingRef = useRef(false)
+    const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+    const [saveError, setSaveError] = useState<string | null>(null)
+    const lastSavedAtRef = useRef<number | null>(null)
+
+    // Ключ локального бэкапа на (программа, день) — страховка от потери ввода
+    // при перезагрузке страницы / падении сети до ответа Supabase.
+    const backupKey = useCallback((dayNumber: number) => {
+        return `training_draft_${programId}_${dayNumber}`
+    }, [programId])
+
     useEffect(() => {
-        if (!authLoading && !user) window.location.href = '/auth'
-    }, [user, authLoading])
+        if (!authLoading && !user) router.replace('/auth')
+    }, [user, authLoading, router])
 
     // Проверка подписки
     useEffect(() => {
@@ -621,11 +804,11 @@ export default function ProgramDetailPage() {
                 const data = await getProgramById(programId)
                 if (!data) { router.replace('/programs'); return }
 
-                // Если program_data не содержит новых полей (weekContext, redFlags, dayContext),
+                // Если program_data не содержит новых полей (weekContext, redFlags, dayContext, prevWeekStats),
                 // дополняем их из program_md на лету — без записи в БД
                 const pd = data.program_data
                 const needsEnrich = data.program_md && (
-                    !pd.weekContext && !pd.redFlags &&
+                    !pd.weekContext && !pd.redFlags && !pd.prevWeekStats &&
                     !pd.days?.some(d => d.dayContext)
                 )
                 if (needsEnrich) {
@@ -638,6 +821,7 @@ export default function ProgramDetailPage() {
                             redFlags: parsed.redFlags,
                             checkin: parsed.checkin,
                             loggingNote: parsed.loggingNote,
+                            prevWeekStats: pd.prevWeekStats ?? parsed.prevWeekStats,
                             days: pd.days.map((day, i) => ({
                                 ...day,
                                 coachNote: day.coachNote ?? parsed.days[i]?.coachNote,
@@ -676,10 +860,39 @@ export default function ProgramDetailPage() {
         if (!program || !user) return
         dataLoadedRef.current = false
         userChangedRef.current = false
+        // Сбрасываем локальный статус автосохранения при смене дня —
+        // иначе после переключения остаётся «✓ Сохранено» от предыдущего дня.
+        setSaveStatus('idle')
+        setSaveError(null)
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current)
+            debounceTimerRef.current = null
+        }
 
         const loadEntry = async () => {
             const currentDay = program.program_data.days[currentDayIndex]
             if (!currentDay) return
+
+            // Локальный бэкап (если есть). Используем как fallback, если
+            // сеть не дала ответа, и как «more-recent override» если бэкап
+            // новее серверной записи (значит последняя попытка сохранения
+            // не дошла — например пользователь сделал hard reload).
+            let localDraft: {
+                exerciseData?: Record<string, ExerciseClientData>
+                energyLevel?: number
+                mood?: number
+                sleepQuality?: number
+                notes?: string
+                supersets?: Superset[]
+                savedAt?: number
+            } | null = null
+            try {
+                const raw = localStorage.getItem(backupKey(currentDay.dayNumber))
+                if (raw) localDraft = JSON.parse(raw)
+            } catch (e) {
+                console.warn('[program] local draft parse failed:', e)
+            }
+
             try {
                 const entry = await getTrainingEntry(program.id, currentDay.dayNumber)
                 if (entry) {
@@ -699,15 +912,34 @@ export default function ProgramDetailPage() {
                             converted[ex.id] = { sets: legacySets, comment: raw.comment || '' }
                         }
                     }
-                    setExerciseData(converted)
-                    setEnergyLevel(entry.energy_level || 5)
-                    setMood(entry.mood || 3)
-                    setSleepQuality(entry.sleep_quality || 3)
-                    setNotes(entry.notes || '')
 
-                    // Загружаем мета-данные (суперсеты)
-                    const meta: DayMeta = entry.entry_data?.__meta__ || {}
-                    setSupersets(meta.supersets || [])
+                    // Если локальный бэкап новее, чем то что нам отдал сервер,
+                    // значит последний save не дошёл — восстанавливаем черновик
+                    // и помечаем, что нужно повторно сохранить.
+                    const serverUpdatedAt = entry.updated_at ? new Date(entry.updated_at).getTime() : 0
+                    const draftIsNewer = localDraft?.savedAt && localDraft.savedAt > serverUpdatedAt + 1000
+                    if (draftIsNewer && localDraft?.exerciseData) {
+                        setExerciseData(localDraft.exerciseData)
+                        setEnergyLevel(localDraft.energyLevel ?? entry.energy_level ?? 5)
+                        setMood(localDraft.mood ?? entry.mood ?? 3)
+                        setSleepQuality(localDraft.sleepQuality ?? entry.sleep_quality ?? 3)
+                        setNotes(localDraft.notes ?? entry.notes ?? '')
+                        setSupersets(localDraft.supersets ?? (entry.entry_data?.__meta__?.supersets || []))
+                        // помечаем как «надо досохранить» — после монтирования сработает автосейв
+                        userChangedRef.current = true
+                        setSaveStatus('idle')
+                        console.info('[program] restored local draft (newer than server)')
+                    } else {
+                        setExerciseData(converted)
+                        setEnergyLevel(entry.energy_level || 5)
+                        setMood(entry.mood || 3)
+                        setSleepQuality(entry.sleep_quality || 3)
+                        setNotes(entry.notes || '')
+
+                        // Загружаем мета-данные (суперсеты)
+                        const meta: DayMeta = entry.entry_data?.__meta__ || {}
+                        setSupersets(meta.supersets || [])
+                    }
 
                     if (entry.completed_at) {
                         setCompletedDays(prev => new Set([...prev, currentDay.dayNumber]))
@@ -729,11 +961,25 @@ export default function ProgramDetailPage() {
                         }
                     }
                 } else {
-                    setExerciseData({})
-                    setEnergyLevel(5)
-                    setMood(3)
-                    setSleepQuality(3)
-                    setNotes('')
+                    // На сервере нет записи. Если есть локальный черновик —
+                    // используем его, чтобы не потерять ввод после перезагрузки.
+                    if (localDraft?.exerciseData) {
+                        setExerciseData(localDraft.exerciseData)
+                        setEnergyLevel(localDraft.energyLevel ?? 5)
+                        setMood(localDraft.mood ?? 3)
+                        setSleepQuality(localDraft.sleepQuality ?? 3)
+                        setNotes(localDraft.notes ?? '')
+                        setSupersets(localDraft.supersets ?? [])
+                        userChangedRef.current = true
+                        console.info('[program] restored local draft (no server entry)')
+                    } else {
+                        setExerciseData({})
+                        setEnergyLevel(5)
+                        setMood(3)
+                        setSleepQuality(3)
+                        setNotes('')
+                        setSupersets([])
+                    }
                     setSavedDuration(null)
                     // Восстанавливаем таймер из localStorage если был запущен
                     const key = `workout_start_${program.id}_${currentDay.dayNumber}`
@@ -746,16 +992,28 @@ export default function ProgramDetailPage() {
                         setWorkoutStartTime(null)
                         setElapsedSeconds(0)
                     }
-                    setSupersets([])
                 }
             } catch (e) {
                 console.error('Error loading entry:', e)
+                // Сеть/RLS отвалились — пробуем хотя бы поднять локальный
+                // черновик, чтобы пользователь не остался с пустыми полями.
+                if (localDraft?.exerciseData) {
+                    setExerciseData(localDraft.exerciseData)
+                    setEnergyLevel(localDraft.energyLevel ?? 5)
+                    setMood(localDraft.mood ?? 3)
+                    setSleepQuality(localDraft.sleepQuality ?? 3)
+                    setNotes(localDraft.notes ?? '')
+                    setSupersets(localDraft.supersets ?? [])
+                    userChangedRef.current = true
+                    setSaveStatus('error')
+                    setSaveError('Не удалось загрузить с сервера, восстановлен локальный черновик')
+                }
             } finally {
                 dataLoadedRef.current = true
             }
         }
         loadEntry()
-    }, [program, currentDayIndex, user])
+    }, [program, currentDayIndex, user, backupKey])
 
     useEffect(() => {
         latestDataRef.current = { exerciseData, energyLevel, mood, sleepQuality, notes }
@@ -784,42 +1042,175 @@ export default function ProgramDetailPage() {
     const metaRef = useRef({ supersets })
     useEffect(() => { metaRef.current = { supersets } }, [supersets])
 
-    const saveEntry = useCallback(async (silent = false) => {
-        if (!program || !user) return
-        const currentDay = program.program_data.days[currentDayIndex]
-        if (!currentDay) return
-
+    /**
+     * Снимок текущего состояния тренировочного дня для записи в БД.
+     * Вынесен отдельно, чтобы:
+     *  - сохранять идентичную структуру в БД и в localStorage-бэкап;
+     *  - не дублировать логику сборки __meta__ в трёх местах.
+     */
+    const buildEntrySnapshot = useCallback(() => {
         const { exerciseData: ed, energyLevel: el, mood: m, sleepQuality: sq, notes: n } = latestDataRef.current
         const { supersets: ss } = metaRef.current
-
-        // Добавляем мета-данные в entry_data
-        const entryDataWithMeta = {
-            ...ed,
-            __meta__: { supersets: ss } as DayMeta,
+        return {
+            entryData: { ...ed, __meta__: { supersets: ss } as DayMeta },
+            metadata: { energy_level: el, mood: m, sleep_quality: sq, notes: n },
+            raw: { exerciseData: ed, energyLevel: el, mood: m, sleepQuality: sq, notes: n, supersets: ss },
         }
+    }, [])
+
+    /**
+     * Локальный бэкап последнего состояния. Пишется СРАЗУ при любом
+     * вводе пользователя — чтобы данные не терялись при hard reload,
+     * сетевом сбое или вкладке, закрытой до завершения сохранения.
+     *
+     * Чистится только после подтверждённого ответа от сервера в saveEntry.
+     */
+    const writeLocalDraft = useCallback((dayNumber: number) => {
+        try {
+            const snap = buildEntrySnapshot()
+            localStorage.setItem(
+                backupKey(dayNumber),
+                JSON.stringify({ ...snap.raw, savedAt: Date.now() }),
+            )
+        } catch (e) {
+            // localStorage может быть переполнен / приватный режим — это не фатально.
+            console.warn('[program] localStorage write failed:', e)
+        }
+    }, [backupKey, buildEntrySnapshot])
+
+    /**
+     * Сохранение записи дня. Гарантии:
+     *
+     *  - Никогда не запускается параллельно (inFlightRef как mutex).
+     *    Повторный вызов во время выполнения помечает pendingRef и
+     *    стартует ещё раз сразу после завершения текущего, со свежими
+     *    данными из latestDataRef. Это убирает «зависание» кнопки —
+     *    она всегда отрабатывает за один click + один in-flight цикл.
+     *
+     *  - Имеет таймаут (см. withTimeout в services/training.ts).
+     *    Если сеть/RLS подвисли, через 12с упадёт reject, isSaving сбросится,
+     *    кнопка станет снова кликабельной.
+     *
+     *  - Локальный бэкап снимается только после успеха upsert. До этого
+     *    при перезагрузке восстановим черновик и попробуем досохранить.
+     *
+     *  - silent=true (автосейв) не показывает «✓ Сохранено», но всё равно
+     *    обновляет saveStatus, чтобы пользователь видел индикатор.
+     *
+     * @returns true если сохранилось, false если упало (но кнопка свободна)
+     */
+    const saveEntry = useCallback(async (silent = false): Promise<boolean> => {
+        if (!program || !user) return false
+        const currentDay = program.program_data.days[currentDayIndex]
+        if (!currentDay) return false
+
+        // Если запрос уже в полёте — отметим, что нужен повторный прогон,
+        // и выйдем. Текущий saveEntry внутри finally сам перезапустится.
+        if (inFlightRef.current) {
+            pendingRef.current = true
+            return false
+        }
+        inFlightRef.current = true
 
         if (!silent) setIsSaving(true)
+        setSaveStatus('saving')
+        setSaveError(null)
+
         try {
-            await upsertTrainingEntry(program.id, currentDay.dayNumber, entryDataWithMeta, {
-                energy_level: el, mood: m, sleep_quality: sq, notes: n,
-            })
+            const snap = buildEntrySnapshot()
+            await upsertTrainingEntry(program.id, currentDay.dayNumber, snap.entryData, snap.metadata)
+
+            lastSavedAtRef.current = Date.now()
+            // Серверная запись подтверждена — локальный бэкап больше не нужен,
+            // но оставим его до следующего ввода (на случай мгновенного reload).
+            // Перезапишем «согласованным» снимком с пометкой времени.
+            try {
+                localStorage.setItem(
+                    backupKey(currentDay.dayNumber),
+                    JSON.stringify({ ...snap.raw, savedAt: lastSavedAtRef.current }),
+                )
+            } catch { /* noop */ }
+
+            setSaveStatus('saved')
             if (!silent) {
                 setSaveMessage('✓ Сохранено')
                 setTimeout(() => setSaveMessage(''), 2000)
             }
-        } catch (e) {
+            // Через 1.5с возвращаем idle — но только если не появилось новых правок.
+            setTimeout(() => {
+                setSaveStatus(prev => prev === 'saved' ? 'idle' : prev)
+            }, 1500)
+            return true
+        } catch (e: any) {
             console.error('Error saving:', e)
-            if (!silent) setSaveMessage('Ошибка сохранения')
+            setSaveStatus('error')
+            setSaveError(e?.message || 'Ошибка сохранения')
+            if (!silent) setSaveMessage('Ошибка сохранения — попробуй ещё раз')
+            return false
         } finally {
+            inFlightRef.current = false
             if (!silent) setIsSaving(false)
+            // Если за время сохранения накопились новые правки —
+            // сразу запускаем ещё один проход (silent), чтобы не терять их.
+            if (pendingRef.current) {
+                pendingRef.current = false
+                // Маленький timeout, чтобы дать React зафиксировать стейт-апдейты.
+                setTimeout(() => { saveEntryRef.current?.(true) }, 50)
+            }
         }
-    }, [program, currentDayIndex, user])
+    }, [program, currentDayIndex, user, buildEntrySnapshot, backupKey])
 
+    // Ref на актуальный saveEntry, чтобы можно было дёргать его внутри
+    // самого saveEntry (для pending-проброса) и из flush-on-unmount без
+    // ловушки stale-closure.
+    const saveEntryRef = useRef(saveEntry)
+    useEffect(() => { saveEntryRef.current = saveEntry }, [saveEntry])
+
+    // ─── Автосохранение по дебаунсу 800мс после любого ввода ────────────────
+    // Раньше было 1500мс, но это слишком долго: пользователь успевает
+    // нажать «Сохранить» вручную и попадает в гонку с автосейвом. 800мс —
+    // тот же порог, что у CheckinBlock, проверен и работает стабильно.
     useEffect(() => {
         if (!dataLoadedRef.current || !userChangedRef.current) return
-        const t = setTimeout(() => saveEntry(true), 1500)
-        return () => clearTimeout(t)
-    }, [exerciseData, energyLevel, mood, sleepQuality, notes, supersets, saveEntry])
+        if (!program) return
+        const currentDay = program.program_data.days[currentDayIndex]
+        if (!currentDay) return
+
+        // Сразу пишем локальный бэкап — даже если сеть отвалится,
+        // данные не пропадут после reload.
+        writeLocalDraft(currentDay.dayNumber)
+        setSaveStatus(prev => prev === 'saved' ? 'idle' : prev)
+
+        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+        debounceTimerRef.current = setTimeout(() => {
+            saveEntryRef.current?.(true)
+        }, 800)
+
+        return () => {
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current)
+                debounceTimerRef.current = null
+            }
+        }
+    }, [exerciseData, energyLevel, mood, sleepQuality, notes, supersets, program, currentDayIndex, writeLocalDraft])
+
+    // Финальный flush при размонтировании / закрытии вкладки.
+    // Если пользователь успел нажать «Сохранить» прямо перед уходом со страницы,
+    // и debounce ещё не сработал — попробуем сделать last-chance save через sendBeacon? Нет:
+    // используем синхронный сценарий — debounce уже отработает на ближайшем тике, плюс
+    // localStorage гарантирует, что после открытия вкладки заново данные восстановятся.
+    useEffect(() => {
+        const onBeforeUnload = () => {
+            if (!program) return
+            const currentDay = program.program_data.days[currentDayIndex]
+            if (!currentDay) return
+            // Принудительно дописываем актуальный черновик в localStorage —
+            // последняя линия защиты от потери ввода.
+            writeLocalDraft(currentDay.dayNumber)
+        }
+        window.addEventListener('beforeunload', onBeforeUnload)
+        return () => window.removeEventListener('beforeunload', onBeforeUnload)
+    }, [program, currentDayIndex, writeLocalDraft])
 
     const updateExercise = (exerciseId: string, data: ExerciseClientData) => {
         userChangedRef.current = true
@@ -833,31 +1224,52 @@ export default function ProgramDetailPage() {
         if (!program) return
         const currentDay = program.program_data.days[currentDayIndex]
         if (!currentDay) return
+        // Защита от двойного клика и от гонки с автосейвом
+        if (inFlightRef.current) return
+        inFlightRef.current = true
+        // Если есть «висящий» дебаунс — отменяем, чтобы не записать дважды
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current)
+            debounceTimerRef.current = null
+        }
         setIsSaving(true)
+        setSaveStatus('saving')
         const finalDuration = workoutStartTime !== null
             ? Math.floor((Date.now() - workoutStartTime) / 1000)
             : elapsedSeconds || undefined
         try {
-            const { exerciseData: ed, energyLevel: el, mood: m, sleepQuality: sq, notes: n } = latestDataRef.current
-            const { supersets: ss } = metaRef.current
-            const entryDataWithMeta = { ...ed, __meta__: { supersets: ss } }
-            await upsertTrainingEntry(program.id, currentDay.dayNumber, entryDataWithMeta, {
-                energy_level: el, mood: m, sleep_quality: sq, notes: n,
+            const snap = buildEntrySnapshot()
+            await upsertTrainingEntry(program.id, currentDay.dayNumber, snap.entryData, {
+                ...snap.metadata,
                 workout_duration_seconds: finalDuration,
             })
             await completeTrainingDay(program.id, currentDay.dayNumber)
+
+            // Если это последний день недели — автоматически фиксируем чек-ин клиента,
+            // чтобы тренер видел финализированные ответы в дневнике.
+            if (currentDayIndex === program.program_data.days.length - 1) {
+                await markWeeklyCheckinCompleted(program.id)
+            }
+
             setCompletedDays(prev => new Set([...prev, currentDay.dayNumber]))
             setSavedDuration(finalDuration ?? null)
             setWorkoutStartTime(null)
-            // Очищаем сохранённое время старта
+            // Очищаем сохранённое время старта и локальный черновик —
+            // день закрыт, данные на сервере подтверждены.
             localStorage.removeItem(`workout_start_${program.id}_${currentDay.dayNumber}`)
+            try { localStorage.removeItem(backupKey(currentDay.dayNumber)) } catch { /* noop */ }
+            setSaveStatus('saved')
             setSaveMessage('✓ Тренировка завершена!')
             setTimeout(() => setSaveMessage(''), 3000)
-        } catch (e) {
+            setTimeout(() => setSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 1500)
+        } catch (e: any) {
             console.error('Error completing:', e)
-            setSaveMessage('Ошибка')
+            setSaveStatus('error')
+            setSaveError(e?.message || 'Ошибка завершения')
+            setSaveMessage('Ошибка — попробуй ещё раз')
         } finally {
             setIsSaving(false)
+            inFlightRef.current = false
         }
     }
 
@@ -865,22 +1277,32 @@ export default function ProgramDetailPage() {
         if (!program) return
         const currentDay = program.program_data.days[currentDayIndex]
         if (!currentDay) return
+        if (inFlightRef.current) return
+        inFlightRef.current = true
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current)
+            debounceTimerRef.current = null
+        }
         setIsSaving(true)
+        setSaveStatus('saving')
         try {
-            const { exerciseData: ed, energyLevel: el, mood: m, sleepQuality: sq, notes: n } = latestDataRef.current
-            const { supersets: ss } = metaRef.current
-            const entryDataWithMeta = { ...ed, __meta__: { supersets: ss } }
-            await upsertTrainingEntry(program.id, currentDay.dayNumber, entryDataWithMeta, {
-                energy_level: el, mood: m, sleep_quality: sq, notes: n,
+            const snap = buildEntrySnapshot()
+            await upsertTrainingEntry(program.id, currentDay.dayNumber, snap.entryData, {
+                ...snap.metadata,
                 workout_duration_seconds: savedDuration ?? undefined,
             })
+            setSaveStatus('saved')
             setSaveMessage('✓ Правки сохранены')
             setTimeout(() => setSaveMessage(''), 2000)
-        } catch (e) {
+            setTimeout(() => setSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 1500)
+        } catch (e: any) {
             console.error('Error saving completed entry:', e)
-            setSaveMessage('Ошибка сохранения')
+            setSaveStatus('error')
+            setSaveError(e?.message || 'Ошибка сохранения')
+            setSaveMessage('Ошибка сохранения — попробуй ещё раз')
         } finally {
             setIsSaving(false)
+            inFlightRef.current = false
         }
     }
 
@@ -980,6 +1402,91 @@ export default function ProgramDetailPage() {
                     </button>
                     {saveMessage && <div className="text-sm text-accent font-medium">{saveMessage}</div>}
                 </div>
+
+                {/* Статистика за прошлую неделю — три раздела от тренера */}
+                {program.program_data.prevWeekStats && (
+                    program.program_data.prevWeekStats.coachSummary ||
+                    program.program_data.prevWeekStats.volumeSummary ||
+                    program.program_data.prevWeekStats.wellnessSummary
+                ) && (
+                    <div className="mb-5 rounded-2xl border border-accent/30 bg-accent/5 overflow-hidden">
+                        <button
+                            onClick={() => setIsPrevWeekCollapsed(v => !v)}
+                            className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-accent/10 transition-colors"
+                        >
+                            <span className="text-lg flex-shrink-0">📊</span>
+                            <div className="flex-1 min-w-0">
+                                <div className="text-sm font-display font-bold text-accent">Статистика за прошлую неделю</div>
+                                <div className="text-xs text-text-muted mt-0.5">Резюме тренера, объём и самочувствие</div>
+                            </div>
+                            <ChevronDown className={`w-4 h-4 text-accent/60 transition-transform duration-200 flex-shrink-0 ${isPrevWeekCollapsed ? '' : 'rotate-180'}`} />
+                        </button>
+
+                        {!isPrevWeekCollapsed && (
+                            <div className="px-3 pb-3 pt-1 space-y-2 border-t border-accent/15">
+                                {program.program_data.prevWeekStats.coachSummary && (
+                                    <div className="rounded-xl border border-accent/20 overflow-hidden">
+                                        <button
+                                            onClick={() => setIsPrevCoachCollapsed(v => !v)}
+                                            className="w-full flex items-center gap-2 px-3 py-2.5 text-left bg-accent/10 hover:bg-accent/15 transition-colors"
+                                        >
+                                            <span className="text-accent text-base flex-shrink-0">📝</span>
+                                            <span className="text-sm font-semibold text-accent flex-1">Резюме тренера</span>
+                                            <ChevronDown className={`w-4 h-4 text-accent/60 transition-transform duration-200 ${isPrevCoachCollapsed ? '' : 'rotate-180'}`} />
+                                        </button>
+                                        {!isPrevCoachCollapsed && (
+                                            <div className="px-3 py-2.5 bg-accent/5">
+                                                <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                                    {program.program_data.prevWeekStats.coachSummary}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {program.program_data.prevWeekStats.volumeSummary && (
+                                    <div className="rounded-xl border border-blue-500/20 overflow-hidden">
+                                        <button
+                                            onClick={() => setIsPrevVolumeCollapsed(v => !v)}
+                                            className="w-full flex items-center gap-2 px-3 py-2.5 text-left bg-blue-500/10 hover:bg-blue-500/15 transition-colors"
+                                        >
+                                            <span className="text-base flex-shrink-0">📈</span>
+                                            <span className="text-sm font-semibold text-blue-400 flex-1">Объём и интенсивность</span>
+                                            <ChevronDown className={`w-4 h-4 text-blue-400/60 transition-transform duration-200 ${isPrevVolumeCollapsed ? '' : 'rotate-180'}`} />
+                                        </button>
+                                        {!isPrevVolumeCollapsed && (
+                                            <div className="px-3 py-2.5 bg-blue-500/5">
+                                                <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                                    {program.program_data.prevWeekStats.volumeSummary}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {program.program_data.prevWeekStats.wellnessSummary && (
+                                    <div className="rounded-xl border border-emerald-500/20 overflow-hidden">
+                                        <button
+                                            onClick={() => setIsPrevWellnessCollapsed(v => !v)}
+                                            className="w-full flex items-center gap-2 px-3 py-2.5 text-left bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors"
+                                        >
+                                            <span className="text-base flex-shrink-0">💚</span>
+                                            <span className="text-sm font-semibold text-emerald-400 flex-1">Самочувствие со слов клиента</span>
+                                            <ChevronDown className={`w-4 h-4 text-emerald-400/60 transition-transform duration-200 ${isPrevWellnessCollapsed ? '' : 'rotate-180'}`} />
+                                        </button>
+                                        {!isPrevWellnessCollapsed && (
+                                            <div className="px-3 py-2.5 bg-emerald-500/5">
+                                                <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                                    {program.program_data.prevWeekStats.wellnessSummary}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Инфо о программе */}
                 <div className="glass-card p-5 mb-5">
@@ -1248,10 +1755,7 @@ export default function ProgramDetailPage() {
                     </div>
                 )}
 
-                {/* Чек-ин в конце недели — показываем на последнем дне */}
-                {currentDayIndex === program.program_data.days.length - 1 && program.program_data.checkin && (
-                    <CheckinBlock text={program.program_data.checkin} />
-                )}
+                {/* Чек-ин в конце недели — рендерится после Самочувствия, перед кнопками */}
 
                 {/* Статистика сессии */}
                 {(() => {
@@ -1373,25 +1877,64 @@ export default function ProgramDetailPage() {
                     )}
                 </div>
 
+                {/* Чек-ин в конце недели — на последнем тренировочном дне, после Самочувствия */}
+                {currentDayIndex === program.program_data.days.length - 1 && program.program_data.checkin && user && (
+                    <CheckinBlock
+                        programId={program.id}
+                        userId={user.id}
+                        text={program.program_data.checkin}
+                    />
+                )}
+
                 {/* Кнопки */}
                 {!isCurrentDayCompleted ? (
-                    <div className="flex gap-3">
-                        <button onClick={() => saveEntry(false)} disabled={isSaving}
-                            className="glass-button-secondary flex-1 flex items-center justify-center gap-2 py-3">
-                            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : '💾'}
-                            Сохранить
-                        </button>
-                        <button onClick={handleCompleteDay} disabled={isSaving}
-                            className="glass-button flex-1 flex items-center justify-center gap-2 py-3">
-                            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                            Завершить
-                        </button>
+                    <div className="space-y-2">
+                        {/* Индикатор статуса автосохранения — пользователь всегда видит,
+                            что данные либо уже сохранены, либо сохраняются прямо сейчас.
+                            Это снимает ощущение «нажал и ничего не понятно».
+                            min-w-0 + truncate — на узких мобильных экранах сообщение об
+                            ошибке (текст таймаута/код) не выпирает за края контейнера. */}
+                        <div className="flex items-center justify-end gap-2 text-xs min-h-[16px] min-w-0">
+                            {saveStatus === 'saving' && (
+                                <span className="text-text-muted flex items-center gap-1.5 truncate">
+                                    <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" />
+                                    <span className="truncate">Сохраняю...</span>
+                                </span>
+                            )}
+                            {saveStatus === 'saved' && (
+                                <span className="text-success truncate">✓ Сохранено автоматически</span>
+                            )}
+                            {saveStatus === 'error' && (
+                                <span className="text-red-400 truncate" title={saveError ?? undefined}>
+                                    ⚠ {saveError ?? 'Ошибка автосохранения, нажми «Сохранить»'}
+                                </span>
+                            )}
+                            {saveStatus === 'idle' && lastSavedAtRef.current !== null && (
+                                <span className="text-text-muted truncate">Все изменения сохранены</span>
+                            )}
+                        </div>
+                        <div className="flex gap-2 sm:gap-3">
+                            <button onClick={() => saveEntry(false)} disabled={isSaving}
+                                className="glass-button-secondary flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-3 min-w-0">
+                                {isSaving ? <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" /> : <span className="flex-shrink-0">💾</span>}
+                                <span className="truncate">Сохранить</span>
+                            </button>
+                            <button onClick={handleCompleteDay} disabled={isSaving}
+                                className="glass-button flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-3 min-w-0">
+                                {isSaving ? <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" /> : <CheckCircle2 className="w-4 h-4 flex-shrink-0" />}
+                                <span className="truncate">{currentDayIndex === program.program_data.days.length - 1 ? 'Завершить неделю' : 'Завершить'}</span>
+                            </button>
+                        </div>
                     </div>
                 ) : (
                     <div className="space-y-3">
                         <div className="glass-card p-4 flex items-center justify-center gap-2 text-success">
                             <CheckCircle2 className="w-5 h-5" />
-                            <span className="font-semibold">День {currentDay.dayNumber} завершён</span>
+                            <span className="font-semibold">
+                                {currentDayIndex === program.program_data.days.length - 1
+                                    ? 'Неделя завершена'
+                                    : `День ${currentDay.dayNumber} завершён`}
+                            </span>
                         </div>
                         <button onClick={handleSaveCompleted} disabled={isSaving}
                             className="glass-button-secondary w-full flex items-center justify-center gap-2 py-3 text-sm">

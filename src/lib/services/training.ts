@@ -4,6 +4,31 @@
 import { createClient } from '@/lib/supabase/client'
 import { notifyProgramUploaded } from './notifications'
 
+/**
+ * Жёсткий таймаут на сетевые операции Supabase.
+ *
+ * Зачем: supabase-js не поддерживает AbortSignal во всех билдерах,
+ * а в браузере промис может «висеть» при флапающем интернете
+ * или подвисшем RLS-запросе. Без таймаута UI-флаг isSaving остаётся true,
+ * кнопки залипают, пользователю кажется что ничего не работает.
+ *
+ * Любая операция тренировочного дневника, которая стопорит UX
+ * (upsert, complete) ОБЯЗАНА проходить через withTimeout.
+ */
+const SUPABASE_OP_TIMEOUT_MS = 12_000
+
+function withTimeout<T>(promise: PromiseLike<T>, label: string, ms = SUPABASE_OP_TIMEOUT_MS): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => {
+      reject(new Error(`[training] ${label} timeout after ${ms}ms`))
+    }, ms)
+    Promise.resolve(promise).then(
+      (v) => { clearTimeout(t); resolve(v) },
+      (e) => { clearTimeout(t); reject(e) },
+    )
+  })
+}
+
 export interface TrainingProgram {
   id: string
   user_id: string
@@ -24,11 +49,26 @@ export interface ProgramData {
   startDate: string
   endDate: string
   days: TrainingDay[]
-  weeklyNote?: string    // краткая рекомендация тренера на неделю (**Рекомендация:**)
-  weekContext?: string   // контекст недели (**Контекст недели:**), многострочный
-  redFlags?: string      // красные флаги (**Красные флаги:**), многострочный
-  checkin?: string       // блок чек-ина (## 📊 Чек-ин в конце недели)
-  loggingNote?: string   // памятка по логированию (## Памятка по логированию)
+  weeklyNote?: string         // краткая рекомендация тренера на неделю (**Рекомендация:**)
+  weekContext?: string        // контекст недели (**Контекст недели:**), многострочный
+  redFlags?: string           // красные флаги (**Красные флаги:**), многострочный
+  checkin?: string            // блок чек-ина (## 📊 Чек-ин в конце недели)
+  loggingNote?: string        // памятка по логированию (## Памятка по логированию)
+  prevWeekStats?: PrevWeekStats // статистика за прошлую неделю
+}
+
+/**
+ * Статистика за прошлую неделю.
+ * Отображается клиенту в начале текущей недели, чтобы он видел, что
+ * тренер слышит его обратную связь и составляет программу индивидуально.
+ *
+ * Все три подблока — многострочный markdown-текст, заполняется тренером
+ * на основе фактических подходов и комментариев клиента за прошлую неделю.
+ */
+export interface PrevWeekStats {
+  coachSummary?: string    // **Резюме прошлой недели:** общий обзор и мысли тренера
+  volumeSummary?: string   // **Объём прошлой недели:** тоннаж/интенсивность (объективно)
+  wellnessSummary?: string // **Самочувствие прошлой недели:** обобщение со слов клиента
 }
 
 export interface TrainingDay {
@@ -316,28 +356,31 @@ export async function upsertTrainingEntry(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  const { data, error } = await supabase
-    .from('training_entries')
-    .upsert(
-      {
-        program_id: programId,
-        user_id: user.id,
-        day_number: dayNumber,
-        entry_data: entryData,
-        ...metadata,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'program_id,day_number' }
-    )
-    .select()
-    .single()
+  const { data, error } = await withTimeout<{ data: TrainingEntry | null; error: any }>(
+    supabase
+      .from('training_entries')
+      .upsert(
+        {
+          program_id: programId,
+          user_id: user.id,
+          day_number: dayNumber,
+          entry_data: entryData,
+          ...metadata,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'program_id,day_number' }
+      )
+      .select()
+      .single(),
+    'upsertTrainingEntry',
+  )
 
   if (error) {
     console.error('Error upserting entry:', error)
     throw error
   }
 
-  return data
+  return data as TrainingEntry
 }
 
 /**
@@ -352,12 +395,15 @@ export async function completeTrainingDay(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  const { error } = await supabase
-    .from('training_entries')
-    .update({ completed_at: new Date().toISOString() })
-    .eq('program_id', programId)
-    .eq('day_number', dayNumber)
-    .eq('user_id', user.id)
+  const { error } = await withTimeout<{ error: any }>(
+    supabase
+      .from('training_entries')
+      .update({ completed_at: new Date().toISOString() })
+      .eq('program_id', programId)
+      .eq('day_number', dayNumber)
+      .eq('user_id', user.id),
+    'completeTrainingDay',
+  )
 
   if (error) {
     console.error('Error completing training day:', error)
@@ -471,83 +517,4 @@ export async function getAllClientTrainingData(
  */
 export function exportProgramToMarkdown(program: TrainingProgram): string {
   return program.program_md
-}
-
-/**
- * Экспортировать заполненную программу с данными клиента
- */
-export async function exportFilledProgram(programId: string): Promise<string> {
-  const program = await getProgramById(programId)
-  if (!program) throw new Error('Program not found')
-
-  const entries = await getProgramEntries(programId)
-  
-  let markdown = `# Неделя ${program.week_number}\n\n`
-  markdown += `**Период:** ${program.start_date} — ${program.end_date}\n\n`
-
-  program.program_data.days.forEach((day) => {
-    const entry = entries.find((e) => e.day_number === day.dayNumber)
-    
-    markdown += `## День ${day.dayNumber}: ${day.title}\n\n`
-    
-    day.exercises.forEach((exercise) => {
-      const entryForEx = entry?.entry_data[exercise.id]
-      // Определяем какое упражнение было выполнено (основное или альтернатива)
-      const selectedAltId = entryForEx?.selectedAlternativeId
-      const selectedAlt = selectedAltId
-        ? exercise.alternatives?.find(a => a.id === selectedAltId)
-        : null
-      const performedName = selectedAlt ? selectedAlt.name : exercise.name
-      const performedSets = selectedAlt ? selectedAlt.sets : exercise.sets
-      const performedReps = selectedAlt ? selectedAlt.reps : exercise.reps
-
-      markdown += `### ${performedName}`
-      if (selectedAlt) markdown += ` *(альтернатива к: ${exercise.name})*`
-      markdown += '\n'
-      if (exercise.videoUrl && !selectedAlt) markdown += `[Видео](${exercise.videoUrl})\n`
-      if (selectedAlt?.videoUrl) markdown += `[Видео](${selectedAlt.videoUrl})\n`
-      markdown += `- План: ${performedSets} x ${performedReps}\n`
-
-      if (entryForEx) {
-        if (entryForEx.sets && Array.isArray(entryForEx.sets)) {
-          // Новый формат с подходами
-          const filledSets = entryForEx.sets.filter((s: any) => s.weight || s.reps)
-          if (filledSets.length > 0) {
-            markdown += `- Факт подходов:\n`
-            filledSets.forEach((s: any, i: number) => {
-              markdown += `  - Подход ${i + 1}: ${s.weight || '—'} кг × ${s.reps || '—'} повт.${s.rir ? ` RIR ${s.rir}` : ''}\n`
-            })
-          }
-        } else {
-          // Старый формат
-          markdown += `- Факт: ${entryForEx.actualWeight || '—'} кг x ${entryForEx.actualReps || '—'} повт.\n`
-          markdown += `- RPE: ${entryForEx.rpe || '—'}/10\n`
-        }
-        if (entryForEx.comment) markdown += `- Комментарий: ${entryForEx.comment}\n`
-      }
-
-      markdown += '\n'
-    })
-
-    if (entry) {
-      markdown += `**Самочувствие:**\n`
-      markdown += `- Энергия: ${entry.energy_level || '—'}/10\n`
-      markdown += `- Настроение: ${entry.mood || '—'}/5\n`
-      markdown += `- Сон: ${entry.sleep_quality || '—'}/5\n`
-      if (entry.workout_duration_seconds) {
-        const h = Math.floor(entry.workout_duration_seconds / 3600)
-        const m = Math.floor((entry.workout_duration_seconds % 3600) / 60)
-        const s = entry.workout_duration_seconds % 60
-        const timeStr = h > 0
-          ? `${h}ч ${m}мин`
-          : s > 0 ? `${m}мин ${s}с` : `${m}мин`
-        markdown += `- Время тренировки: ${timeStr}\n`
-      }
-      if (entry.notes) markdown += `- Заметки: ${entry.notes}\n`
-    }
-
-    markdown += '\n---\n\n'
-  })
-
-  return markdown
 }

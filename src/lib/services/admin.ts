@@ -15,6 +15,8 @@ export interface UserProfile {
     subscription_status?: 'inactive' | 'active' | 'paused' | 'expired'
     subscription_end_date?: string | null
     has_nutrition_plan?: boolean
+    /** Slug клиента в репозитории training-brain (clients/<slug>/...) */
+    training_brain_client_id?: string | null
 }
 
 export interface UserWithProgress extends UserProfile {
@@ -288,6 +290,24 @@ export async function getUserDetails(userId: string): Promise<UserWithProgress |
         total_reports: count || 0,
         last_activity: user.created_at
     }
+}
+
+/**
+ * Обновить slug клиента в training-brain (поле profiles.training_brain_client_id).
+ * Используется в админке для связки клиента с папкой clients/<slug>/ в репозитории.
+ * Передавай null или пустую строку чтобы очистить поле.
+ */
+export async function updateTrainingBrainClientId(
+    userId: string,
+    slug: string | null,
+): Promise<void> {
+    const supabase = createClient()
+    const value = slug && slug.trim() ? slug.trim() : null
+    const { error } = await supabase
+        .from('profiles')
+        .update({ training_brain_client_id: value })
+        .eq('id', userId)
+    if (error) throw new Error(error.message)
 }
 
 // Get user's day reports

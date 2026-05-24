@@ -127,7 +127,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
         )
 
-        // 3. Таймаут-страховка: максимум 1.5 сек
+        // 3. Таймаут-страховка: максимум 5 сек.
+        // Раньше было 1500мс — слишком мало для холодного старта на десктопе:
+        // если getSession() резолвится дольше, флаг hasResolved выставлялся
+        // с user=null, страницы делали guard-редирект на /auth, и пользователь
+        // получал hard reload поверх валидной сессии. На мобиле чанки
+        // меньше и быстрее — там не было заметно. 5с это безопасный порог:
+        // нормальный getSession() укладывается в 200–500мс.
         const timeout = setTimeout(() => {
             if (!hasResolved.current && isMounted) {
                 console.warn('[Auth] Timeout — forcing isLoading=false')
@@ -135,12 +141,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 globalResolved = true
                 setIsLoading(false)
             }
-        }, 1500)
+        }, 5000)
+
+        // 4. Refresh сессии при возврате к вкладке.
+        // На десктопе пользователь часто оставляет вкладку висеть, и фоновый
+        // таб засыпает (browser throttling). При возврате access_token может
+        // быть просрочен, а supabase ещё не успел его обновить — навигация
+        // виснет на RLS-запросах. Принудительный getSession() при visible
+        // триггерит auto-refresh и onAuthStateChange.
+        const handleVisible = () => {
+            if (typeof document === 'undefined') return
+            if (document.visibilityState !== 'visible') return
+            // Не дёргаем supabase если ещё идёт первичный resolve
+            if (!hasResolved.current) return
+            supabase.auth.getSession().catch(err => {
+                console.warn('[Auth] visibility refresh failed:', err)
+            })
+        }
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', handleVisible)
+            window.addEventListener('focus', handleVisible)
+        }
 
         return () => {
             isMounted = false
             subscription.unsubscribe()
             clearTimeout(timeout)
+            if (typeof document !== 'undefined') {
+                document.removeEventListener('visibilitychange', handleVisible)
+                window.removeEventListener('focus', handleVisible)
+            }
         }
     }, [supabase])
 
