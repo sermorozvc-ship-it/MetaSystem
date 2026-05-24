@@ -99,7 +99,7 @@ export function parseMdToJson(markdown: string): ProgramData {
   }
 
   for (const line of lines) {
-    // ── Специальные ## секции (Чек-ин, Памятка) ────────────────────────────
+    // ── Специальные ## секции (Чек-ин, Памятка, Сводка изменений) ─────────
     if (line.match(/^##\s+.*чек.?ин/i)) {
       if (currentExercise && currentDay) { currentDay.exercises.push(currentExercise); currentExercise = null }
       if (currentDay) { days.push(currentDay); currentDay = null }
@@ -112,6 +112,17 @@ export function parseMdToJson(markdown: string): ProgramData {
       if (currentDay) { days.push(currentDay); currentDay = null }
       parsingAlternatives = false
       currentBlock = 'loggingNote'
+      continue
+    }
+    // «## Сводка изменений нед N → нед N+1» (или «## Сводка нед...») — собираем
+    // содержимое до конца файла или до следующего ## / --- в prevCoachSummary.
+    // Это позволяет тренеру вставлять разбор прошлой недели в виде таблицы
+    // без необходимости вручную писать **Резюме прошлой недели:**.
+    if (line.match(/^##\s+.*сводк[аи]/i)) {
+      if (currentExercise && currentDay) { currentDay.exercises.push(currentExercise); currentExercise = null }
+      if (currentDay) { days.push(currentDay); currentDay = null }
+      parsingAlternatives = false
+      currentBlock = 'prevCoachSummary'
       continue
     }
 
@@ -204,6 +215,15 @@ export function parseMdToJson(markdown: string): ProgramData {
         currentBlock = 'prevWellnessSummary'
         const inline = prevWellnessMatch[1].trim()
         if (inline) prevWellnessSummary = inline
+        continue
+      }
+      // «По чек-ину» — синоним для блока самочувствия (тренеры часто пишут
+      // именно так, разбирая ответы клиента на недельный чек-ин).
+      const prevByCheckinMatch = line.match(/^\*\*По\s*чек.?ину[^:]*:\*\*\s*(.*)/i)
+      if (prevByCheckinMatch) {
+        currentBlock = 'prevWellnessSummary'
+        const inline = prevByCheckinMatch[1].trim()
+        if (inline) prevWellnessSummary = (prevWellnessSummary ? prevWellnessSummary + '\n\n' : '') + inline
         continue
       }
     }
