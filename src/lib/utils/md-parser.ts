@@ -99,7 +99,7 @@ export function parseMdToJson(markdown: string): ProgramData {
   }
 
   for (const line of lines) {
-    // ── Специальные ## секции (Чек-ин, Памятка, Сводка изменений) ─────────
+    // ── Специальные ## секции (Чек-ин, Памятка) ────────────────────────────
     if (line.match(/^##\s+.*чек.?ин/i)) {
       if (currentExercise && currentDay) { currentDay.exercises.push(currentExercise); currentExercise = null }
       if (currentDay) { days.push(currentDay); currentDay = null }
@@ -114,17 +114,13 @@ export function parseMdToJson(markdown: string): ProgramData {
       currentBlock = 'loggingNote'
       continue
     }
-    // «## Сводка изменений нед N → нед N+1» (или «## Сводка нед...») — собираем
-    // содержимое до конца файла или до следующего ## / --- в prevCoachSummary.
-    // Это позволяет тренеру вставлять разбор прошлой недели в виде таблицы
-    // без необходимости вручную писать **Резюме прошлой недели:**.
-    if (line.match(/^##\s+.*сводк[аи]/i)) {
-      if (currentExercise && currentDay) { currentDay.exercises.push(currentExercise); currentExercise = null }
-      if (currentDay) { days.push(currentDay); currentDay = null }
-      parsingAlternatives = false
-      currentBlock = 'prevCoachSummary'
-      continue
-    }
+    // ВАЖНО: НЕ добавлять здесь «## Сводка...» как источник prevCoachSummary.
+    // Раньше этот блок жадно собирал всю markdown-таблицу «нед N → нед N+1»
+    // в Резюме тренера, и UI получал нечитаемое полотно строк.
+    // Источником prevWeekStats служат ТОЛЬКО короткие именованные блоки
+    // **Резюме прошлой недели:** / **Объём прошлой недели:** /
+    // **Самочувствие прошлой недели:** / **По чек-ину:** в шапке файла —
+    // см. ветку «Заголовки многострочных блоков» ниже.
 
     // ── Переход к новому дню — сбрасываем всё ──────────────────────────────
     const dayMatch =
