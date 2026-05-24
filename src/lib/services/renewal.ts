@@ -2,6 +2,7 @@
 // Сервис продления тарифов и докупки питания
 
 import { createClient } from '@/lib/supabase/client'
+import { withTimeout } from '@/lib/utils/with-timeout'
 
 export type PlanType = '1_month' | '3_months' | '6_months'
 export type RenewalType = 'renewal' | 'nutrition_upgrade' | 'plan_change'
@@ -61,21 +62,27 @@ export async function getMySubscriptionInfo(): Promise<SubscriptionInfo> {
   }
 
   // Получаем профиль
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('subscription_status, subscription_end_date, has_nutrition_plan')
-    .eq('id', user.id)
-    .single()
+  const { data: profile } = await withTimeout<{ data: any; error: any }>(
+    supabase
+      .from('profiles')
+      .select('subscription_status, subscription_end_date, has_nutrition_plan')
+      .eq('id', user.id)
+      .single(),
+    'getMySubscriptionInfo:profile',
+  ).catch(() => ({ data: null, error: null } as any))
 
   // Получаем последний подтверждённый платёж для plan_type
-  const { data: payment } = await supabase
-    .from('payments')
-    .select('plan_type, plan_months, includes_nutrition')
-    .eq('user_id', user.id)
-    .eq('status', 'confirmed')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  const { data: payment } = await withTimeout<{ data: any; error: any }>(
+    supabase
+      .from('payments')
+      .select('plan_type, plan_months, includes_nutrition')
+      .eq('user_id', user.id)
+      .eq('status', 'confirmed')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    'getMySubscriptionInfo:payment',
+  ).catch(() => ({ data: null, error: null } as any))
 
   const endDate = profile?.subscription_end_date ?? null
   const status = profile?.subscription_status ?? 'inactive'
