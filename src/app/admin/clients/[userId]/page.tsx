@@ -21,6 +21,10 @@ import {
 import { getClientPrograms, type TrainingProgram, type TrainingEntry } from '@/lib/services/training'
 import ExerciseProgressView from '@/components/ExerciseProgressView'
 import { parseMdToJson, EXAMPLE_PROGRAM_MD } from '@/lib/utils/md-parser'
+import { buildDiaryMd } from '@/lib/utils/diary-export'
+import ExerciseLibraryCheck from '@/components/admin/ExerciseLibraryCheck'
+import TrainingBrainIntegration from '@/components/admin/TrainingBrainIntegration'
+import PushDiaryButton from '@/components/admin/PushDiaryButton'
 import { type NutritionProgram } from '@/lib/services/nutrition-programs'
 import { parseNutritionMdToJson, EXAMPLE_NUTRITION_MD } from '@/lib/utils/nutrition-md-parser'
 import TemplatePicker from '@/components/admin/TemplatePicker'
@@ -700,169 +704,26 @@ function ClientActivityView({ userId }: { userId: string }) {
 }
 
 // ─── Генерация заполненного Markdown ────────────────────────────────────────
-function buildFilledMd(program: TrainingProgram, entries: TrainingEntry[]): string {
-    const entriesMap = new Map(entries.map(e => [e.day_number, e]))
-    const lines: string[] = []
-
-    lines.push(`# Неделя ${program.week_number}`)
-    lines.push('')
-    lines.push(`**Период:** ${program.start_date} — ${program.end_date}`)
-    if (program.program_data.weeklyNote) {
-        lines.push(`**Рекомендация:** ${program.program_data.weeklyNote}`)
-    }
-    lines.push('')
-
-    const days = program.program_data?.days || []
-    if (days.length === 0) return program.program_md
-
-    for (const day of days) {
-        const entry = entriesMap.get(day.dayNumber)
-        const completed = !!entry?.completed_at
-
-        lines.push(`## День ${day.dayNumber}: ${day.title}${completed ? ' ✅' : ''}`)
-        if (day.coachNote) lines.push(`**Рекомендация дня:** ${day.coachNote}`)
-        lines.push('')
-
-        // Статистика дня
-        let dayTonnage = 0
-        let dayExercisesCount = 0
-        let daySetsCount = 0
-        let dayRepsCount = 0
-
-        for (const ex of day.exercises) {
-            lines.push(`### ${ex.name}`)
-            if (ex.videoUrl) lines.push(`[Видео](${ex.videoUrl})`)
-
-            const tw = ex.targetWeights || []
-            const weightsStr = tw.length > 0 ? tw.map(w => w > 0 ? w : '—').join('/') + ' кг' : ''
-            lines.push(`- **План:** ${ex.sets} x ${ex.reps}${weightsStr ? ` • ${weightsStr}` : ''}`)
-
-            const clientData = entry?.entry_data?.[ex.id]
-            if (clientData) {
-                // Новый формат — данные по подходам
-                if (clientData.sets && Array.isArray(clientData.sets)) {
-                    const filledSets = clientData.sets.filter((s: any) => s.weight || s.reps)
-                    if (filledSets.length > 0) {
-                        dayExercisesCount++
-                        clientData.sets.forEach((s: any, i: number) => {
-                            const w = s.weight ? `${s.weight} кг` : '—'
-                            const r = s.reps ? `${s.reps} повт.` : '—'
-                            const rir = s.rir !== undefined && s.rir !== '' ? `RIR ${s.rir}` : ''
-                            const labelStr = s.label === 'heavy' ? ' 🔴 Тяжело' : s.label === 'dropset' ? ' 🟣 Дроп-сет' : s.label === 'warmup' ? ' 🔵 Разминка' : ''
-                            const setLine = `- **Подход ${i + 1}:** ${w} × ${r}${rir ? ` • ${rir}` : ''}${labelStr}${s.setComment ? ` _(${s.setComment})_` : ''}`
-                            lines.push(setLine)
-                            // Считаем статистику
-                            const wNum = parseFloat(s.weight) || 0
-                            const rNum = parseInt(s.reps) || 0
-                            if (wNum || rNum) {
-                                dayTonnage += wNum * rNum
-                                daySetsCount++
-                                dayRepsCount += rNum
-                            }
-                        })
-                    } else {
-                        lines.push(`- **Факт:** не заполнено`)
-                    }
-                } else {
-                    // Старый формат
-                    const w = clientData.actualWeight ? `${clientData.actualWeight} кг` : '—'
-                    const r = clientData.actualReps ? `${clientData.actualReps} повт.` : '—'
-                    lines.push(`- **Факт:** ${w} × ${r}${clientData.rpe ? ` • RPE ${clientData.rpe}` : ''}`)
-                    if (clientData.actualWeight && clientData.actualReps) {
-                        dayExercisesCount++
-                        dayTonnage += (parseFloat(clientData.actualWeight) || 0) * (parseInt(clientData.actualReps) || 0)
-                        daySetsCount += ex.sets
-                        dayRepsCount += (parseInt(clientData.actualReps) || 0) * ex.sets
-                    }
-                }
-                if (clientData.comment) lines.push(`- **Комментарий к упражнению:** ${clientData.comment}`)
-            } else {
-                lines.push(`- **Факт:** не заполнено`)
-            }
-            lines.push('')
-        }
-
-        if (day.cardio) { lines.push(`**Кардио:** ${day.cardio}`); lines.push('') }
-
-        // Статистика сессии
-        if (dayExercisesCount > 0) {
-            lines.push(`### 📊 Статистика сессии`)
-            lines.push(`| Показатель | Значение |`)
-            lines.push(`|---|---|`)
-            lines.push(`| Общий тоннаж | **${dayTonnage.toLocaleString('ru-RU')} кг** |`)
-            lines.push(`| Упражнений | ${dayExercisesCount} |`)
-            lines.push(`| Подходов | ${daySetsCount} |`)
-            lines.push(`| Повторений | ${dayRepsCount} |`)
-            lines.push('')
-        }
-
-        if (entry) {
-            lines.push(`**Самочувствие:**`)
-            lines.push(`- Энергия: ${entry.energy_level ?? '—'}/10`)
-            lines.push(`- Настроение: ${entry.mood ?? '—'}/5`)
-            lines.push(`- RPE тренировки: ${entry.sleep_quality ?? '—'}/10`)
-            if (entry.notes) lines.push(`- Заметки: ${entry.notes}`)
-            if (entry.completed_at) lines.push(`- Завершено: ${new Date(entry.completed_at).toLocaleString('ru-RU')}`)
-        } else {
-            lines.push(`**Самочувствие:** не заполнено`)
-        }
-
-        lines.push(''); lines.push('---'); lines.push('')
-    }
-
-    // Итоговая статистика недели
-    const allEntries = [...entriesMap.values()]
-    let weekTonnage = 0
-    let weekExercises = 0
-    let weekSets = 0
-    let weekReps = 0
-
-    for (const day of days) {
-        const entry = entriesMap.get(day.dayNumber)
-        if (!entry) continue
-        for (const ex of day.exercises) {
-            const cd = entry.entry_data?.[ex.id]
-            if (!cd) continue
-            if (cd.sets && Array.isArray(cd.sets)) {
-                const filled = cd.sets.filter((s: any) => s.weight || s.reps)
-                if (filled.length > 0) {
-                    weekExercises++
-                    cd.sets.forEach((s: any) => {
-                        const w = parseFloat(s.weight) || 0
-                        const r = parseInt(s.reps) || 0
-                        if (w || r) { weekTonnage += w * r; weekSets++; weekReps += r }
-                    })
-                }
-            } else if (cd.actualWeight && cd.actualReps) {
-                weekExercises++
-                weekTonnage += (parseFloat(cd.actualWeight) || 0) * (parseInt(cd.actualReps) || 0)
-                weekSets += ex.sets
-                weekReps += (parseInt(cd.actualReps) || 0) * ex.sets
-            }
-        }
-    }
-
-    if (weekExercises > 0) {
-        lines.push(`## 📊 Итоговая статистика недели`)
-        lines.push('')
-        lines.push(`| Показатель | Значение |`)
-        lines.push(`|---|---|`)
-        lines.push(`| Общий тоннаж за неделю | **${weekTonnage.toLocaleString('ru-RU')} кг** |`)
-        lines.push(`| Всего упражнений | ${weekExercises} |`)
-        lines.push(`| Всего подходов | ${weekSets} |`)
-        lines.push(`| Всего повторений | ${weekReps} |`)
-        lines.push(`| Завершено тренировок | ${allEntries.filter(e => !!e.completed_at).length}/${days.length} |`)
-        lines.push('')
-    }
-
-    return lines.join('\n')
+// Единственный источник правды формата — src/lib/utils/diary-export.ts.
+// Сохраняет YAML frontmatter из исходного program_md без модификаций
+// (требование training-program-format.md и training-brain/templates/week-diary-input.md).
+// Если frontmatter в исходнике отсутствует — генерируется из меты.
+function buildFilledMd(
+    program: TrainingProgram,
+    entries: TrainingEntry[],
+    meta?: { clientName?: string | null; clientId?: string | null },
+): string {
+    return buildDiaryMd(program, entries, meta)
 }
 
 // ─── Карточка одной программы ───────────────────────────────────────────────
-function ProgramCard({ program, onDelete, onUpdate }: {
+function ProgramCard({ program, onDelete, onUpdate, clientName, clientId, trainingBrainClientId }: {
     program: TrainingProgram
     onDelete: (id: string) => void
     onUpdate: (updated: TrainingProgram) => void
+    clientName?: string | null
+    clientId?: string | null
+    trainingBrainClientId?: string | null
 }) {
     const [expanded, setExpanded] = useState(false)
     const [entries, setEntries] = useState<TrainingEntry[]>([])
@@ -982,7 +843,7 @@ function ProgramCard({ program, onDelete, onUpdate }: {
             setLoadingEntries(false)
         }
 
-        const md = buildFilledMd(program, currentEntries)
+        const md = buildFilledMd(program, currentEntries, { clientName, clientId })
         const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
@@ -1072,6 +933,12 @@ function ProgramCard({ program, onDelete, onUpdate }: {
                         }
                         <span>Скачать</span>
                     </button>
+                    {/* Отправить дневник в training-brain */}
+                    <PushDiaryButton
+                        programId={program.id}
+                        userId={program.user_id}
+                        trainingBrainClientId={trainingBrainClientId}
+                    />
                     <button
                         onClick={openEdit}
                         className="glass-button-secondary flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-muted hover:text-white transition-colors"
@@ -1334,6 +1201,12 @@ function ProgramCard({ program, onDelete, onUpdate }: {
                                 className="glass-input w-full h-96 resize-none font-mono text-sm"
                             />
                         </div>
+
+                        {/* Проверка по каталогу упражнений из training-brain */}
+                        <ExerciseLibraryCheck
+                            programMd={editMd}
+                            onProgramMdChange={setEditMd}
+                        />
 
                         {saveError && (
                             <div className="p-3 rounded-xl bg-danger/10 border border-danger/30 text-sm text-danger">
@@ -1711,23 +1584,23 @@ export default function AdminClientDetailPage() {
 
     useEffect(() => {
         if (!authLoading && !user) {
-            window.location.href = '/auth'
+            router.replace('/auth')
         }
-    }, [user, authLoading])
+    }, [user, authLoading, router])
 
     useEffect(() => {
         if (!user) return
         const checkAdmin = async () => {
             try {
                 const admin = await isAdmin(user)
-                if (!admin) { window.location.href = '/dashboard'; return }
+                if (!admin) { router.replace('/dashboard'); return }
                 setIsAdminUser(true)
             } catch {
-                window.location.href = '/dashboard'
+                router.replace('/dashboard')
             }
         }
         checkAdmin()
-    }, [user])
+    }, [user, router])
 
     useEffect(() => {
         if (!isAdminUser || !userId) return
@@ -2709,7 +2582,7 @@ export default function AdminClientDetailPage() {
                 {/* Программы */}
                 {activeTab === 'programs' && (
                     <div>
-                        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                             <h2 className="text-lg font-display font-bold text-white">
                                 Программы ({programs.length})
                             </h2>
@@ -2717,6 +2590,23 @@ export default function AdminClientDetailPage() {
                                 <Plus className="w-4 h-4" />
                                 Загрузить программу
                             </button>
+                        </div>
+
+                        {/* Интеграция с training-brain */}
+                        <div className="mb-6">
+                            <TrainingBrainIntegration
+                                userId={userId}
+                                initialSlug={clientProfile?.training_brain_client_id}
+                                onImportSuccess={data => {
+                                    // Открываем форму загрузки с предзаполненными полями
+                                    setProgramMd(data.md)
+                                    setWeekNumber(data.weekNumber)
+                                    if (data.period_start) setStartDate(data.period_start)
+                                    if (data.period_end) setEndDate(data.period_end)
+                                    setShowUploadModal(true)
+                                    setUploadError('')
+                                }}
+                            />
                         </div>
 
                         {programs.length === 0 ? (
@@ -2735,6 +2625,9 @@ export default function AdminClientDetailPage() {
                                     <ProgramCard
                                         key={program.id}
                                         program={program}
+                                        clientName={clientProfile?.full_name ?? null}
+                                        clientId={userId}
+                                        trainingBrainClientId={clientProfile?.training_brain_client_id ?? null}
                                         onDelete={id => setPrograms(prev => prev.filter(p => p.id !== id))}
                                         onUpdate={updated => setPrograms(prev => prev.map(p => p.id === updated.id ? updated : p))}
                                     />
@@ -2862,6 +2755,12 @@ export default function AdminClientDetailPage() {
                                     placeholder="# Неделя 1&#10;&#10;## День 1: Верх тела&#10;..."
                                 />
                             </div>
+
+                            {/* Проверка по каталогу упражнений из training-brain */}
+                            <ExerciseLibraryCheck
+                                programMd={programMd}
+                                onProgramMdChange={setProgramMd}
+                            />
 
                             {uploadError && (
                                 <div className="p-4 rounded-xl bg-danger/10 border border-danger/30">
