@@ -3,31 +3,15 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { notifyProgramUploaded } from './notifications'
+import { withTimeout } from '@/lib/utils/with-timeout'
 
 /**
- * Жёсткий таймаут на сетевые операции Supabase.
- *
- * Зачем: supabase-js не поддерживает AbortSignal во всех билдерах,
- * а в браузере промис может «висеть» при флапающем интернете
- * или подвисшем RLS-запросе. Без таймаута UI-флаг isSaving остаётся true,
- * кнопки залипают, пользователю кажется что ничего не работает.
- *
- * Любая операция тренировочного дневника, которая стопорит UX
- * (upsert, complete) ОБЯЗАНА проходить через withTimeout.
+ * Все клиентские чтения и записи в этом сервисе обёрнуты в withTimeout.
+ * Без него Supabase-запрос мог «висеть» бесконечно — UI-спиннер не
+ * сбрасывался, пользователь видел вечный лоадер и был вынужден жать F5.
+ * См. .kiro/steering/desktop-page-load.md — это часть контракта десктопной
+ * загрузки страниц.
  */
-const SUPABASE_OP_TIMEOUT_MS = 12_000
-
-function withTimeout<T>(promise: PromiseLike<T>, label: string, ms = SUPABASE_OP_TIMEOUT_MS): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => {
-      reject(new Error(`[training] ${label} timeout after ${ms}ms`))
-    }, ms)
-    Promise.resolve(promise).then(
-      (v) => { clearTimeout(t); resolve(v) },
-      (e) => { clearTimeout(t); reject(e) },
-    )
-  })
-}
 
 export interface TrainingProgram {
   id: string
@@ -133,18 +117,26 @@ export async function getMyPrograms(): Promise<TrainingProgram[]> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  const { data, error } = await supabase
-    .from('training_programs')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('week_number', { ascending: false })
+  try {
+    const { data, error } = await withTimeout<{ data: TrainingProgram[] | null; error: any }>(
+      supabase
+        .from('training_programs')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('week_number', { ascending: false }),
+      'getMyPrograms',
+    )
 
-  if (error) {
-    console.error('Error fetching programs:', error)
-    throw error
+    if (error) {
+      console.error('Error fetching programs:', error)
+      return []
+    }
+
+    return data || []
+  } catch (e) {
+    console.error('Error fetching programs (timeout/network):', e)
+    return []
   }
-
-  return data || []
 }
 
 /**
@@ -153,18 +145,26 @@ export async function getMyPrograms(): Promise<TrainingProgram[]> {
 export async function getProgramById(programId: string): Promise<TrainingProgram | null> {
   const supabase = createClient()
 
-  const { data, error } = await supabase
-    .from('training_programs')
-    .select('*')
-    .eq('id', programId)
-    .maybeSingle()
+  try {
+    const { data, error } = await withTimeout<{ data: TrainingProgram | null; error: any }>(
+      supabase
+        .from('training_programs')
+        .select('*')
+        .eq('id', programId)
+        .maybeSingle(),
+      'getProgramById',
+    )
 
-  if (error) {
-    console.error('Error fetching program:', error)
+    if (error) {
+      console.error('Error fetching program:', error)
+      return null
+    }
+
+    return data
+  } catch (e) {
+    console.error('Error fetching program (timeout/network):', e)
     return null
   }
-
-  return data
 }
 
 /**
@@ -321,19 +321,27 @@ export async function getTrainingEntry(
 ): Promise<TrainingEntry | null> {
   const supabase = createClient()
 
-  const { data, error } = await supabase
-    .from('training_entries')
-    .select('*')
-    .eq('program_id', programId)
-    .eq('day_number', dayNumber)
-    .maybeSingle()
+  try {
+    const { data, error } = await withTimeout<{ data: TrainingEntry | null; error: any }>(
+      supabase
+        .from('training_entries')
+        .select('*')
+        .eq('program_id', programId)
+        .eq('day_number', dayNumber)
+        .maybeSingle(),
+      'getTrainingEntry',
+    )
 
-  if (error) {
-    console.error('Error fetching entry:', error)
+    if (error) {
+      console.error('Error fetching entry:', error)
+      return null
+    }
+
+    return data
+  } catch (e) {
+    console.error('Error fetching entry (timeout/network):', e)
     return null
   }
-
-  return data
 }
 
 /**
@@ -417,18 +425,26 @@ export async function completeTrainingDay(
 export async function getProgramEntries(programId: string): Promise<TrainingEntry[]> {
   const supabase = createClient()
 
-  const { data, error } = await supabase
-    .from('training_entries')
-    .select('*')
-    .eq('program_id', programId)
-    .order('day_number', { ascending: true })
+  try {
+    const { data, error } = await withTimeout<{ data: TrainingEntry[] | null; error: any }>(
+      supabase
+        .from('training_entries')
+        .select('*')
+        .eq('program_id', programId)
+        .order('day_number', { ascending: true }),
+      'getProgramEntries',
+    )
 
-  if (error) {
-    console.error('Error fetching entries:', error)
-    throw error
+    if (error) {
+      console.error('Error fetching entries:', error)
+      return []
+    }
+
+    return data || []
+  } catch (e) {
+    console.error('Error fetching entries (timeout/network):', e)
+    return []
   }
-
-  return data || []
 }
 
 /**

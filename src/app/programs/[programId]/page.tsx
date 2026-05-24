@@ -712,6 +712,49 @@ function CheckinBlock({ programId, userId, text }: { programId: string; userId: 
 
 // ─── Главная страница ─────────────────────────────────────────────────────────
 
+/**
+ * Лоадер с fallback'ом «долго грузится».
+ *
+ * Десктопная проблема: иногда Supabase / RLS / навигация подвисает,
+ * клиентские чтения не резолвятся и страница остаётся со спиннером
+ * навсегда. Чтобы пользователь не сидел в недоумении и не делал F5
+ * вслепую, через 7 секунд показываем явный баннер с кнопкой
+ * принудительного soft-refresh (location.reload).
+ *
+ * Это не лечит первопричину (для этого withTimeout в сервисах),
+ * а является страховочным UX-щитом.
+ */
+function PageLoadingFallback() {
+    const [tooLong, setTooLong] = useState(false)
+
+    useEffect(() => {
+        const t = setTimeout(() => setTooLong(true), 7000)
+        return () => clearTimeout(t)
+    }, [])
+
+    return (
+        <div className="min-h-screen bg-bg-main flex flex-col items-center justify-center gap-4 p-6 text-center">
+            <Loader2 className="w-8 h-8 text-accent animate-spin" />
+            {tooLong && (
+                <div className="max-w-sm space-y-3 mt-2">
+                    <p className="text-sm text-text-secondary">
+                        Загрузка занимает дольше обычного. Возможно сеть
+                        флапает или сессия зависла.
+                    </p>
+                    <button
+                        onClick={() => {
+                            if (typeof window !== 'undefined') window.location.reload()
+                        }}
+                        className="glass-button-secondary text-sm px-5 py-2"
+                    >
+                        Обновить страницу
+                    </button>
+                </div>
+            )}
+        </div>
+    )
+}
+
 export default function ProgramDetailPage() {
     const { user, isLoading: authLoading } = useAuth()
     const router = useRouter()
@@ -1337,11 +1380,7 @@ export default function ProgramDetailPage() {
     }
 
     if (authLoading || isLoading || !program) {
-        return (
-            <div className="min-h-screen bg-bg-main flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-accent animate-spin" />
-            </div>
-        )
+        return <PageLoadingFallback />
     }
 
     // Показываем экран истёкшей подписки

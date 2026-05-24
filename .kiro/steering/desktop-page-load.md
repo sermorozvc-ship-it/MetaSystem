@@ -31,6 +31,35 @@ inclusion: always
 
 ## Текущие гарантии (НЕ откатывать)
 
+В `src/lib/utils/with-timeout.ts`:
+
+- Общая утилита `withTimeout` (по умолчанию 12с). Используется во всех
+  клиентских чтениях, влияющих на загрузку страниц. Без неё Supabase-
+  запрос в браузере мог «висеть» бесконечно — пользователь смотрел в
+  вечный спиннер и был вынужден жать F5.
+
+В `src/lib/services/training.ts`:
+
+- `getProgramById`, `getMyPrograms`, `getProgramEntries`, `getTrainingEntry`
+  обёрнуты в `withTimeout` и при ошибке/таймауте возвращают пустое
+  значение (null / []), а не throw — чтобы UI мог показать пустое
+  состояние или fallback вместо вечного лоадера.
+- `upsertTrainingEntry`, `completeTrainingDay` — тоже под `withTimeout`
+  (см. также training-diary-autosave.md).
+
+В `src/lib/services/renewal.ts`:
+
+- `getMySubscriptionInfo` — оба запроса (profile + payment) под
+  `withTimeout`. Эта функция вызывается на старте `programs/[programId]`
+  и `dashboard`, поэтому её зависание блокировало бы загрузку.
+
+В `src/app/programs/[programId]/page.tsx`:
+
+- Компонент `PageLoadingFallback` — если страница грузится >7с,
+  показывает баннер «Загрузка занимает дольше обычного» с кнопкой
+  «Обновить страницу» (soft `location.reload`). Это страховочный
+  UX-щит на случай если что-то впереди всё-таки подвиснет.
+
 В `src/lib/auth/AuthContext.tsx`:
 
 - Таймаут страховки = **5000мс** (не 1500мс — короткий триггерил ложный
@@ -67,6 +96,13 @@ inclusion: always
 - [ ] В `next.config.js` `reactStrictMode: false`.
 - [ ] Новые страницы используют `router.replace('/auth')`, а НЕ
       `window.location.href = '/auth'` для auth-guard.
+- [ ] Любая новая `services/*.ts` функция, вызываемая на старте
+      страницы, оборачивает Supabase-запрос в `withTimeout` из
+      `@/lib/utils/with-timeout` и при ошибке/таймауте возвращает
+      пустое значение, а не throw.
+- [ ] Главные страницы используют `PageLoadingFallback` (или
+      эквивалент) вместо «голого» спиннера — чтобы через 7с
+      пользователь увидел кнопку обновить.
 - [ ] Ручной тест на десктопе: открыть 3+ вкладки приложения →
       переключаться между ними → каждая страница должна грузиться
       без принудительной перезагрузки.
