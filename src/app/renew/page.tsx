@@ -90,7 +90,7 @@ function RenewContent() {
       }
     }
     load()
-  }, [user])
+  }, [user?.id])
 
   const baseAmount = RENEWAL_PRICES[selectedPlan]
   const nutritionAmount = selectedPlan === '6_months' ? 0 : (includeNutrition ? NUTRITION_ADDON_PRICE : 0)

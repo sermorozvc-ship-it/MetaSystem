@@ -62,7 +62,7 @@ export default function MetricsPage() {
         }
 
         loadMetrics()
-    }, [user])
+    }, [user?.id])
 
     const updateField = (field: keyof MetricFormData, value: any) => {
         setFormData((prev) => ({ ...prev, [field]: value }))

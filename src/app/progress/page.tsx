@@ -38,7 +38,7 @@ export default function ProgressPage() {
       }
     }
     load()
-  }, [user])
+  }, [user?.id])
 
   if (authLoading || isLoading) {
     return (

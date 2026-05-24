@@ -128,7 +128,7 @@ function PaymentContent() {
             }
         }
         loadPayment()
-    }, [user])
+    }, [user?.id])
 
     // Polling для автоподтверждения
     useEffect(() => {

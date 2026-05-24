@@ -119,7 +119,7 @@ export default function DashboardPage() {
         }
 
         loadDashboardData()
-    }, [user])
+    }, [user?.id])
 
     if (!authLoading && !user) {
         return null

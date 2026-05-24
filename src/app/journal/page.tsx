@@ -76,7 +76,7 @@ export default function JournalPage() {
         } finally {
             setIsLoading(false)
         }
-    }, [user])
+    }, [user?.id])
 
     useEffect(() => {
         // Если authLoading завис — через 5 сек принудительно загружаем дневник

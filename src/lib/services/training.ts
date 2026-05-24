@@ -172,23 +172,31 @@ export async function getProgramById(programId: string): Promise<TrainingProgram
  */
 export async function getProgramByWeek(weekNumber: number): Promise<TrainingProgram | null> {
   const supabase = createClient()
-  
+
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  const { data, error } = await supabase
-    .from('training_programs')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('week_number', weekNumber)
-    .single()
+  try {
+    const { data, error } = await withTimeout<{ data: TrainingProgram | null; error: any }>(
+      supabase
+        .from('training_programs')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('week_number', weekNumber)
+        .maybeSingle(),
+      'getProgramByWeek',
+    )
 
-  if (error && error.code !== 'PGRST116') {
-    console.error('Error fetching program:', error)
-    throw error
+    if (error) {
+      console.error('Error fetching program:', error)
+      return null
+    }
+
+    return data
+  } catch (e) {
+    console.error('Error fetching program (timeout/network):', e)
+    return null
   }
-
-  return data
 }
 
 /**
@@ -197,35 +205,55 @@ export async function getProgramByWeek(weekNumber: number): Promise<TrainingProg
  */
 export async function getCurrentProgram(): Promise<TrainingProgram | null> {
   const supabase = createClient()
-  
+
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
   const today = new Date().toISOString().split('T')[0]
 
-  // 1. Ищем программу, в диапазон которой попадает сегодня
-  const { data: exact } = await supabase
-    .from('training_programs')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .lte('start_date', today)
-    .gte('end_date', today)
-    .maybeSingle()
+  try {
+    // 1. Ищем программу, в диапазон которой попадает сегодня
+    const { data: exact, error: exactError } = await withTimeout<{ data: TrainingProgram | null; error: any }>(
+      supabase
+        .from('training_programs')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .lte('start_date', today)
+        .gte('end_date', today)
+        .maybeSingle(),
+      'getCurrentProgram:exact',
+    )
 
-  if (exact) return exact
+    if (exactError) {
+      console.error('Error fetching current program (exact):', exactError)
+    } else if (exact) {
+      return exact
+    }
 
-  // 2. Fallback: последняя активная программа (по убыванию week_number)
-  const { data: latest } = await supabase
-    .from('training_programs')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .order('week_number', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+    // 2. Fallback: последняя активная программа (по убыванию week_number)
+    const { data: latest, error: latestError } = await withTimeout<{ data: TrainingProgram | null; error: any }>(
+      supabase
+        .from('training_programs')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .order('week_number', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      'getCurrentProgram:latest',
+    )
 
-  return latest ?? null
+    if (latestError) {
+      console.error('Error fetching current program (latest):', latestError)
+      return null
+    }
+
+    return latest ?? null
+  } catch (e) {
+    console.error('Error fetching current program (timeout/network):', e)
+    return null
+  }
 }
 
 /**
@@ -453,18 +481,26 @@ export async function getProgramEntries(programId: string): Promise<TrainingEntr
 export async function getClientPrograms(userId: string): Promise<TrainingProgram[]> {
   const supabase = createClient()
 
-  const { data, error } = await supabase
-    .from('training_programs')
-    .select('*')
-    .eq('user_id', userId)
-    .order('week_number', { ascending: false })
+  try {
+    const { data, error } = await withTimeout<{ data: TrainingProgram[] | null; error: any }>(
+      supabase
+        .from('training_programs')
+        .select('*')
+        .eq('user_id', userId)
+        .order('week_number', { ascending: false }),
+      'getClientPrograms',
+    )
 
-  if (error) {
-    console.error('Error fetching client programs:', error)
+    if (error) {
+      console.error('Error fetching client programs:', error)
+      return []
+    }
+
+    return data || []
+  } catch (e) {
+    console.error('Error fetching client programs (timeout/network):', e)
     return []
   }
-
-  return data || []
 }
 
 /**

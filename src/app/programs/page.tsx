@@ -25,8 +25,16 @@ export default function ProgramsPage() {
         }
     }, [user, authLoading, router])
 
+    // Зависим от user?.id, а не от user целиком.
+    // Иначе при TOKEN_REFRESHED (раз в час + при visibilitychange/focus)
+    // AuthContext делает setUser(newSession.user) — это новый объект-ссылка,
+    // useEffect перезапускался, и если в момент refresh-а getMyPrograms()
+    // возвращал [] из-за гонки/таймаута — список программ «пропадал»
+    // до следующего ручного reload. См. .kiro/steering/desktop-page-load.md
     useEffect(() => {
         if (!user) return
+
+        let cancelled = false
 
         const loadPrograms = async () => {
             try {
@@ -34,28 +42,36 @@ export default function ProgramsPage() {
                     getMyPrograms(),
                     getCurrentProgram(),
                 ])
+                if (cancelled) return
 
-                setPrograms(allPrograms)
-                setCurrentProgram(current)
+                // Не затираем уже загруженные программы пустым ответом —
+                // это может быть таймаут/RLS-флап. Лучше показать прежний
+                // список, чем мигнуть пустотой.
+                setPrograms(prev => (allPrograms.length === 0 && prev.length > 0 ? prev : allPrograms))
+                setCurrentProgram(prev => (current === null && prev ? prev : current))
 
                 // Загружаем статистику заполнения для каждой программы
                 const stats: Record<string, number> = {}
                 for (const program of allPrograms) {
+                    if (cancelled) return
                     const entries = await getProgramEntries(program.id)
                     const completedDays = entries.filter((e) => e.completed_at).length
                     const totalDays = program.program_data.days.length
                     stats[program.id] = totalDays > 0 ? (completedDays / totalDays) * 100 : 0
                 }
-                setCompletionStats(stats)
+                if (cancelled) return
+                setCompletionStats(prev => (Object.keys(stats).length === 0 && Object.keys(prev).length > 0 ? prev : stats))
             } catch (e) {
                 console.error('Error loading programs:', e)
             } finally {
-                setIsLoading(false)
+                if (!cancelled) setIsLoading(false)
             }
         }
 
         loadPrograms()
-    }, [user])
+
+        return () => { cancelled = true }
+    }, [user?.id])
 
     const getProgramStatus = (program: TrainingProgram) => {
         const today = new Date().toISOString().split('T')[0]

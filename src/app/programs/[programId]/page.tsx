@@ -837,7 +837,7 @@ export default function ProgramDetailPage() {
         getMySubscriptionInfo().then(info => {
             if (info.isExpired) setSubscriptionExpired(true)
         }).catch(() => {})
-    }, [user])
+    }, [user?.id])
 
     // Загрузка программы
     useEffect(() => {
@@ -884,7 +884,7 @@ export default function ProgramDetailPage() {
             }
         }
         load()
-    }, [user, programId, router])
+    }, [user?.id, programId, router])
 
     // Сворачиваем все упражнения при смене дня
     useEffect(() => {
