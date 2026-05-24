@@ -19,8 +19,11 @@ export class GitHubError extends Error {
 function requireToken(): string {
     const token = process.env.GITHUB_TOKEN
     if (!token) {
+        // На проде (Vercel) переменная задаётся через Settings → Environment Variables.
+        // Локально — через .env.local. Сообщение даёт оба варианта, чтобы оно было
+        // полезным независимо от того, где админ увидит ошибку.
         throw new GitHubError(
-            'GITHUB_TOKEN не задан. Добавь его в .env.local — нужен токен с scope "repo".',
+            'GITHUB_TOKEN не задан. На проде добавь переменную GITHUB_TOKEN в Vercel → Settings → Environment Variables (и сделай Redeploy). Локально — пропиши GITHUB_TOKEN в .env.local. Нужен токен с правом Contents: Read and write на репо training-brain.',
             401,
         )
     }
