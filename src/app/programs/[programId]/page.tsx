@@ -1603,6 +1603,87 @@ export default function ProgramDetailPage() {
                         </div>
                     )}
 
+                    {/* Сводка прошлой недели — три независимых под-блока.
+                        Парсится из markdown (md-parser → prevWeekStats), приходит
+                        сразу в program_data, поэтому отображается по факту наличия. */}
+                    {program.program_data.prevWeekStats && (
+                        program.program_data.prevWeekStats.coachSummary ||
+                        program.program_data.prevWeekStats.volumeSummary ||
+                        program.program_data.prevWeekStats.wellnessSummary
+                    ) && (
+                        <div className="mb-2 rounded-xl border border-purple-500/20 overflow-hidden">
+                            <button
+                                onClick={() => setIsPrevWeekCollapsed(v => !v)}
+                                className="w-full flex items-center gap-2 px-3 py-2.5 text-left bg-purple-500/10 hover:bg-purple-500/15 transition-colors"
+                            >
+                                <span className="text-base flex-shrink-0">📊</span>
+                                <span className="text-sm font-semibold text-purple-300 flex-1">Сводка прошлой недели</span>
+                                <ChevronDown className={`w-4 h-4 text-purple-300/60 transition-transform duration-200 ${isPrevWeekCollapsed ? '' : 'rotate-180'}`} />
+                            </button>
+                            {!isPrevWeekCollapsed && (
+                                <div className="bg-purple-500/5 px-3 py-2.5 space-y-2">
+                                    {program.program_data.prevWeekStats.coachSummary && (
+                                        <div className="rounded-lg border border-purple-500/15 overflow-hidden">
+                                            <button
+                                                onClick={() => setIsPrevCoachCollapsed(v => !v)}
+                                                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-purple-500/10 transition-colors"
+                                            >
+                                                <span className="text-sm flex-shrink-0">📝</span>
+                                                <span className="text-xs font-semibold text-purple-200 flex-1">Резюме недели</span>
+                                                <ChevronDown className={`w-3.5 h-3.5 text-purple-300/60 transition-transform duration-200 ${isPrevCoachCollapsed ? '' : 'rotate-180'}`} />
+                                            </button>
+                                            {!isPrevCoachCollapsed && (
+                                                <div className="px-3 pb-2.5">
+                                                    <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                                        {program.program_data.prevWeekStats.coachSummary}
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    {program.program_data.prevWeekStats.volumeSummary && (
+                                        <div className="rounded-lg border border-purple-500/15 overflow-hidden">
+                                            <button
+                                                onClick={() => setIsPrevVolumeCollapsed(v => !v)}
+                                                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-purple-500/10 transition-colors"
+                                            >
+                                                <span className="text-sm flex-shrink-0">📈</span>
+                                                <span className="text-xs font-semibold text-purple-200 flex-1">Объём недели</span>
+                                                <ChevronDown className={`w-3.5 h-3.5 text-purple-300/60 transition-transform duration-200 ${isPrevVolumeCollapsed ? '' : 'rotate-180'}`} />
+                                            </button>
+                                            {!isPrevVolumeCollapsed && (
+                                                <div className="px-3 pb-2.5">
+                                                    <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                                        {program.program_data.prevWeekStats.volumeSummary}
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    {program.program_data.prevWeekStats.wellnessSummary && (
+                                        <div className="rounded-lg border border-purple-500/15 overflow-hidden">
+                                            <button
+                                                onClick={() => setIsPrevWellnessCollapsed(v => !v)}
+                                                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-purple-500/10 transition-colors"
+                                            >
+                                                <span className="text-sm flex-shrink-0">💤</span>
+                                                <span className="text-xs font-semibold text-purple-200 flex-1">Самочувствие</span>
+                                                <ChevronDown className={`w-3.5 h-3.5 text-purple-300/60 transition-transform duration-200 ${isPrevWellnessCollapsed ? '' : 'rotate-180'}`} />
+                                            </button>
+                                            {!isPrevWellnessCollapsed && (
+                                                <div className="px-3 pb-2.5">
+                                                    <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                                        {program.program_data.prevWeekStats.wellnessSummary}
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     <div className="flex gap-2">
                         {program.program_data.days.map((day, idx) => (
                             <button key={day.dayNumber} onClick={() => setCurrentDayIndex(idx)}
