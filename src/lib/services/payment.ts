@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
+import { withTimeout } from '@/lib/utils/with-timeout'
 
 export interface Payment {
     id: string
@@ -25,6 +26,10 @@ export interface Payment {
  * Получить статус оплаты текущего пользователя.
  * Возвращает последний CONFIRMED платёж, или последний pending если confirmed нет.
  * Fallback: если profiles.subscription_status = 'active' — создаём виртуальный confirmed-объект.
+ *
+ * Все Supabase-запросы обёрнуты в withTimeout — функция вызывается на старте
+ * /auth, /dashboard, /programs и любая зависшая сетевая операция здесь
+ * приводит к вечному «Переходим...» / лоадеру (см. desktop-page-load.md).
  */
 export async function getUserPayment(): Promise<Payment | null> {
     const supabase = createClient()
@@ -32,58 +37,72 @@ export async function getUserPayment(): Promise<Payment | null> {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
 
-    // Сначала ищем подтверждённый платёж — он приоритетнее pending
-    const { data: confirmed } = await supabase
-        .from('payments')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('status', 'confirmed')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+    try {
+        // Сначала ищем подтверждённый платёж — он приоритетнее pending
+        const { data: confirmed } = await withTimeout<{ data: Payment | null; error: any }>(
+            supabase
+                .from('payments')
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('status', 'confirmed')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle(),
+            'getUserPayment:confirmed',
+        )
 
-    if (confirmed) return confirmed as Payment
+        if (confirmed) return confirmed as Payment
 
-    // Нет confirmed — проверяем профиль как fallback
-    // (вебхук мог не прийти, но подписка активирована вручную)
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('subscription_status, subscription_end_date, has_nutrition_plan')
-        .eq('id', user.id)
-        .single()
+        // Нет confirmed — проверяем профиль как fallback
+        // (вебхук мог не прийти, но подписка активирована вручную)
+        const { data: profile } = await withTimeout<{ data: any; error: any }>(
+            supabase
+                .from('profiles')
+                .select('subscription_status, subscription_end_date, has_nutrition_plan')
+                .eq('id', user.id)
+                .single(),
+            'getUserPayment:profile',
+        )
 
-    if (profile?.subscription_status === 'active') {
-        // Возвращаем синтетический confirmed-объект чтобы не блокировать пользователя
-        return {
-            id: 'profile-fallback',
-            user_id: user.id,
-            amount: 0,
-            currency: 'RUB',
-            status: 'confirmed',
-            payment_method: 'manual',
-            confirmed_by: null,
-            confirmed_at: null,
-            includes_nutrition: profile.has_nutrition_plan ?? false,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-        } as Payment
-    }
+        if (profile?.subscription_status === 'active') {
+            // Возвращаем синтетический confirmed-объект чтобы не блокировать пользователя
+            return {
+                id: 'profile-fallback',
+                user_id: user.id,
+                amount: 0,
+                currency: 'RUB',
+                status: 'confirmed',
+                payment_method: 'manual',
+                confirmed_by: null,
+                confirmed_at: null,
+                includes_nutrition: profile.has_nutrition_plan ?? false,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            } as Payment
+        }
 
-    // Нет ни confirmed, ни активного профиля — возвращаем последний pending (или null)
-    const { data: pending, error } = await supabase
-        .from('payments')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+        // Нет ни confirmed, ни активного профиля — возвращаем последний pending (или null)
+        const { data: pending, error } = await withTimeout<{ data: Payment | null; error: any }>(
+            supabase
+                .from('payments')
+                .select('*')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle(),
+            'getUserPayment:pending',
+        )
 
-    if (error) {
-        console.error('[Payment] Error fetching payment:', error)
+        if (error) {
+            console.error('[Payment] Error fetching payment:', error)
+            return null
+        }
+
+        return pending as Payment | null
+    } catch (e) {
+        console.error('[Payment] getUserPayment timeout/network:', e)
         return null
     }
-
-    return pending as Payment | null
 }
 
 /**

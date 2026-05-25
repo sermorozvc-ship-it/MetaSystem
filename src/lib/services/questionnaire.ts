@@ -2,6 +2,7 @@
 // Сервис для работы с анкетами клиентов
 
 import { createClient } from '@/lib/supabase/client'
+import { withTimeout } from '@/lib/utils/with-timeout'
 
 export interface ClientQuestionnaire {
   id: string
@@ -428,18 +429,34 @@ export async function isQuestionnaireCompleted(): Promise<boolean> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return false
 
-  const { data: questionnaire } = await supabase
-    .from('client_questionnaires')
-    .select('id')
-    .eq('user_id', user.id)
-    .maybeSingle()
+  try {
+    const { data: questionnaire } = await withTimeout<{ data: { id: string } | null; error: any }>(
+      supabase
+        .from('client_questionnaires')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle(),
+      'isQuestionnaireCompleted',
+    )
 
-  if (questionnaire) {
-    await supabase
-      .from('profiles')
-      .update({ questionnaire_completed: true })
-      .eq('id', user.id)
+    if (questionnaire) {
+      // Обновление флага в profiles делаем fire-and-forget — не блокируем UI:
+      // если оно зависнет, страница всё равно идёт дальше с правильным результатом.
+      void withTimeout<{ error: any }>(
+        supabase
+          .from('profiles')
+          .update({ questionnaire_completed: true })
+          .eq('id', user.id),
+        'isQuestionnaireCompleted:updateProfile',
+      ).catch(() => {})
+      return true
+    }
+    return false
+  } catch (e) {
+    console.error('[Questionnaire] isQuestionnaireCompleted timeout/network:', e)
+    // При сетевой ошибке безопасный дефолт — считаем что заполнено,
+    // чтобы не отправить пользователя на /questionnaire по ошибке сети.
+    // Реальная страница анкеты сама проверит и покажет нужное состояние.
     return true
   }
-  return false
 }

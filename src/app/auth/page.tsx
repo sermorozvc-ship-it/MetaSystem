@@ -46,17 +46,34 @@ function AuthContent() {
     const router = useRouter()
 
     // Определяем куда редиректить после входа
+    // Все шаги имеют общий таймаут 4с — чтобы залипший Supabase-запрос
+    // не оставлял пользователя на экране «Переходим...» навсегда
+    // (см. desktop-page-load.md). Сами сервисы тоже под withTimeout, но
+    // эта внешняя крышка — последняя страховка.
     const getRedirectTarget = async (loggedInUser: { id?: string; email?: string | null; user_metadata?: any }) => {
         if (isAdminUser(loggedInUser)) return '/admin'
 
-        // Определяем фактическое состояние клиента: оплата → анкета → питание → дашборд.
-        // Это базовая правда, которая важнее returnTo из URL — иначе залипший в истории
-        // returnTo=/payment кидает уже оплатившего клиента обратно на форму оплаты.
+        const FALLBACK = '/dashboard'
+
+        // Хелпер: race конкретной проверки с общим бюджетом времени
+        const withBudget = <T,>(p: Promise<T>, fallback: T, ms: number): Promise<T> => {
+            return new Promise<T>((resolve) => {
+                const t = setTimeout(() => {
+                    console.warn('[Auth] redirect step timed out, using fallback')
+                    resolve(fallback)
+                }, ms)
+                p.then(
+                    (v) => { clearTimeout(t); resolve(v) },
+                    () => { clearTimeout(t); resolve(fallback) },
+                )
+            })
+        }
+
         try {
             const { getUserPayment } = await import('@/lib/services/payment')
             const { isQuestionnaireCompleted } = await import('@/lib/services/questionnaire')
 
-            const payment = await getUserPayment()
+            const payment = await withBudget(getUserPayment(), null, 4000)
             const isPaid = payment?.status === 'confirmed'
 
             // Не оплачено — на оплату (или на returnTo, если он явно ведёт на оплату/онбординг)
@@ -68,15 +85,15 @@ function AuthContent() {
             }
 
             // Оплачено — проверяем анкеты
-            const done = await isQuestionnaireCompleted()
+            const done = await withBudget(isQuestionnaireCompleted(), true, 4000)
             if (!done) return '/questionnaire'
 
             try {
                 const { isNutritionQuestionnaireRequired, isNutritionQuestionnaireCompleted } =
                     await import('@/lib/services/nutrition')
-                const needsNutrition = await isNutritionQuestionnaireRequired()
+                const needsNutrition = await withBudget(isNutritionQuestionnaireRequired(), false, 4000)
                 if (needsNutrition) {
-                    const nutritionDone = await isNutritionQuestionnaireCompleted()
+                    const nutritionDone = await withBudget(isNutritionQuestionnaireCompleted(), true, 4000)
                     if (!nutritionDone) return '/questionnaire/nutrition'
                 }
             } catch {}
@@ -92,10 +109,10 @@ function AuthContent() {
                 return returnTo
             }
 
-            return '/dashboard'
+            return FALLBACK
         } catch {
             // Фолбэк: на дашборд, оттуда middleware/страницы сами разрулят
-            return '/dashboard'
+            return FALLBACK
         }
     }
 

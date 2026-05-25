@@ -3,6 +3,7 @@
 // (includes_nutrition = true в последнем подтверждённом платеже)
 
 import { createClient } from '@/lib/supabase/client'
+import { withTimeout } from '@/lib/utils/with-timeout'
 
 // ──────────────────────────────────────────────────────────────────────────
 // Типы ответов — хранятся в поле answers (jsonb)
@@ -116,29 +117,43 @@ export async function isNutritionQuestionnaireRequired(): Promise<boolean> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return false
 
-  // Сначала проверяем профиль — самый надёжный источник после активации подписки
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('has_nutrition_plan, subscription_status')
-    .eq('id', user.id)
-    .single()
+  try {
+    // Сначала проверяем профиль — самый надёжный источник после активации подписки
+    const { data: profile } = await withTimeout<{ data: any; error: any }>(
+      supabase
+        .from('profiles')
+        .select('has_nutrition_plan, subscription_status')
+        .eq('id', user.id)
+        .single(),
+      'isNutritionQuestionnaireRequired:profile',
+    )
 
-  if (profile?.has_nutrition_plan) return true
+    if (profile?.has_nutrition_plan) return true
 
-  // Fallback: смотрим на подтверждённый платёж
-  const { data, error } = await supabase
-    .from('payments')
-    .select('plan_type, includes_nutrition, status')
-    .eq('user_id', user.id)
-    .eq('status', 'confirmed')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+    // Fallback: смотрим на подтверждённый платёж
+    const { data, error } = await withTimeout<{ data: any; error: any }>(
+      supabase
+        .from('payments')
+        .select('plan_type, includes_nutrition, status')
+        .eq('user_id', user.id)
+        .eq('status', 'confirmed')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      'isNutritionQuestionnaireRequired:payment',
+    )
 
-  if (error || !data) return false
+    if (error || !data) return false
 
-  if (data.plan_type === '6_months') return true
-  return !!data.includes_nutrition
+    if (data.plan_type === '6_months') return true
+    return !!data.includes_nutrition
+  } catch (e) {
+    console.error('[Nutrition] isNutritionQuestionnaireRequired timeout/network:', e)
+    // При сетевом сбое не отправляем на анкету питания — пользователь уже
+    // на дашборде получит реальный ответ из БД, а зависшая авторизация
+    // не должна стопориться на этой проверке.
+    return false
+  }
 }
 
 /**
@@ -267,13 +282,23 @@ export async function isNutritionQuestionnaireCompleted(): Promise<boolean> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return false
 
-  const { data } = await supabase
-    .from('client_nutrition_questionnaires')
-    .select('id')
-    .eq('user_id', user.id)
-    .maybeSingle()
+  try {
+    const { data } = await withTimeout<{ data: { id: string } | null; error: any }>(
+      supabase
+        .from('client_nutrition_questionnaires')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle(),
+      'isNutritionQuestionnaireCompleted',
+    )
 
-  return !!data
+    return !!data
+  } catch (e) {
+    console.error('[Nutrition] isNutritionQuestionnaireCompleted timeout/network:', e)
+    // Безопасный дефолт — считаем что заполнено, чтобы зависшая сеть
+    // не отправила пользователя на форму анкеты по ошибке.
+    return true
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
