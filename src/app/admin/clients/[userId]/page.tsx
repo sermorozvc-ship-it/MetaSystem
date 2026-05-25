@@ -1691,33 +1691,47 @@ export default function AdminClientDetailPage() {
             programData.startDate = startDate
             programData.endDate = endDate
 
-            // Создаём напрямую через service role — без API route, без токена
-            const { createClient: createDirectClient } = await import('@supabase/supabase-js')
-            const db = createDirectClient(
-                'https://bzyypoyvihqhrbllgffh.supabase.co',
-                'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
-                { auth: { persistSession: false } }
-            )
+            // Грузим через серверный API /api/admin/create-program — он использует
+            // UPSERT по (user_id, week_number) и сохраняет training_entries клиента.
+            // Раньше тут был DELETE + INSERT через захардкоженный service_role
+            // ключ — это и удаляло заполненный дневник через ON DELETE CASCADE,
+            // и было утечкой ключа в клиентский бандл.
+            const { createClient } = await import('@/lib/supabase/client')
+            const supabase = createClient()
+            const { data: { session } } = await supabase.auth.getSession()
+            if (!session?.access_token) {
+                setUploadError('Нет токена сессии. Перезайдите в админку.')
+                return
+            }
 
-            // Удаляем существующую программу для этой недели
-            await db.from('training_programs').delete().eq('user_id', userId).eq('week_number', weekNumber)
+            const res = await fetch('/api/admin/create-program', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({
+                    userId,
+                    weekNumber,
+                    startDate,
+                    endDate,
+                    trainingDaysCount: trainingDays,
+                    programMd,
+                    programData,
+                }),
+            })
 
-            const { data, error } = await db
-                .from('training_programs')
-                .insert({
-                    user_id: userId,
-                    week_number: weekNumber,
-                    start_date: startDate,
-                    end_date: endDate,
-                    training_days_count: trainingDays,
-                    program_md: programMd,
-                    program_data: programData,
-                    status: 'active',
-                })
-                .select()
-                .single()
+            if (!res.ok) {
+                const errBody = await res.json().catch(() => ({}))
+                setUploadError('Ошибка: ' + (errBody.error || `HTTP ${res.status}`))
+                return
+            }
 
-            if (error) { setUploadError('Ошибка БД: ' + error.message); return }
+            const { program: data } = await res.json()
+            if (!data) {
+                setUploadError('Сервер не вернул программу')
+                return
+            }
 
             // Программа сохранена — сразу закрываем модалку и сбрасываем форму,
             // чтобы UI не висел в "загрузке" из-за побочных запросов ниже.
@@ -1732,34 +1746,16 @@ export default function AdminClientDetailPage() {
                 setAppliedTemplateId(null)
             }
 
-            // Уведомление клиенту (in-app) — fire-and-forget
-            const notifTitle = 'Новая программа! 💪'
-            const notifMessage = `Тренер загрузил программу на неделю ${weekNumber}.`
-            db.from('notifications').insert({
-                user_id: userId,
-                type: 'program_uploaded',
-                title: notifTitle,
-                message: notifMessage,
-                link: '/programs',
-                read: false,
-            }).then(() => {})
-
             // Web Push — через серверный API (поддерживает отправку другому пользователю)
-            fetch('/api/push/send', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({
-                    userId,
-                    title: notifTitle,
-                    body: notifMessage,
-                    url: '/programs',
-                }),
-            }).catch(() => {})
+            // (in-app уведомление и БД-запись теперь делает /api/admin/create-program сам)
+            // Дублируем Web Push на всякий случай для совместимости — он идемпотентный.
+            // Но фактически create-program уже сделал sendPushDirect, так что
+            // лишний вызов мог бы дублировать пуши. Поэтому просто не зовём его здесь.
 
-            // Обновляем список программ через тот же service-role клиент (без зависимости от сессии).
-            // Делаем это после закрытия модалки, чтобы возможные сетевые задержки/ошибки не блокировали UI.
-            db.from('training_programs')
+            // Обновляем список программ — вытаскиваем через тот же контекст RLS
+            // (админ видит все training_programs клиентов)
+            supabase
+                .from('training_programs')
                 .select('*')
                 .eq('user_id', userId)
                 .order('week_number', { ascending: false })
