@@ -5,11 +5,11 @@ import { requireAdmin } from '@/lib/server/admin-auth'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function DELETE(request: NextRequest, ctx: { params: { userId: string } }) {
+export async function DELETE(request: NextRequest, ctx: { params: Promise<{ userId: string }> }) {
     const auth = await requireAdmin(request)
     if (!auth.ok) return auth.response
 
-    const { userId } = ctx.params
+    const { userId } = await ctx.params
 
     try {
         // Удаляем все связанные данные явно (большинство имеют CASCADE, но

@@ -5,11 +5,11 @@ import { requireAdmin } from '@/lib/server/admin-auth'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest, ctx: { params: { userId: string } }) {
+export async function GET(request: NextRequest, ctx: { params: Promise<{ userId: string }> }) {
     const auth = await requireAdmin(request)
     if (!auth.ok) return auth.response
 
-    const { userId } = ctx.params
+    const { userId } = await ctx.params
     const [progsRes, entriesRes] = await Promise.all([
         auth.service
             .from('training_programs')

@@ -5,11 +5,11 @@ import { requireAdmin } from '@/lib/server/admin-auth'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function POST(request: NextRequest, ctx: { params: { userId: string } }) {
+export async function POST(request: NextRequest, ctx: { params: Promise<{ userId: string }> }) {
     const auth = await requireAdmin(request)
     if (!auth.ok) return auth.response
 
-    const { userId } = ctx.params
+    const { userId } = await ctx.params
     const body = await request.json().catch(() => ({}))
     const { planMonths, planType, includesNutrition, amount } = body
 

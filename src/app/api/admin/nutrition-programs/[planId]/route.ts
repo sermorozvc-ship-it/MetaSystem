@@ -5,11 +5,11 @@ import { requireAdmin } from '@/lib/server/admin-auth'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function PATCH(request: NextRequest, ctx: { params: { planId: string } }) {
+export async function PATCH(request: NextRequest, ctx: { params: Promise<{ planId: string }> }) {
     const auth = await requireAdmin(request)
     if (!auth.ok) return auth.response
 
-    const { planId } = ctx.params
+    const { planId } = await ctx.params
     const body = await request.json().catch(() => ({}))
 
     const updates: Record<string, any> = {}
@@ -31,11 +31,11 @@ export async function PATCH(request: NextRequest, ctx: { params: { planId: strin
     return NextResponse.json({ plan: data })
 }
 
-export async function DELETE(request: NextRequest, ctx: { params: { planId: string } }) {
+export async function DELETE(request: NextRequest, ctx: { params: Promise<{ planId: string }> }) {
     const auth = await requireAdmin(request)
     if (!auth.ok) return auth.response
 
-    const { planId } = ctx.params
+    const { planId } = await ctx.params
     const { error } = await auth.service
         .from('nutrition_programs')
         .delete()
