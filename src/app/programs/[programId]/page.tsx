@@ -823,6 +823,8 @@ export default function ProgramDetailPage() {
     const [isRedFlagsCollapsed, setIsRedFlagsCollapsed] = useState(true)
     const [isDayNoteCollapsed, setIsDayNoteCollapsed] = useState(true)
     const [isDayContextCollapsed, setIsDayContextCollapsed] = useState(true)
+    const [isWarmupCollapsed, setIsWarmupCollapsed] = useState(true)
+    const [isCooldownCollapsed, setIsCooldownCollapsed] = useState(true)
     // Статистика за прошлую неделю — три независимых раздела
     const [isPrevWeekCollapsed, setIsPrevWeekCollapsed] = useState(true)
     const [isPrevCoachCollapsed, setIsPrevCoachCollapsed] = useState(true)
@@ -909,6 +911,8 @@ export default function ProgramDetailPage() {
                                 ...day,
                                 coachNote: day.coachNote ?? parsed.days[i]?.coachNote,
                                 dayContext: day.dayContext ?? parsed.days[i]?.dayContext,
+                                warmup: day.warmup ?? parsed.days[i]?.warmup,
+                                cooldown: day.cooldown ?? parsed.days[i]?.cooldown,
                             })),
                         }
                     } catch (e) {
@@ -935,6 +939,8 @@ export default function ProgramDetailPage() {
         // Сбрасываем состояние дневных блоков
         setIsDayNoteCollapsed(true)
         setIsDayContextCollapsed(true)
+        setIsWarmupCollapsed(true)
+        setIsCooldownCollapsed(true)
         setIsWeekContextCollapsed(true)
     }, [program, currentDayIndex])
 
@@ -1724,6 +1730,26 @@ export default function ProgramDetailPage() {
                         </div>
                     )}
 
+                    {currentDay.warmup && (
+                        <div className="rounded-xl border border-orange-500/25 overflow-hidden">
+                            <button
+                                onClick={() => setIsWarmupCollapsed(v => !v)}
+                                className="w-full flex items-center gap-2 px-4 py-3 text-left bg-orange-500/10 hover:bg-orange-500/15 transition-colors"
+                            >
+                                <span className="text-base flex-shrink-0">🔥</span>
+                                <span className="text-sm font-semibold text-orange-400 flex-1">Разминка</span>
+                                <ChevronDown className={`w-4 h-4 text-orange-400/60 transition-transform duration-200 ${isWarmupCollapsed ? '' : 'rotate-180'}`} />
+                            </button>
+                            {!isWarmupCollapsed && (
+                                <div className="px-4 py-3 bg-orange-500/5">
+                                    <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                        {currentDay.warmup}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {/* Кнопка свернуть/развернуть все */}
                     {currentDay.exercises.length > 1 && (
                         <div className="flex justify-end">
@@ -1825,6 +1851,27 @@ export default function ProgramDetailPage() {
                         )
                     })}
                 </div>
+
+                {/* Заминка — отдельный блок после всех упражнений */}
+                {currentDay.cooldown && (
+                    <div className="rounded-xl border border-cyan-500/25 overflow-hidden mb-5">
+                        <button
+                            onClick={() => setIsCooldownCollapsed(v => !v)}
+                            className="w-full flex items-center gap-2 px-4 py-3 text-left bg-cyan-500/10 hover:bg-cyan-500/15 transition-colors"
+                        >
+                            <span className="text-base flex-shrink-0">🧘</span>
+                            <span className="text-sm font-semibold text-cyan-400 flex-1">Заминка</span>
+                            <ChevronDown className={`w-4 h-4 text-cyan-400/60 transition-transform duration-200 ${isCooldownCollapsed ? '' : 'rotate-180'}`} />
+                        </button>
+                        {!isCooldownCollapsed && (
+                            <div className="px-4 py-3 bg-cyan-500/5">
+                                <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                    {currentDay.cooldown}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Кардио */}
                 {currentDay.cardio && (

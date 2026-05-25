@@ -142,23 +142,28 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Клиент не найден' }, { status: 404 })
         }
 
-        // Удаляем существующую программу для этой недели
-        await adminClient.from('training_programs').delete().eq('user_id', userId).eq('week_number', weekNumber)
-
-        // Создаём программу
+        // ВАЖНО: используем UPSERT по уникальному ключу (user_id, week_number),
+        // а НЕ DELETE+INSERT. У training_entries.program_id есть
+        // ON DELETE CASCADE — удаление программы стирает весь дневник клиента,
+        // и все его заполненные подходы пропадают. С UPSERT id программы
+        // не меняется, FK сохраняется, training_entries остаются на месте.
         const { data, error } = await adminClient
             .from('training_programs')
-            .insert({
-                user_id: userId,
-                week_number: weekNumber,
-                start_date: startDate,
-                end_date: endDate,
-                training_days_count: trainingDaysCount || 3,
-                program_md: programMd,
-                program_data: programData || {},
-                notes_trainer: notesTrainer || null,
-                status: 'active',
-            })
+            .upsert(
+                {
+                    user_id: userId,
+                    week_number: weekNumber,
+                    start_date: startDate,
+                    end_date: endDate,
+                    training_days_count: trainingDaysCount || 3,
+                    program_md: programMd,
+                    program_data: programData || {},
+                    notes_trainer: notesTrainer || null,
+                    status: 'active',
+                    updated_at: new Date().toISOString(),
+                },
+                { onConflict: 'user_id,week_number' },
+            )
             .select()
             .single()
 

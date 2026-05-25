@@ -34,6 +34,8 @@ type MultilineBlock =
   | 'redFlags'
   | 'coachNote'
   | 'dayContext'
+  | 'warmup'
+  | 'cooldown'
   | 'checkin'
   | 'loggingNote'
   | 'prevCoachSummary'
@@ -95,6 +97,10 @@ export function parseMdToJson(markdown: string): ProgramData {
       currentDay.coachNote = (currentDay.coachNote ? currentDay.coachNote + sep : '') + text
     } else if (currentBlock === 'dayContext' && currentDay) {
       currentDay.dayContext = (currentDay.dayContext ? currentDay.dayContext + sep : '') + text
+    } else if (currentBlock === 'warmup' && currentDay) {
+      currentDay.warmup = (currentDay.warmup ? currentDay.warmup + sep : '') + text
+    } else if (currentBlock === 'cooldown' && currentDay) {
+      currentDay.cooldown = (currentDay.cooldown ? currentDay.cooldown + sep : '') + text
     }
   }
 
@@ -239,6 +245,22 @@ export function parseMdToJson(markdown: string): ProgramData {
         currentBlock = 'dayContext'
         const inline = dayContextMatch[1].trim()
         if (inline) currentDay.dayContext = inline
+        continue
+      }
+      // Разминка дня — многострочный блок (общая+специальная разминка перед упражнениями)
+      const warmupMatch = line.match(/^\*\*Размин[^:]*:\*\*\s*(.*)/i)
+      if (warmupMatch) {
+        currentBlock = 'warmup'
+        const inline = warmupMatch[1].trim()
+        if (inline) currentDay.warmup = inline
+        continue
+      }
+      // Заминка дня — многострочный блок (растяжка/МФР после тренировки)
+      const cooldownMatch = line.match(/^\*\*Замин[^:]*:\*\*\s*(.*)/i)
+      if (cooldownMatch) {
+        currentBlock = 'cooldown'
+        const inline = cooldownMatch[1].trim()
+        if (inline) currentDay.cooldown = inline
         continue
       }
     }

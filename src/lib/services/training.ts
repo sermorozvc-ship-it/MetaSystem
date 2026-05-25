@@ -64,6 +64,8 @@ export interface TrainingDay {
   clientNotes?: string
   coachNote?: string   // краткая рекомендация тренера на день (**Рекомендация дня:**)
   dayContext?: string  // расширенный контекст дня, многострочный
+  warmup?: string      // блок разминки на день (**Разминка:**), многострочный
+  cooldown?: string    // блок заминки на день (**Заминка:**), многострочный
 }
 
 export interface Exercise {

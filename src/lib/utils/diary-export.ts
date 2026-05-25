@@ -197,6 +197,14 @@ function renderDay(
         out.push('')
         out.push(`**Контекст дня:** ${day.dayContext}`)
     }
+    if (day.warmup) {
+        out.push('')
+        out.push(`**Разминка:** ${day.warmup}`)
+    }
+    if (day.cooldown) {
+        out.push('')
+        out.push(`**Заминка:** ${day.cooldown}`)
+    }
     out.push('')
 
     let dayTonnage = 0
