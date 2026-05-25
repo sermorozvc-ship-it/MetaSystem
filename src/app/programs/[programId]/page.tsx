@@ -1202,8 +1202,21 @@ export default function ProgramDetailPage() {
         inFlightRef.current = true
 
         if (!silent) setIsSaving(true)
-        setSaveStatus('saving')
         setSaveError(null)
+
+        // Для тихого автосейва индикатор «Сохраняю...» показываем не сразу,
+        // а через 400мс. Большинство upsert'ов отрабатывают быстрее — UI
+        // не мерцает на каждое нажатие. Для ручного «Сохранить» индикатор
+        // включаем сразу, чтобы пользователь видел реакцию на клик.
+        let savingIndicatorTimer: ReturnType<typeof setTimeout> | null = null
+        if (silent) {
+            savingIndicatorTimer = setTimeout(() => {
+                setSaveStatus('saving')
+                savingIndicatorTimer = null
+            }, 400)
+        } else {
+            setSaveStatus('saving')
+        }
 
         try {
             const snap = buildEntrySnapshot()
@@ -1220,6 +1233,14 @@ export default function ProgramDetailPage() {
                 )
             } catch { /* noop */ }
 
+            // Если индикатор «Сохраняю...» так и не успел появиться — гасим таймер
+            // и сразу показываем «✓ Сохранено». Иначе пользователь увидит
+            // мерцание saving → saved → idle на каждый ввод.
+            if (savingIndicatorTimer) {
+                clearTimeout(savingIndicatorTimer)
+                savingIndicatorTimer = null
+            }
+
             setSaveStatus('saved')
             if (!silent) {
                 setSaveMessage('✓ Сохранено')
@@ -1232,6 +1253,10 @@ export default function ProgramDetailPage() {
             return true
         } catch (e: any) {
             console.error('Error saving:', e)
+            if (savingIndicatorTimer) {
+                clearTimeout(savingIndicatorTimer)
+                savingIndicatorTimer = null
+            }
             setSaveStatus('error')
             setSaveError(e?.message || 'Ошибка сохранения')
             if (!silent) setSaveMessage('Ошибка сохранения — попробуй ещё раз')
