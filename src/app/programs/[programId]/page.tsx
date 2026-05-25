@@ -863,6 +863,11 @@ export default function ProgramDetailPage() {
     const [saveError, setSaveError] = useState<string | null>(null)
     const lastSavedAtRef = useRef<number | null>(null)
 
+    // Снимок entry_data, последний раз подтверждённый сервером. Нужен для
+    // защиты от деструктивной записи: автосейв не должен затирать упражнения,
+    // которые уже заполнены на сервере (возможно, с другого устройства).
+    const lastServerEntryRef = useRef<Record<string, any> | null>(null)
+
     // Ключ локального бэкапа на (программа, день) — страховка от потери ввода
     // при перезагрузке страницы / падении сети до ответа Supabase.
     const backupKey = useCallback((dayNumber: number) => {
@@ -949,6 +954,10 @@ export default function ProgramDetailPage() {
         if (!program || !user) return
         dataLoadedRef.current = false
         userChangedRef.current = false
+        // Сбрасываем известный серверный снимок — пока новая загрузка не
+        // подтвердится, автосейв не имеет права писать (см. защиту в
+        // useEffect автосейва ниже).
+        lastServerEntryRef.current = null
         // Сбрасываем локальный статус автосохранения при смене дня —
         // иначе после переключения остаётся «✓ Сохранено» от предыдущего дня.
         setSaveStatus('idle')
@@ -985,6 +994,10 @@ export default function ProgramDetailPage() {
             try {
                 const entry = await getTrainingEntry(program.id, currentDay.dayNumber)
                 if (entry) {
+                    // Запоминаем серверный снимок — он будет защитой от
+                    // деструктивной записи в isDestructiveSave.
+                    lastServerEntryRef.current = entry.entry_data || null
+
                     const converted: Record<string, ExerciseClientData> = {}
                     for (const ex of currentDay.exercises) {
                         const raw = entry.entry_data?.[ex.id]
@@ -1065,6 +1078,11 @@ export default function ProgramDetailPage() {
                         }
                     }
                 } else {
+                    // На сервере нет записи (200 + null) — это первое
+                    // открытие дня. Сервер ответил, lastServerEntryRef = пустой
+                    // объект (но НЕ null — null означает «не знаем что на
+                    // сервере», и тогда защита от деструктивной записи отключена).
+                    lastServerEntryRef.current = {}
                     // На сервере нет записи. Если есть локальный черновик —
                     // используем его, чтобы не потерять ввод после перезагрузки.
                     if (localDraft?.exerciseData) {
@@ -1099,8 +1117,19 @@ export default function ProgramDetailPage() {
                 }
             } catch (e) {
                 console.error('Error loading entry:', e)
-                // Сеть/RLS отвалились — пробуем хотя бы поднять локальный
-                // черновик, чтобы пользователь не остался с пустыми полями.
+                // Сеть/RLS отвалились — НЕ знаем, что на сервере.
+                // ОЧЕНЬ ВАЖНО: ставим lastServerEntryRef = null, чтобы
+                // защита от деструктивной записи в saveEntry была отключена
+                // только если на самом сервере записи реально нет. Если
+                // мы просто не дозвонились, — автосейв должен молчать
+                // и не имеет права писать пустоту поверх возможно полных
+                // данных. См. ниже: при null серверного снимка автосейв
+                // в isDestructiveSave не блокирует, но мы дополнительно
+                // НЕ запускаем автосейв на этой загрузке (userChangedRef
+                // ставится только если мы реально подняли черновик).
+                lastServerEntryRef.current = null
+                // Пробуем хотя бы поднять локальный черновик, чтобы
+                // пользователь не остался с пустыми полями.
                 if (localDraft?.exerciseData) {
                     setExerciseData(localDraft.exerciseData)
                     setEnergyLevel(localDraft.energyLevel ?? 5)
@@ -1203,6 +1232,44 @@ export default function ProgramDetailPage() {
      *
      * @returns true если сохранилось, false если упало (но кнопка свободна)
      */
+    /**
+     * Проверка деструктивности upsert. Возвращает true если предлагаемая
+     * запись «уменьшает» серверную (теряет упражнения с уже введёнными
+     * подходами). Используется как предохранитель от race condition между
+     * двумя устройствами:
+     *   - десктоп открыл страницу,
+     *   - сервер не отдал запись (таймаут),
+     *   - десктоп показал пустые поля,
+     *   - автосейв стартовал и затёр работу с другого устройства.
+     */
+    const isDestructiveSave = useCallback((nextEntryData: Record<string, any>): { destructive: boolean; reason?: string } => {
+        const serverData = lastServerEntryRef.current
+        if (!serverData) return { destructive: false }
+
+        const hasFilledSets = (ex: any): boolean => {
+            if (!ex || !Array.isArray(ex.sets)) return false
+            return ex.sets.some((s: any) => (s?.weight && String(s.weight).trim() !== '') || (s?.reps && String(s.reps).trim() !== ''))
+        }
+
+        const lostExercises: string[] = []
+        for (const key of Object.keys(serverData)) {
+            if (key === '__meta__') continue
+            const serverEx = (serverData as any)[key]
+            const nextEx = (nextEntryData as any)[key]
+            if (hasFilledSets(serverEx) && !hasFilledSets(nextEx)) {
+                lostExercises.push(key)
+            }
+        }
+
+        if (lostExercises.length > 0) {
+            return {
+                destructive: true,
+                reason: `Отказался затирать ${lostExercises.length} упражн. с заполненными подходами на сервере: ${lostExercises.join(', ')}`,
+            }
+        }
+        return { destructive: false }
+    }, [])
+
     const saveEntry = useCallback(async (silent = false): Promise<boolean> => {
         if (!program || !user) return false
         const currentDay = program.program_data.days[currentDayIndex]
@@ -1235,7 +1302,32 @@ export default function ProgramDetailPage() {
 
         try {
             const snap = buildEntrySnapshot()
+
+            // ─── ПРЕДОХРАНИТЕЛЬ от деструктивной записи ──────────────────────
+            // Если на сервере было больше заполненных упражнений, чем сейчас
+            // в стейте — это значит:
+            //   а) сервер не успел загрузиться (таймаут), мы видим пустоту
+            //   б) на другом устройстве пользователь дозаполнил, к нам
+            //      пришёл свежий снимок через focus-reload, а наш стейт
+            //      устарел.
+            // В обоих случаях затирать чужие данные нельзя. Отказываемся
+            // молча — на следующем focus-reload подтянем актуальное состояние.
+            const guard = isDestructiveSave(snap.entryData)
+            if (guard.destructive) {
+                console.warn('[program] DESTRUCTIVE SAVE BLOCKED:', guard.reason)
+                if (savingIndicatorTimer) {
+                    clearTimeout(savingIndicatorTimer)
+                    savingIndicatorTimer = null
+                }
+                setSaveStatus('idle')
+                if (!silent) setSaveMessage('Не сохранено: на сервере есть более полные данные. Обнови страницу.')
+                return false
+            }
+
             await upsertTrainingEntry(program.id, currentDay.dayNumber, snap.entryData, snap.metadata)
+
+            // Запоминаем, что теперь на сервере — наш только что записанный снимок.
+            lastServerEntryRef.current = snap.entryData
 
             lastSavedAtRef.current = Date.now()
             // Серверная запись подтверждена — локальный бэкап больше не нужен,
@@ -1287,7 +1379,7 @@ export default function ProgramDetailPage() {
                 setTimeout(() => { saveEntryRef.current?.(true) }, 50)
             }
         }
-    }, [program, currentDayIndex, user, buildEntrySnapshot, backupKey])
+    }, [program, currentDayIndex, user, buildEntrySnapshot, backupKey, isDestructiveSave])
 
     // Ref на актуальный saveEntry, чтобы можно было дёргать его внутри
     // самого saveEntry (для pending-проброса) и из flush-on-unmount без
@@ -1304,6 +1396,17 @@ export default function ProgramDetailPage() {
         if (!program) return
         const currentDay = program.program_data.days[currentDayIndex]
         if (!currentDay) return
+
+        // КРИТИЧНО: если сервер не подтвердил исходное состояние записи
+        // (lastServerEntryRef === null после ошибки/таймаута), мы не имеем
+        // права писать в Supabase — мы не знаем, что там лежит сейчас, и
+        // можем затереть данные с другого устройства. Локальный бэкап
+        // уже записан выше, страница «починится» сама после успешной
+        // повторной загрузки.
+        if (lastServerEntryRef.current === null) {
+            console.warn('[program] autosave skipped — server snapshot unknown (will retry on next focus reload)')
+            return
+        }
 
         // Сразу пишем локальный бэкап — даже если сеть отвалится,
         // данные не пропадут после reload.
@@ -1404,6 +1507,9 @@ export default function ProgramDetailPage() {
 
                 const entry = await getTrainingEntry(program.id, currentDay.dayNumber)
                 if (!entry) return
+
+                // Обновляем известный серверный снимок — защита от деструктивной записи.
+                lastServerEntryRef.current = entry.entry_data || null
 
                 const converted: Record<string, ExerciseClientData> = {}
                 for (const ex of currentDay.exercises) {
