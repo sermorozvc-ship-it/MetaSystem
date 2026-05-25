@@ -1005,8 +1005,18 @@ export default function ProgramDetailPage() {
                     // Если локальный бэкап новее, чем то что нам отдал сервер,
                     // значит последний save не дошёл — восстанавливаем черновик
                     // и помечаем, что нужно повторно сохранить.
+                    //
+                    // ВАЖНО: окно доверия к черновику = 2 минуты. Иначе при
+                    // кросс-устройственной синхронизации (ввёл с мобилы → открыл
+                    // десктоп, где висит старый черновик) старый черновик
+                    // десктопа затирает свежие серверные данные. Если черновик
+                    // старше 2 минут — берём сервер как источник правды.
                     const serverUpdatedAt = entry.updated_at ? new Date(entry.updated_at).getTime() : 0
-                    const draftIsNewer = localDraft?.savedAt && localDraft.savedAt > serverUpdatedAt + 1000
+                    const DRAFT_TRUST_WINDOW_MS = 2 * 60 * 1000
+                    const draftAge = localDraft?.savedAt ? Date.now() - localDraft.savedAt : Infinity
+                    const draftIsNewer = !!localDraft?.savedAt
+                        && localDraft.savedAt > serverUpdatedAt + 1000
+                        && draftAge < DRAFT_TRUST_WINDOW_MS
                     if (draftIsNewer && localDraft?.exerciseData) {
                         setExerciseData(localDraft.exerciseData)
                         setEnergyLevel(localDraft.energyLevel ?? entry.energy_level ?? 5)
@@ -1017,8 +1027,13 @@ export default function ProgramDetailPage() {
                         // помечаем как «надо досохранить» — после монтирования сработает автосейв
                         userChangedRef.current = true
                         setSaveStatus('idle')
-                        console.info('[program] restored local draft (newer than server)')
+                        console.info('[program] restored local draft (newer than server, age=' + Math.round(draftAge / 1000) + 's)')
                     } else {
+                        if (localDraft?.savedAt && localDraft.savedAt > serverUpdatedAt + 1000) {
+                            console.info('[program] ignored stale local draft (age=' + Math.round(draftAge / 1000) + 's, beyond 2min window) — using server version')
+                            // Чистим устаревший черновик, чтобы он не мешал в следующий раз.
+                            try { localStorage.removeItem(backupKey(currentDay.dayNumber)) } catch { /* noop */ }
+                        }
                         setExerciseData(converted)
                         setEnergyLevel(entry.energy_level || 5)
                         setMood(entry.mood || 3)
