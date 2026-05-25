@@ -1024,13 +1024,38 @@ export default function ProgramDetailPage() {
                     // десктоп, где висит старый черновик) старый черновик
                     // десктопа затирает свежие серверные данные. Если черновик
                     // старше 2 минут — берём сервер как источник правды.
+                    //
+                    // ДОПОЛНИТЕЛЬНО: даже свежий черновик не должен «уменьшать»
+                    // серверный набор. Если на сервере заполнено больше упражнений
+                    // — значит черновик устарел, второе устройство дозаполнило.
+                    // Берём сервер.
                     const serverUpdatedAt = entry.updated_at ? new Date(entry.updated_at).getTime() : 0
                     const DRAFT_TRUST_WINDOW_MS = 2 * 60 * 1000
                     const draftAge = localDraft?.savedAt ? Date.now() - localDraft.savedAt : Infinity
                     const draftIsNewer = !!localDraft?.savedAt
                         && localDraft.savedAt > serverUpdatedAt + 1000
                         && draftAge < DRAFT_TRUST_WINDOW_MS
-                    if (draftIsNewer && localDraft?.exerciseData) {
+
+                    // Считаем сколько упражнений с заполненными подходами есть
+                    // на сервере и в черновике.
+                    const countFilled = (data: Record<string, any> | undefined | null): number => {
+                        if (!data) return 0
+                        let n = 0
+                        for (const k of Object.keys(data)) {
+                            if (k === '__meta__') continue
+                            const ex = (data as any)[k]
+                            if (ex?.sets && Array.isArray(ex.sets)
+                                && ex.sets.some((s: any) => (s?.weight && String(s.weight).trim() !== '') || (s?.reps && String(s.reps).trim() !== ''))) {
+                                n++
+                            }
+                        }
+                        return n
+                    }
+                    const serverFilled = countFilled(entry.entry_data as any)
+                    const draftFilled = countFilled(localDraft?.exerciseData as any)
+                    const draftWouldShrink = draftFilled < serverFilled
+
+                    if (draftIsNewer && !draftWouldShrink && localDraft?.exerciseData) {
                         setExerciseData(localDraft.exerciseData)
                         setEnergyLevel(localDraft.energyLevel ?? entry.energy_level ?? 5)
                         setMood(localDraft.mood ?? entry.mood ?? 3)
@@ -1042,7 +1067,10 @@ export default function ProgramDetailPage() {
                         setSaveStatus('idle')
                         console.info('[program] restored local draft (newer than server, age=' + Math.round(draftAge / 1000) + 's)')
                     } else {
-                        if (localDraft?.savedAt && localDraft.savedAt > serverUpdatedAt + 1000) {
+                        if (draftIsNewer && draftWouldShrink) {
+                            console.info('[program] ignored draft — server has more filled exercises (' + serverFilled + ' vs draft ' + draftFilled + '). Cleaning local draft.')
+                            try { localStorage.removeItem(backupKey(currentDay.dayNumber)) } catch { /* noop */ }
+                        } else if (localDraft?.savedAt && localDraft.savedAt > serverUpdatedAt + 1000) {
                             console.info('[program] ignored stale local draft (age=' + Math.round(draftAge / 1000) + 's, beyond 2min window) — using server version')
                             // Чистим устаревший черновик, чтобы он не мешал в следующий раз.
                             try { localStorage.removeItem(backupKey(currentDay.dayNumber)) } catch { /* noop */ }
