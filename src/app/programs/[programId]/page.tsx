@@ -1326,6 +1326,116 @@ export default function ProgramDetailPage() {
         return () => window.removeEventListener('beforeunload', onBeforeUnload)
     }, [program, currentDayIndex, writeLocalDraft])
 
+    // ─── Кросс-устройственная синхронизация ──────────────────────────────────
+    // Когда пользователь возвращается во вкладку (фокус / visibilitychange),
+    // перечитываем программу и запись дня из БД. Это даёт ощущение «синка»
+    // между мобилой и десктопом без realtime-канала: вкладка десктопа,
+    // оставленная в фоне, при возврате видит актуальное состояние того,
+    // что человек заполнил с телефона.
+    //
+    // Условия безопасности:
+    //  - если есть несохранённые правки (userChangedRef.current === true) —
+    //    НЕ перечитываем, иначе перетрём ввод пользователя серверной версией;
+    //  - если идёт upsert (inFlightRef) — тоже пропускаем;
+    //  - чтобы не дёргать БД на каждый микро-фокус, троттлим до 5с между
+    //    запросами.
+    const lastFocusReloadAtRef = useRef(0)
+    useEffect(() => {
+        if (!program || !user) return
+
+        const reloadFromServer = async () => {
+            // Не вмешиваемся в активный ввод и в полётный upsert.
+            if (userChangedRef.current) return
+            if (inFlightRef.current) return
+
+            const now = Date.now()
+            if (now - lastFocusReloadAtRef.current < 5000) return
+            lastFocusReloadAtRef.current = now
+
+            try {
+                // 1) Перечитываем саму программу — тренер мог обновить план.
+                const fresh = await getProgramById(program.id)
+                if (fresh) {
+                    // Применяем enrich-логику как в первичной загрузке.
+                    if (fresh.program_md) {
+                        try {
+                            const pd = fresh.program_data
+                            const parsed = parseMdToJson(fresh.program_md)
+                            fresh.program_data = {
+                                ...pd,
+                                weeklyNote: pd.weeklyNote ?? parsed.weeklyNote,
+                                weekContext: pd.weekContext ?? parsed.weekContext,
+                                redFlags: pd.redFlags ?? parsed.redFlags,
+                                checkin: pd.checkin ?? parsed.checkin,
+                                loggingNote: pd.loggingNote ?? parsed.loggingNote,
+                                prevWeekStats: pd.prevWeekStats ?? parsed.prevWeekStats,
+                                days: pd.days.map((day, i) => ({
+                                    ...day,
+                                    coachNote: day.coachNote ?? parsed.days[i]?.coachNote,
+                                    dayContext: day.dayContext ?? parsed.days[i]?.dayContext,
+                                    warmup: day.warmup ?? parsed.days[i]?.warmup,
+                                    cooldown: day.cooldown ?? parsed.days[i]?.cooldown,
+                                })),
+                            }
+                        } catch {}
+                    }
+                    setProgram(fresh)
+                }
+
+                // 2) Перечитываем запись текущего дня — клиент мог заполнить
+                //    что-то с другого устройства.
+                const currentDay = (fresh ?? program).program_data.days[currentDayIndex]
+                if (!currentDay) return
+
+                const entry = await getTrainingEntry(program.id, currentDay.dayNumber)
+                if (!entry) return
+
+                const converted: Record<string, ExerciseClientData> = {}
+                for (const ex of currentDay.exercises) {
+                    const raw = entry.entry_data?.[ex.id]
+                    if (!raw) {
+                        converted[ex.id] = { sets: [], comment: '' }
+                    } else if (raw.sets && Array.isArray(raw.sets)) {
+                        converted[ex.id] = {
+                            sets: raw.sets,
+                            comment: raw.comment || '',
+                            selectedAlternativeId: raw.selectedAlternativeId,
+                        }
+                    }
+                }
+                setExerciseData(converted)
+                setEnergyLevel(entry.energy_level || 5)
+                setMood(entry.mood || 3)
+                setSleepQuality(entry.sleep_quality || 3)
+                setNotes(entry.notes || '')
+                const meta: DayMeta = entry.entry_data?.__meta__ || {}
+                setSupersets(meta.supersets || [])
+                if (entry.completed_at) {
+                    setCompletedDays(prev => new Set([...prev, currentDay.dayNumber]))
+                    setSavedDuration(entry.workout_duration_seconds ?? null)
+                }
+                // userChangedRef мы НЕ ставим — это серверный снимок,
+                // автосейв на нём не должен запуститься.
+            } catch (e) {
+                console.warn('[program] focus-reload failed:', e)
+            }
+        }
+
+        const onVisible = () => {
+            if (document.visibilityState === 'visible') {
+                void reloadFromServer()
+            }
+        }
+        const onFocus = () => { void reloadFromServer() }
+
+        document.addEventListener('visibilitychange', onVisible)
+        window.addEventListener('focus', onFocus)
+        return () => {
+            document.removeEventListener('visibilitychange', onVisible)
+            window.removeEventListener('focus', onFocus)
+        }
+    }, [program, user, currentDayIndex])
+
     const updateExercise = (exerciseId: string, data: ExerciseClientData) => {
         userChangedRef.current = true
         if (!completedDays.has(program?.program_data.days[currentDayIndex]?.dayNumber ?? -1)) {
