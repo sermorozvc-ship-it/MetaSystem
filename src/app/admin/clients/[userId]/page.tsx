@@ -57,19 +57,18 @@ function ClientMetricsView({ userId }: { userId: string }) {
 
     useEffect(() => {
         const load = async () => {
-            const { createClient: createDirectClient } = await import('@supabase/supabase-js')
-            const db = createDirectClient(
-                'https://bzyypoyvihqhrbllgffh.supabase.co',
-                'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
-                { auth: { persistSession: false } }
-            )
-            const { data } = await db
-                .from('client_metrics')
-                .select('*')
-                .eq('user_id', userId)
-                .order('measured_at', { ascending: false })
-            setMetrics(data || [])
-            setLoading(false)
+            try {
+                const { adminFetch } = await import('@/lib/api/admin-fetch')
+                const res = await adminFetch<{ metrics: any[] }>(
+                    `/api/admin/clients/${userId}/metrics`,
+                )
+                setMetrics(res.metrics || [])
+            } catch (e) {
+                console.error('ClientMetricsView load error:', e)
+                setMetrics([])
+            } finally {
+                setLoading(false)
+            }
         }
         load()
     }, [userId])
@@ -766,28 +765,20 @@ function ProgramCard({ program, onDelete, onUpdate, clientName, clientId, traini
             programData.startDate = editStartDate
             programData.endDate = editEndDate
 
-            const { createClient: createDirectClient } = await import('@supabase/supabase-js')
-            const db = createDirectClient(
-                'https://bzyypoyvihqhrbllgffh.supabase.co',
-                'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
-                { auth: { persistSession: false } }
+            const { adminFetch } = await import('@/lib/api/admin-fetch')
+            const { program: data } = await adminFetch<{ program: any }>(
+                `/api/admin/programs/${program.id}`,
+                {
+                    method: 'PATCH',
+                    json: {
+                        program_md: editMd,
+                        program_data: programData,
+                        start_date: editStartDate,
+                        end_date: editEndDate,
+                        training_days_count: editTrainingDays,
+                    },
+                },
             )
-
-            const { data, error } = await db
-                .from('training_programs')
-                .update({
-                    program_md: editMd,
-                    program_data: programData,
-                    start_date: editStartDate,
-                    end_date: editEndDate,
-                    training_days_count: editTrainingDays,
-                    updated_at: new Date().toISOString(),
-                })
-                .eq('id', program.id)
-                .select()
-                .single()
-
-            if (error) throw new Error(error.message)
             onUpdate(data)
             setEditing(false)
         } catch (e: any) {
@@ -798,22 +789,12 @@ function ProgramCard({ program, onDelete, onUpdate, clientName, clientId, traini
     }
 
     const fetchEntries = async (): Promise<TrainingEntry[]> => {
-        // Читаем напрямую через Supabase с service role — обходит RLS, не нужен токен
-        const { createClient: createDirectClient } = await import('@supabase/supabase-js')
-        const db = createDirectClient(
-            'https://bzyypoyvihqhrbllgffh.supabase.co',
-            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
-            { auth: { persistSession: false } }
+        // Читаем через серверный API (без service_role в браузере)
+        const { adminFetch } = await import('@/lib/api/admin-fetch')
+        const { entries } = await adminFetch<{ entries: TrainingEntry[] }>(
+            `/api/admin/programs/${program.id}/entries`,
         )
-
-        const { data, error } = await db
-            .from('training_entries')
-            .select('*')
-            .eq('program_id', program.id)
-            .order('day_number', { ascending: true })
-
-        if (error) throw new Error(error.message)
-        return data || []
+        return entries || []
     }
 
     const handleToggle = async () => {
@@ -857,14 +838,8 @@ function ProgramCard({ program, onDelete, onUpdate, clientName, clientId, traini
         if (!confirmDelete) { setConfirmDelete(true); return }
         setDeleting(true)
         try {
-            const { createClient: createDirectClient } = await import('@supabase/supabase-js')
-            const db = createDirectClient(
-                'https://bzyypoyvihqhrbllgffh.supabase.co',
-                'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
-                { auth: { persistSession: false } }
-            )
-            const { error } = await db.from('training_programs').delete().eq('id', program.id)
-            if (error) throw new Error(error.message)
+            const { adminFetch } = await import('@/lib/api/admin-fetch')
+            await adminFetch(`/api/admin/programs/${program.id}`, { method: 'DELETE' })
             onDelete(program.id)
         } catch (e: any) {
             console.error('Delete error:', e)
@@ -1291,28 +1266,20 @@ function NutritionPlanCard({ plan, onDelete, onUpdate }: {
             planData.startDate = editStartDate
             planData.endDate = editEndDate
 
-            const { createClient: createDirectClient } = await import('@supabase/supabase-js')
-            const db = createDirectClient(
-                'https://bzyypoyvihqhrbllgffh.supabase.co',
-                'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
-                { auth: { persistSession: false } }
+            const { adminFetch } = await import('@/lib/api/admin-fetch')
+            const { plan: data } = await adminFetch<{ plan: any }>(
+                `/api/admin/nutrition-programs/${plan.id}`,
+                {
+                    method: 'PATCH',
+                    json: {
+                        plan_md: editMd,
+                        plan_data: planData,
+                        title: editTitle || plan.title,
+                        start_date: editStartDate,
+                        end_date: editEndDate,
+                    },
+                },
             )
-
-            const { data, error } = await db
-                .from('nutrition_programs')
-                .update({
-                    plan_md: editMd,
-                    plan_data: planData,
-                    title: editTitle || plan.title,
-                    start_date: editStartDate,
-                    end_date: editEndDate,
-                    updated_at: new Date().toISOString(),
-                })
-                .eq('id', plan.id)
-                .select()
-                .single()
-
-            if (error) throw new Error(error.message)
             onUpdate(data)
             setEditing(false)
         } catch (e: any) {
@@ -1326,14 +1293,8 @@ function NutritionPlanCard({ plan, onDelete, onUpdate }: {
         if (!confirmDelete) { setConfirmDelete(true); return }
         setDeleting(true)
         try {
-            const { createClient: createDirectClient } = await import('@supabase/supabase-js')
-            const db = createDirectClient(
-                'https://bzyypoyvihqhrbllgffh.supabase.co',
-                'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
-                { auth: { persistSession: false } }
-            )
-            const { error } = await db.from('nutrition_programs').delete().eq('id', plan.id)
-            if (error) throw new Error(error.message)
+            const { adminFetch } = await import('@/lib/api/admin-fetch')
+            await adminFetch(`/api/admin/nutrition-programs/${plan.id}`, { method: 'DELETE' })
             onDelete(plan.id)
         } catch (e: any) {
             console.error('Delete nutrition plan error:', e)
@@ -1490,18 +1451,12 @@ function AdminExerciseStats({ userId }: { userId: string }) {
     useEffect(() => {
         const load = async () => {
             try {
-                const { createClient: createDirectClient } = await import('@supabase/supabase-js')
-                const db = createDirectClient(
-                    'https://bzyypoyvihqhrbllgffh.supabase.co',
-                    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
-                    { auth: { persistSession: false } }
+                const { adminFetch } = await import('@/lib/api/admin-fetch')
+                const res = await adminFetch<{ programs: TrainingProgram[]; entries: TrainingEntry[] }>(
+                    `/api/admin/clients/${userId}/training-stats`,
                 )
-                const [progsRes, entriesRes] = await Promise.all([
-                    db.from('training_programs').select('*').eq('user_id', userId).order('week_number', { ascending: true }),
-                    db.from('training_entries').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
-                ])
-                setPrograms(progsRes.data || [])
-                setEntries(entriesRes.data || [])
+                setPrograms(res.programs || [])
+                setEntries(res.entries || [])
             } catch (e) {
                 console.error('AdminExerciseStats load error:', e)
             } finally {
@@ -1619,19 +1574,12 @@ export default function AdminClientDetailPage() {
                 setNutritionQ(nutQ.status === 'fulfilled' ? nutQ.value : null)
                 setNutritionAccess(nutAccess.status === 'fulfilled' ? nutAccess.value : false)
 
-                // Загружаем планы питания через service role (обходит RLS)
+                // Загружаем планы питания через серверный API (без service_role в браузере)
                 try {
-                    const { createClient: createDirectClient } = await import('@supabase/supabase-js')
-                    const dbNut = createDirectClient(
-                        'https://bzyypoyvihqhrbllgffh.supabase.co',
-                        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
-                        { auth: { persistSession: false } }
+                    const { adminFetch } = await import('@/lib/api/admin-fetch')
+                    const { plans: nutPlansData } = await adminFetch<{ plans: any[] }>(
+                        `/api/admin/clients/${userId}/nutrition-plans`,
                     )
-                    const { data: nutPlansData } = await dbNut
-                        .from('nutrition_programs')
-                        .select('*')
-                        .eq('user_id', userId)
-                        .order('plan_number', { ascending: false })
                     const nutPlans = nutPlansData || []
                     setNutritionPlans(nutPlans)
                     if (nutPlans.length > 0) setNutritionPlanNumber(nutPlans[0].plan_number + 1)
@@ -1639,20 +1587,10 @@ export default function AdminClientDetailPage() {
 
                 // Загружаем платёж клиента для отображения подписки
                 try {
-                    const { createClient: createDirectClient } = await import('@supabase/supabase-js')
-                    const db = createDirectClient(
-                        'https://bzyypoyvihqhrbllgffh.supabase.co',
-                        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
-                        { auth: { persistSession: false } }
+                    const { adminFetch } = await import('@/lib/api/admin-fetch')
+                    const { payment: paymentData } = await adminFetch<{ payment: any }>(
+                        `/api/admin/clients/${userId}/payment`,
                     )
-                    const { data: paymentData } = await db
-                        .from('payments')
-                        .select('plan_type, plan_months, confirmed_at, status, includes_nutrition')
-                        .eq('user_id', userId)
-                        .eq('status', 'confirmed')
-                        .order('confirmed_at', { ascending: false })
-                        .limit(1)
-                        .maybeSingle()
                     setClientPayment(paymentData)
                 } catch {}
             } catch (e) {
@@ -1781,29 +1719,27 @@ export default function AdminClientDetailPage() {
             planData.startDate = nutritionStartDate
             planData.endDate = nutritionEndDate
 
-            const { createClient: createDirectClient } = await import('@supabase/supabase-js')
-            const db = createDirectClient(
-                'https://bzyypoyvihqhrbllgffh.supabase.co',
-                'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA',
-                { auth: { persistSession: false } }
-            )
-
-            const { data, error } = await db
-                .from('nutrition_programs')
-                .insert({
-                    user_id: userId,
-                    plan_number: nutritionPlanNumber,
-                    title: nutritionTitle || `План питания №${nutritionPlanNumber}`,
-                    start_date: nutritionStartDate,
-                    end_date: nutritionEndDate,
-                    plan_md: nutritionMd,
-                    plan_data: planData,
-                    status: 'active',
+            // Грузим через серверный API (без service_role в браузере).
+            const { adminFetch } = await import('@/lib/api/admin-fetch')
+            let createdPlan: any
+            try {
+                const res = await adminFetch<{ plan: any }>('/api/admin/nutrition-programs', {
+                    method: 'POST',
+                    json: {
+                        userId,
+                        planNumber: nutritionPlanNumber,
+                        title: nutritionTitle || `План питания №${nutritionPlanNumber}`,
+                        startDate: nutritionStartDate,
+                        endDate: nutritionEndDate,
+                        planMd: nutritionMd,
+                        planData,
+                    },
                 })
-                .select()
-                .single()
-
-            if (error) { setNutritionUploadError('Ошибка БД: ' + error.message); return }
+                createdPlan = res.plan
+            } catch (e: any) {
+                setNutritionUploadError('Ошибка: ' + (e?.message || 'неизвестная'))
+                return
+            }
 
             // План сохранён — сразу закрываем модалку и сбрасываем форму,
             // чтобы UI не висел в "загрузке" из-за побочных запросов ниже.
@@ -1812,19 +1748,10 @@ export default function AdminClientDetailPage() {
             setNutritionMd('')
             setNutritionPlanNumber(newPlanNumber)
 
-            // Уведомление клиенту (in-app + Web Push)
             const notifTitle = 'Новый план питания! 🥗'
             const notifMessage = `Тренер загрузил план питания №${nutritionPlanNumber}.`
-            db.from('notifications').insert({
-                user_id: userId,
-                type: 'nutrition_plan_uploaded',
-                title: notifTitle,
-                message: notifMessage,
-                link: '/nutrition',
-                read: false,
-            }).then(() => {})
 
-            // Web Push
+            // Web Push (in-app уведомление сделал серверный эндпоинт)
             fetch('/api/push/send', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1838,13 +1765,9 @@ export default function AdminClientDetailPage() {
             }).catch(() => {})
 
             // Обновляем список планов в фоне — не блокируем закрытие модалки
-            db.from('nutrition_programs')
-                .select('*')
-                .eq('user_id', userId)
-                .order('plan_number', { ascending: false })
-                .then(({ data: updated2 }) => {
-                    setNutritionPlans(updated2 || [])
-                })
+            adminFetch<{ plans: any[] }>(`/api/admin/clients/${userId}/nutrition-plans`)
+                .then(res => setNutritionPlans(res.plans || []))
+                .catch(() => {})
         } catch (e: any) {
             setNutritionUploadError(e.message || 'Ошибка загрузки')
         } finally {

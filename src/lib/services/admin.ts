@@ -539,72 +539,16 @@ export async function createClientManually(params: {
     subscription_start: string
     subscription_end: string
 }): Promise<{ success: boolean; userId?: string; error?: string }> {
-    const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return { success: false, error: 'Не авторизован' }
-
-    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    // Service role key — используется только в admin-контексте, как и в других местах проекта
-    const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA'
-
-    const { createClient: createDirectClient } = await import('@supabase/supabase-js')
-    const db = createDirectClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
-
-    // 1. Create auth user (email confirmed — no verification needed)
-    const { data: newUser, error: createError } = await db.auth.admin.createUser({
-        email: params.email,
-        password: params.password,
-        email_confirm: true,
-        user_metadata: { full_name: params.full_name },
-    })
-
-    if (createError || !newUser.user) {
-        return { success: false, error: createError?.message || 'Ошибка создания пользователя' }
-    }
-
-    const userId = newUser.user.id
-
-    // 2. Upsert profile
-    const { error: profileError } = await db.from('profiles').upsert({
-        id: userId,
-        email: params.email,
-        full_name: params.full_name,
-        role: 'user',
-        is_blocked: false,
-        subscription_status: 'active',
-        subscription_end_date: params.subscription_end,
-        has_nutrition_plan: params.includes_nutrition,
-        questionnaire_completed: false,
-    })
-
-    if (profileError) {
-        return { success: false, error: 'Профиль: ' + profileError.message }
-    }
-
-    // 3. Create confirmed payment
-    if (params.amount > 0) {
-        const { error: paymentError } = await db.from('payments').insert({
-            user_id: userId,
-            amount: params.amount,
-            currency: 'RUB',
-            status: 'confirmed',
-            payment_method: 'manual',
-            plan_months: params.plan_months,
-            includes_nutrition: params.includes_nutrition,
-            confirmed_by: session.user.id,
-            confirmed_at: new Date().toISOString(),
-            cohort_start: params.subscription_start,
-            base_amount: params.amount,
-            nutrition_amount: params.includes_nutrition ? 3000 : 0,
-            renewal_type: 'initial',
+    try {
+        const { adminFetch } = await import('@/lib/api/admin-fetch')
+        const { userId } = await adminFetch<{ userId: string }>('/api/admin/users', {
+            method: 'POST',
+            json: params,
         })
-
-        if (paymentError) {
-            return { success: false, error: 'Платёж: ' + paymentError.message }
-        }
+        return { success: true, userId }
+    } catch (e: any) {
+        return { success: false, error: e?.message || 'Ошибка создания пользователя' }
     }
-
-    return { success: true, userId }
 }
 export async function archiveUser(
     userId: string,
@@ -642,48 +586,14 @@ export async function unarchiveUser(userId: string): Promise<{ success: boolean;
     return { success: true }
 }
 
-// Delete user permanently — uses service role key directly (same pattern as rest of admin code)
+// Delete user permanently — through server API (no service_role in browser)
 export async function deleteUser(userId: string): Promise<{ success: boolean; error?: string }> {
-    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA'
-
     try {
-        const { createClient: createDirectClient } = await import('@supabase/supabase-js')
-        const db = createDirectClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
-
-        // Delete all user data explicitly (most have CASCADE but be explicit)
-        const tables: Array<{ table: string; col: string }> = [
-            { table: 'training_entries', col: 'user_id' },
-            { table: 'training_programs', col: 'user_id' },
-            { table: 'client_metrics', col: 'user_id' },
-            { table: 'client_questionnaires', col: 'user_id' },
-            { table: 'payments', col: 'user_id' },
-            { table: 'notifications', col: 'user_id' },
-            { table: 'journal_entries', col: 'user_id' },
-            { table: 'user_progress', col: 'user_id' },
-            { table: 'body_measurements', col: 'user_id' },
-            { table: 'day_reports', col: 'user_id' },
-        ]
-
-        for (const { table, col } of tables) {
-            await db.from(table).delete().eq(col, userId)
-        }
-        // Messages: delete both sent and received
-        await db.from('admin_messages').delete().eq('to_user_id', userId)
-        await db.from('admin_messages').delete().eq('from_user_id', userId)
-
-        // Delete profile
-        await db.from('profiles').delete().eq('id', userId)
-
-        // Delete from auth.users
-        const { error: authError } = await db.auth.admin.deleteUser(userId)
-        if (authError) {
-            return { success: false, error: 'Auth delete failed: ' + authError.message }
-        }
-
+        const { adminFetch } = await import('@/lib/api/admin-fetch')
+        await adminFetch(`/api/admin/users/${userId}`, { method: 'DELETE' })
         return { success: true }
     } catch (e: any) {
-        return { success: false, error: e.message || 'Ошибка удаления' }
+        return { success: false, error: e?.message || 'Ошибка удаления' }
     }
 }
 
@@ -955,101 +865,24 @@ export async function renewClientSubscription(params: {
     includesNutrition: boolean
     amount: number
 }): Promise<{ success: boolean; newEndDate?: string; error?: string }> {
-    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6eXlwb3l2aWhxaHJibGxnZmZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTg3OTQ4MywiZXhwIjoyMDg1NDU1NDgzfQ.lD6aWFkbLLtO_5TVhzeKpUiw8VP-a_wsBpNrrRUvJSA'
-
-    const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return { success: false, error: 'Не авторизован' }
-
-    const { createClient: createDirectClient } = await import('@supabase/supabase-js')
-    const db = createDirectClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
-
-    // Получаем текущую дату окончания подписки
-    const { data: profile } = await db
-        .from('profiles')
-        .select('subscription_end_date, has_nutrition_plan')
-        .eq('id', params.userId)
-        .single()
-
-    const currentEnd = profile?.subscription_end_date
-    let newStart: Date
-    let newEnd: Date
-
-    if (currentEnd) {
-        const endDate = new Date(currentEnd)
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
-        newStart = endDate >= today
-            ? new Date(endDate.getTime() + 24 * 60 * 60 * 1000)
-            : today
-    } else {
-        newStart = new Date()
+    try {
+        const { adminFetch } = await import('@/lib/api/admin-fetch')
+        const { newEndDate } = await adminFetch<{ ok: true; newEndDate: string }>(
+            `/api/admin/users/${params.userId}/renew`,
+            {
+                method: 'POST',
+                json: {
+                    planMonths: params.planMonths,
+                    planType: params.planType,
+                    includesNutrition: params.includesNutrition,
+                    amount: params.amount,
+                },
+            },
+        )
+        return { success: true, newEndDate }
+    } catch (e: any) {
+        return { success: false, error: e?.message || 'Ошибка продления' }
     }
-
-    newEnd = new Date(newStart)
-    newEnd.setMonth(newEnd.getMonth() + params.planMonths)
-    newEnd.setDate(newEnd.getDate() - 1)
-
-    const newEndStr = newEnd.toISOString().split('T')[0]
-
-    // Создаём платёж
-    const { data: payment, error: paymentError } = await db
-        .from('payments')
-        .insert({
-            user_id: params.userId,
-            amount: params.amount,
-            currency: 'RUB',
-            status: 'confirmed',
-            payment_method: 'manual',
-            plan_type: params.planType,
-            plan_months: params.planMonths,
-            includes_nutrition: params.includesNutrition,
-            base_amount: params.amount,
-            nutrition_amount: params.includesNutrition ? 3000 : 0,
-            confirmed_by: session.user.id,
-            confirmed_at: new Date().toISOString(),
-            renewal_type: 'renewal',
-        })
-        .select('id')
-        .single()
-
-    if (paymentError || !payment) {
-        return { success: false, error: 'Ошибка создания платежа: ' + paymentError?.message }
-    }
-
-    // Создаём запись о продлении
-    await db.from('subscription_renewals').insert({
-        user_id: params.userId,
-        previous_end_date: currentEnd ?? null,
-        previous_had_nutrition: profile?.has_nutrition_plan ?? false,
-        new_plan_type: params.planType,
-        new_plan_months: params.planMonths,
-        includes_nutrition: params.includesNutrition,
-        payment_id: payment.id,
-        amount: params.amount,
-        renewal_type: 'renewal',
-        status: 'confirmed',
-        new_start_date: newStart.toISOString().split('T')[0],
-        new_end_date: newEndStr,
-    })
-
-    // Обновляем профиль
-    const { error: profileError } = await db
-        .from('profiles')
-        .update({
-            subscription_status: 'active',
-            subscription_end_date: newEndStr,
-            has_nutrition_plan: params.includesNutrition ? true : (profile?.has_nutrition_plan ?? false),
-            renewal_pending: false,
-        })
-        .eq('id', params.userId)
-
-    if (profileError) {
-        return { success: false, error: 'Ошибка обновления профиля: ' + profileError.message }
-    }
-
-    return { success: true, newEndDate: newEndStr }
 }
 
 /**
