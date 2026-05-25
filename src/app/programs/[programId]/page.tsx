@@ -65,18 +65,25 @@ function getLabelInfo(label: SetLabel) {
 function getYouTubeEmbedUrl(url: string): string | null {
     try {
         const patterns = [
-            /youtu\.be\/([^?&]+)/,
+            /youtu\.be\/([^?&/]+)/,
             /youtube\.com\/watch\?v=([^&]+)/,
-            /youtube\.com\/embed\/([^?&]+)/,
+            /youtube\.com\/embed\/([^?&/]+)/,
+            /youtube\.com\/shorts\/([^?&/]+)/,
+            /youtube\.com\/live\/([^?&/]+)/,
         ]
         for (const p of patterns) {
             const m = url.match(p)
-            if (m) return `https://www.youtube.com/embed/${m[1]}?autoplay=1&rel=0`
+            if (m) return `https://www.youtube.com/embed/${m[1]}?autoplay=1&rel=0&playsinline=1`
         }
         return null
     } catch {
         return null
     }
+}
+
+// Шортсы вертикальные — для них используем 9:16 вместо 16:9
+function isVerticalVideoUrl(url: string): boolean {
+    return /youtube\.com\/shorts\//.test(url)
 }
 
 // ─── Экран истёкшей подписки ──────────────────────────────────────────────────
@@ -116,6 +123,7 @@ function SubscriptionExpiredScreen() {
 function VideoModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
     const [large, setLarge] = useState(false)
     const embedUrl = getYouTubeEmbedUrl(url)
+    const vertical = isVerticalVideoUrl(url)
 
     useEffect(() => {
         const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -123,15 +131,30 @@ function VideoModal({ url, title, onClose }: { url: string; title: string; onClo
         return () => window.removeEventListener('keydown', handler)
     }, [onClose])
 
+    // Блокируем прокрутку body пока открыт плеер — чтобы фон не елозил
+    useEffect(() => {
+        const prev = document.body.style.overflow
+        document.body.style.overflow = 'hidden'
+        return () => { document.body.style.overflow = prev }
+    }, [])
+
+    // Размер контейнера: горизонтальное — 16:9 как было; шортс — узкая колонка по центру
+    // max-w-sm на мобиле даёт примерно ширину телефона, но не во весь экран
+    const containerWidthClass = vertical
+        ? (large ? 'max-w-md' : 'max-w-xs')
+        : (large ? 'max-w-4xl' : 'max-w-lg')
+
     return (
-        <div className={`fixed inset-0 z-50 flex justify-center p-4 transition-all duration-300 ${large ? 'items-center' : 'items-end sm:items-center'}`}
-            onClick={onClose}>
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+        <div
+            className="fixed inset-0 z-[300] flex items-center justify-center p-4 transition-all duration-300"
+            onClick={onClose}
+        >
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
             <div
-                className={`relative z-10 glass-card overflow-hidden transition-all duration-300 w-full ${large ? 'max-w-4xl' : 'max-w-lg'}`}
+                className={`relative z-10 glass-card overflow-hidden transition-all duration-300 w-full max-h-[90vh] flex flex-col ${containerWidthClass}`}
                 onClick={e => e.stopPropagation()}
             >
-                <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
                     <p className="text-sm font-semibold text-white truncate pr-4">{title}</p>
                     <div className="flex items-center gap-2 flex-shrink-0">
                         {embedUrl && (
@@ -145,11 +168,28 @@ function VideoModal({ url, title, onClose }: { url: string; title: string; onClo
                     </div>
                 </div>
                 {embedUrl ? (
-                    <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
-                        <iframe src={embedUrl} className="absolute inset-0 w-full h-full"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen title={title} />
-                    </div>
+                    vertical ? (
+                        // 9:16 — но ограничиваем высотой вьюпорта, чтобы плеер влезал целиком
+                        <div className="relative w-full bg-black flex-1" style={{ aspectRatio: '9 / 16', maxHeight: 'calc(90vh - 56px)' }}>
+                            <iframe
+                                src={embedUrl}
+                                className="absolute inset-0 w-full h-full"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                                title={title}
+                            />
+                        </div>
+                    ) : (
+                        <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+                            <iframe
+                                src={embedUrl}
+                                className="absolute inset-0 w-full h-full"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                                title={title}
+                            />
+                        </div>
+                    )
                 ) : (
                     <div className="p-6 flex flex-col items-center gap-4 text-center">
                         <Play className="w-12 h-12 text-accent opacity-60" />
