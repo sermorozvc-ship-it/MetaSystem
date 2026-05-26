@@ -121,12 +121,25 @@ export async function hasPendingPayment(): Promise<boolean> {
     return payment?.status === 'pending'
 }
 
+// Действующие промокоды
+export const PROMO_CODES: Record<string, { discountPercent: number }> = {
+    POWER10: { discountPercent: 10 },
+}
+
+export function calculatePromoDiscount(subtotal: number, promoCode?: string | null): number {
+    if (!promoCode) return 0
+    const promo = PROMO_CODES[promoCode.trim().toUpperCase()]
+    if (!promo) return 0
+    return Math.round((subtotal * promo.discountPercent) / 100)
+}
+
 /**
  * Создать запрос на оплату
  */
 export async function createPaymentRequest(
     planType: '1_month' | '3_months' | '6_months',
-    includesNutrition: boolean
+    includesNutrition: boolean,
+    promoCode?: string | null
 ): Promise<{ payment: Payment | null; error: string | null }> {
     const supabase = createClient()
 
@@ -151,7 +164,9 @@ export async function createPaymentRequest(
     
     const baseAmount = prices[planType]
     const nutritionAmount = planType === '6_months' ? 0 : (includesNutrition ? 2 : 0)
-    const totalAmount = baseAmount + nutritionAmount
+    const subtotal = baseAmount + nutritionAmount
+    const discountAmount = calculatePromoDiscount(subtotal, promoCode)
+    const totalAmount = subtotal - discountAmount
     
     const planMonths = planType === '1_month' ? 1 : planType === '3_months' ? 3 : 6
 

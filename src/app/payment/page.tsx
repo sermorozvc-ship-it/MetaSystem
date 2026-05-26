@@ -7,7 +7,7 @@ import {
     CheckCircle2, ExternalLink, RefreshCw, Gift, Zap
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { getUserPayment, createPaymentRequest, createTestPayment, type Payment } from '@/lib/services/payment'
+import { getUserPayment, createPaymentRequest, createTestPayment, calculatePromoDiscount, PROMO_CODES, type Payment } from '@/lib/services/payment'
 import { isAdminUser } from '@/lib/auth/isAdminUser'
 
 const YOOMONEY_WALLET = process.env.NEXT_PUBLIC_YOOMONEY_WALLET || '410014990008683'
@@ -61,6 +61,9 @@ function PaymentContent() {
 
     const [selectedPlan, setSelectedPlan] = useState<PlanType>(planFromUrl || planFromStorage || '3_months')
     const [includeNutrition, setIncludeNutrition] = useState(false)
+    const [promoInput, setPromoInput] = useState('')
+    const [appliedPromo, setAppliedPromo] = useState<string | null>(null)
+    const [promoError, setPromoError] = useState('')
     const [payment, setPayment] = useState<Payment | null>(null)
     const [isLoading, setIsLoading] = useState(true)
     const [isSubmitting, setIsSubmitting] = useState(false)
@@ -78,8 +81,30 @@ function PaymentContent() {
     // Расчет итоговой суммы
     const baseAmount = PLANS[selectedPlan].price
     const nutritionAmount = selectedPlan === '6_months' ? 0 : (includeNutrition ? NUTRITION_PRICE : 0)
-    const totalAmount = baseAmount + nutritionAmount
+    const subtotalAmount = baseAmount + nutritionAmount
+    const discountAmount = calculatePromoDiscount(subtotalAmount, appliedPromo)
+    const totalAmount = subtotalAmount - discountAmount
     const hasNutritionIncluded = selectedPlan === '6_months' || includeNutrition
+
+    const handleApplyPromo = () => {
+        const code = promoInput.trim().toUpperCase()
+        if (!code) {
+            setPromoError('Введите промокод')
+            return
+        }
+        if (!PROMO_CODES[code]) {
+            setPromoError('Промокод не найден')
+            return
+        }
+        setAppliedPromo(code)
+        setPromoError('')
+    }
+
+    const handleRemovePromo = () => {
+        setAppliedPromo(null)
+        setPromoInput('')
+        setPromoError('')
+    }
 
     // Неавторизованные могут видеть страницу оплаты — регистрация происходит после оплаты через /onboarding
     // Редиректим только админов
@@ -167,7 +192,8 @@ function PaymentContent() {
             if (!payment || payment.status !== 'pending') {
                 const { payment: newPayment, error: paymentError } = await createPaymentRequest(
                     selectedPlan,
-                    hasNutritionIncluded
+                    hasNutritionIncluded,
+                    appliedPromo
                 )
 
                 if (paymentError) {
@@ -520,6 +546,67 @@ function PaymentContent() {
                     </div>
                 )}
 
+                {/* Промокод */}
+                <div className="glass-card p-6 mb-6">
+                    {appliedPromo ? (
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-accent/20 flex items-center justify-center flex-shrink-0">
+                                    <Check className="w-5 h-5 text-accent" />
+                                </div>
+                                <div>
+                                    <div className="text-white font-semibold">
+                                        Промокод <span className="text-accent">{appliedPromo}</span> применён
+                                    </div>
+                                    <div className="text-sm text-text-secondary">
+                                        Скидка {PROMO_CODES[appliedPromo].discountPercent}% на весь заказ
+                                    </div>
+                                </div>
+                            </div>
+                            <button
+                                onClick={handleRemovePromo}
+                                className="text-sm text-text-muted hover:text-white transition-colors flex-shrink-0"
+                            >
+                                Убрать
+                            </button>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="text-white font-semibold mb-3">Есть промокод?</div>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={promoInput}
+                                    onChange={(e) => {
+                                        setPromoInput(e.target.value)
+                                        if (promoError) setPromoError('')
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault()
+                                            handleApplyPromo()
+                                        }
+                                    }}
+                                    placeholder="Введите промокод"
+                                    autoCapitalize="characters"
+                                    autoCorrect="off"
+                                    spellCheck={false}
+                                    className="flex-1 px-4 py-3 rounded-xl bg-bg-elevated border border-border text-white placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors uppercase"
+                                />
+                                <button
+                                    onClick={handleApplyPromo}
+                                    className="glass-button-secondary px-5 py-3 whitespace-nowrap"
+                                >
+                                    Применить
+                                </button>
+                            </div>
+                            {promoError && (
+                                <p className="text-sm text-danger mt-2">{promoError}</p>
+                            )}
+                        </>
+                    )}
+                </div>
+
                 {/* Итоговая сумма */}
                 <div className="glass-card p-6 mb-6">
                     <div className="flex justify-between items-center mb-4">
@@ -534,12 +621,29 @@ function PaymentContent() {
                             </span>
                         </div>
                     )}
+                    {appliedPromo && discountAmount > 0 && (
+                        <div className="flex justify-between items-center mb-4">
+                            <span className="text-text-secondary">
+                                Скидка по промокоду <span className="text-accent font-medium">{appliedPromo}</span>
+                            </span>
+                            <span className="text-accent font-medium">
+                                −{discountAmount.toLocaleString('ru-RU')} ₽
+                            </span>
+                        </div>
+                    )}
                     <div className="border-t border-border pt-4">
                         <div className="flex justify-between items-center">
                             <span className="text-xl font-display font-bold text-white">Итого</span>
-                            <span className="text-3xl font-display font-bold text-accent">
-                                {totalAmount.toLocaleString('ru-RU')} ₽
-                            </span>
+                            <div className="text-right">
+                                {appliedPromo && discountAmount > 0 && (
+                                    <div className="text-sm text-text-muted line-through">
+                                        {subtotalAmount.toLocaleString('ru-RU')} ₽
+                                    </div>
+                                )}
+                                <span className="text-3xl font-display font-bold text-accent">
+                                    {totalAmount.toLocaleString('ru-RU')} ₽
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </div>
