@@ -25,6 +25,21 @@ import type { ProgramData, TrainingDay, Exercise, AlternativeExercise } from '@/
  * **Альтернативы:**
  * - Жим штанги лёжа | [Видео](url) | 4 x 10-12
  * - Отжимания на брусьях | 4 x 10-12
+ *
+ * Кардио поддерживается в двух форматах (см. cardio-prescription.md):
+ *
+ * 1) Строкой в конце силового дня:
+ *    **Кардио:** 20 мин велотренажёр, зона Z2 (ЧСС 120-135)
+ *
+ * 2) Отдельным днём отдыха от силовой — заголовок дня содержит слово
+ *    «Кардио», парсер выставляет TrainingDay.cardioOnly = true и собирает
+ *    свободный текст в поле `cardio`:
+ *
+ *    ## День 4: Кардио (день отдыха от силовой)
+ *    **Рекомендация дня:** Лёгкий восстановительный день, зона Z2, можешь
+ *    говорить полными предложениями, не задыхаясь.
+ *
+ *    40 мин ходьба или велотренажёр (ЧСС 115-130), без интервалов.
  */
 
 // Типы текущего многострочного блока
@@ -36,6 +51,7 @@ type MultilineBlock =
   | 'dayContext'
   | 'warmup'
   | 'cooldown'
+  | 'cardioBody'
   | 'checkin'
   | 'loggingNote'
   | 'prevCoachSummary'
@@ -101,6 +117,11 @@ export function parseMdToJson(markdown: string): ProgramData {
       currentDay.warmup = (currentDay.warmup ? currentDay.warmup + sep : '') + text
     } else if (currentBlock === 'cooldown' && currentDay) {
       currentDay.cooldown = (currentDay.cooldown ? currentDay.cooldown + sep : '') + text
+    } else if (currentBlock === 'cardioBody' && currentDay) {
+      // Свободный текст внутри отдельного «кардио-дня» (## День N: Кардио ...).
+      // Собираем всё что идёт после **Рекомендация дня:** до следующего
+      // `## День`, `### упражнения` или `---` — это и есть описание кардио-сессии.
+      currentDay.cardio = (currentDay.cardio ? currentDay.cardio + sep : '') + text
     }
   }
 
@@ -139,12 +160,28 @@ export function parseMdToJson(markdown: string): ProgramData {
       if (currentDay) days.push(currentDay)
       parsingAlternatives = false
       currentBlock = null
+      const dayTitle = dayMatch[2].trim() || `День ${dayMatch[1]}`
+      // Кардио-день — отдельный день отдыха от силовой, посвящённый кардио
+      // (формат 2 из cardio-prescription.md, например «День 4: Кардио (день отдыха от силовой)»).
+      // Детектируем по слову «кардио» в названии дня. Внутри такого дня нет
+      // упражнений — есть только описание сессии (длительность, зона, ЧСС).
+      // \b в JS regex не работает с кириллицей (кириллица не считается
+      // word-символом), поэтому используем простой case-insensitive поиск.
+      const isCardioOnly = /кардио/i.test(dayTitle)
       currentDay = {
         dayNumber: parseInt(dayMatch[1]),
         dayOfWeek: getDayOfWeek(parseInt(dayMatch[1])),
-        title: dayMatch[2].trim() || `День ${dayMatch[1]}`,
+        title: dayTitle,
         exercises: [],
         coachNote: '',
+      }
+      if (isCardioOnly) {
+        currentDay.cardioOnly = true
+        // По умолчанию для кардио-дня переходим в режим сбора свободного
+        // текста как описания кардио. Если дальше встретится
+        // **Рекомендация дня:** — переключимся на coachNote, а cardioBody
+        // подхватит текст после этой рекомендации.
+        currentBlock = 'cardioBody'
       }
       continue
     }
@@ -272,9 +309,50 @@ export function parseMdToJson(markdown: string): ProgramData {
       // Не continue — обрабатываем строку дальше (может быть кардио и т.п.)
     }
 
+    // Если мы внутри кардио-дня и сейчас нет активного многострочного блока,
+    // и упражнений ещё не появилось — продолжаем собирать свободный текст
+    // дня в `cardio` (см. формат 2 из cardio-prescription.md, отдельный
+    // «День N: Кардио (день отдыха от силовой)»).
+    // Исключаем строки `**Кардио:** ...` и любые `**Заголовок:**` —
+    // они обрабатываются специализированными обработчиками ниже.
+    if (
+      !currentBlock &&
+      currentDay?.cardioOnly &&
+      !currentExercise &&
+      line !== '' &&
+      !line.startsWith('### ') &&
+      !line.startsWith('## ') &&
+      !line.match(/^\*\*[^*]+:\*\*/)
+    ) {
+      currentBlock = 'cardioBody'
+    }
+
     if (currentBlock && !currentExercise) {
+      // На «кардио-дне» текст после `**Рекомендация дня:**` отделён
+      // пустой строкой и идёт уже в `cardio` (свободный текст-описание
+      // сессии). Поэтому пустая строка завершает coachNote и переключает
+      // нас в cardioBody — следующая непустая строка будет описанием кардио.
+      if (currentDay?.cardioOnly && currentBlock === 'coachNote' && line === '') {
+        currentBlock = 'cardioBody'
+        continue
+      }
       // Пустая строка — разделитель абзацев, сохраняем как пустую строку
       appendToBlock(line)
+      continue
+    }
+
+    // Строка-кардио (`**Кардио:** ...`) на уровне дня — формат 1 из
+    // cardio-prescription.md, опционально в конце силового дня.
+    // Обработчик стоит ВЫШЕ блока упражнений, чтобы корректно ловить и
+    // случай отдельного «кардио-дня» (cardioOnly), где `currentExercise`
+    // всегда null и иначе сработал бы ранний `continue`.
+    if (currentDay && line.includes('**Кардио:**')) {
+      const value = line.replace('**Кардио:**', '').trim()
+      if (currentDay.cardioOnly && currentDay.cardio) {
+        currentDay.cardio = currentDay.cardio + (value ? '\n' + value : '')
+      } else {
+        currentDay.cardio = value
+      }
       continue
     }
 
@@ -365,10 +443,8 @@ export function parseMdToJson(markdown: string): ProgramData {
       }
     }
 
-    // Кардио
-    if (currentDay && line.includes('**Кардио:**')) {
-      currentDay.cardio = line.replace('**Кардио:**', '').trim()
-    }
+    // Кардио-строка обрабатывается выше (до блока упражнений) — чтобы
+    // ловить её и в отдельном «кардио-дне», где currentExercise всегда null.
   }
 
   if (currentExercise && currentDay) currentDay.exercises.push(currentExercise)
@@ -383,6 +459,12 @@ export function parseMdToJson(markdown: string): ProgramData {
         const last = ex.targetWeights[ex.targetWeights.length - 1]
         while (ex.targetWeights.length < ex.sets) ex.targetWeights.push(last)
       }
+    }
+    // Trim многострочного блока кардио — на cardioOnly-дне он собирается
+    // с пустых строк до/после, чистим края.
+    if (day.cardio) {
+      day.cardio = day.cardio.replace(/^\n+|\n+$/g, '').trim()
+      if (!day.cardio) delete day.cardio
     }
   }
 
@@ -499,6 +581,14 @@ type: standard
 - 3 x 12-15 • 50/55/55 кг
 
 **Кардио:** 15 мин ходьба
+
+---
+
+## День 4: Кардио (день отдыха от силовой)
+
+**Рекомендация дня:** Лёгкий восстановительный день, зона Z2, можешь говорить полными предложениями, не задыхаясь.
+
+40 мин ходьба или велотренажёр (ЧСС 115-130), без интервалов.
 
 ---
 

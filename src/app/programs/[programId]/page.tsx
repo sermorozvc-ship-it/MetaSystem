@@ -2159,10 +2159,25 @@ export default function ProgramDetailPage() {
 
                 {/* Кардио */}
                 {currentDay.cardio && (
-                    <div className="glass-card p-5 mb-5">
-                        <h3 className="text-base font-display font-bold text-white mb-1">Кардио</h3>
-                        <p className="text-text-secondary text-sm">{currentDay.cardio}</p>
-                    </div>
+                    currentDay.cardioOnly ? (
+                        // Отдельный кардио-день (формат 2 из cardio-prescription.md):
+                        // день отдыха от силовой, посвящённый кардио. Большой акцентный
+                        // блок, чтобы клиенту было однозначно понятно — сегодня только это.
+                        <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-5 mb-5">
+                            <div className="flex items-center gap-2 mb-2">
+                                <span className="text-2xl">🚶</span>
+                                <h3 className="text-base font-display font-bold text-cyan-300">Кардио-день</h3>
+                            </div>
+                            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                {currentDay.cardio}
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="glass-card p-5 mb-5">
+                            <h3 className="text-base font-display font-bold text-white mb-1">Кардио</h3>
+                            <p className="text-text-secondary text-sm">{currentDay.cardio}</p>
+                        </div>
+                    )
                 )}
 
                 {/* Чек-ин в конце недели — рендерится после Самочувствия, перед кнопками */}
