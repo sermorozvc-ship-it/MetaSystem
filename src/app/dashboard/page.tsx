@@ -15,7 +15,7 @@ import {
     isNutritionQuestionnaireCompleted,
 } from '@/lib/services/nutrition'
 import { getCurrentNutritionProgram, type NutritionProgram } from '@/lib/services/nutrition-programs'
-import { getMyQuestionnaire } from '@/lib/services/questionnaire'
+import { getMyQuestionnaire, isQuestionnaireCompleted } from '@/lib/services/questionnaire'
 import { getMySubscriptionInfo, type SubscriptionInfo } from '@/lib/services/renewal'
 import { getMyStreakStats, type StreakStats } from '@/lib/services/streaks'
 import StreakCard from '@/components/StreakCard'
@@ -35,6 +35,7 @@ export default function DashboardPage() {
     const [subscriptionEndDate, setSubscriptionEndDate] = useState<Date | null>(null)
     const [subscriptionPlanLabel, setSubscriptionPlanLabel] = useState<string | null>(null)
     const [nutritionPending, setNutritionPending] = useState(false)
+    const [questionnairePending, setQuestionnairePending] = useState(false)
     const [subInfo, setSubInfo] = useState<SubscriptionInfo | null>(null)
     const [renewedBanner, setRenewedBanner] = useState(false)
 
@@ -61,9 +62,10 @@ export default function DashboardPage() {
 
         const loadDashboardData = async () => {
             try {
-                const [program, metric, needsNutrition, nutritionDone, subInfoData] = await Promise.all([
+                const [program, metric, qDone, needsNutrition, nutritionDone, subInfoData] = await Promise.all([
                     getCurrentProgram(),
                     getLatestMetric(),
+                    isQuestionnaireCompleted(),
                     isNutritionQuestionnaireRequired(),
                     isNutritionQuestionnaireCompleted(),
                     getMySubscriptionInfo(),
@@ -71,6 +73,7 @@ export default function DashboardPage() {
 
                 setCurrentProgram(program)
                 setLatestMetric(metric)
+                setQuestionnairePending(!qDone)
                 setNutritionPending(needsNutrition && !nutritionDone)
                 setSubInfo(subInfoData)
 
@@ -140,6 +143,27 @@ export default function DashboardPage() {
 
                 {/* PWA Install Banner */}
                 <InstallPWABanner />
+
+                {/* Баннер: незаполненная основная анкета клиента
+                    Показываем ВЫШЕ питания — она заполняется первой и без неё
+                    тренер не сможет составить программу. */}
+                {questionnairePending && (
+                    <button
+                        onClick={() => router.push('/questionnaire')}
+                        className="w-full mb-6 rounded-2xl border border-warning/40 bg-warning/10 p-5 flex items-center gap-4 text-left hover:bg-warning/15 transition-colors"
+                    >
+                        <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-warning/20 flex items-center justify-center">
+                            <Dumbbell className="w-6 h-6 text-warning" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-white font-semibold mb-1">Заполните анкету клиента</p>
+                            <p className="text-text-secondary text-sm">
+                                Это первый шаг — без анкеты тренер не сможет составить программу. Займёт 7–10 минут.
+                            </p>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-warning flex-shrink-0" />
+                    </button>
+                )}
 
                 {/* Nutrition questionnaire banner */}
                 {nutritionPending && (

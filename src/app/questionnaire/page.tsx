@@ -11,6 +11,7 @@ import {
   upsertQuestionnaire,
   uploadQuestionnairePhoto,
   isQuestionnaireCompleted,
+  getMyQuestionnaire,
   type QuestionnaireFormData,
 } from '@/lib/services/questionnaire'
 
@@ -140,22 +141,53 @@ export default function QuestionnairePage() {
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_DISABLE_REDIRECTS === 'true') return
     if (!user) return
-    const check = async () => {
+    let cancelled = false
+    const init = async () => {
+      // 1. Подтягиваем существующие данные — чтобы пользователь не потерял
+      // ничего при возврате на форму. Если ничего нет — просто оставляем пустую.
+      try {
+        const existing = await getMyQuestionnaire()
+        if (cancelled) return
+        if (existing) {
+          // Аккуратно сливаем серверные данные в formData, не теряя дефолтов
+          setFormData(prev => ({
+            ...prev,
+            ...Object.fromEntries(
+              Object.entries(existing).filter(([k, v]) =>
+                v !== null &&
+                v !== undefined &&
+                k !== 'id' &&
+                k !== 'user_id' &&
+                k !== 'created_at' &&
+                k !== 'updated_at'
+              )
+            ),
+          }))
+        }
+      } catch {}
+
+      // 2. Если анкета уже полностью заполнена — ведём дальше по флоу.
+      // Это срабатывает только если в БД реально есть запись (fallback при
+      // таймауте теперь = false, то есть в этом случае мы пользователя
+      // НЕ редиректим, а оставляем на форме с предзаполненными данными).
       const done = await isQuestionnaireCompleted()
-      if (done) {
-        try {
-          const { isNutritionQuestionnaireRequired, isNutritionQuestionnaireCompleted } =
-            await import('@/lib/services/nutrition')
-          const needsNutrition = await isNutritionQuestionnaireRequired()
-          if (needsNutrition) {
-            const nutritionDone = await isNutritionQuestionnaireCompleted()
-            if (!nutritionDone) { router.replace('/questionnaire/nutrition'); return }
-          }
-        } catch {}
-        router.replace('/dashboard')
-      }
+      if (cancelled || !done) return
+
+      try {
+        const { isNutritionQuestionnaireRequired, isNutritionQuestionnaireCompleted } =
+          await import('@/lib/services/nutrition')
+        const needsNutrition = await isNutritionQuestionnaireRequired()
+        if (cancelled) return
+        if (needsNutrition) {
+          const nutritionDone = await isNutritionQuestionnaireCompleted()
+          if (cancelled) return
+          if (!nutritionDone) { router.replace('/questionnaire/nutrition'); return }
+        }
+      } catch {}
+      router.replace('/dashboard')
     }
-    check()
+    init()
+    return () => { cancelled = true }
   }, [user, router])
 
   const upd = (field: keyof QuestionnaireFormData, value: any) =>

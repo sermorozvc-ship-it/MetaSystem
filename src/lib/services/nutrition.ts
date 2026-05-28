@@ -301,9 +301,11 @@ export async function isNutritionQuestionnaireCompleted(): Promise<boolean> {
     return !!data
   } catch (e) {
     console.error('[Nutrition] isNutritionQuestionnaireCompleted timeout/network:', e)
-    // Безопасный дефолт — считаем что заполнено, чтобы зависшая сеть
-    // не отправила пользователя на форму анкеты по ошибке.
-    return true
+    // Безопасный дефолт — false. При сетевой ошибке лучше дать пользователю
+    // увидеть форму анкеты (она сама проверит state на сервере и предзаполнит
+    // данные если они есть), чем оставить его на dashboard без возможности
+    // вернуться к заполнению.
+    return false
   }
 }
 

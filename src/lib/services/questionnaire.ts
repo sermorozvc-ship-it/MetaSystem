@@ -471,9 +471,12 @@ export async function isQuestionnaireCompleted(): Promise<boolean> {
     return false
   } catch (e) {
     console.error('[Questionnaire] isQuestionnaireCompleted timeout/network:', e)
-    // При сетевой ошибке безопасный дефолт — считаем что заполнено,
-    // чтобы не отправить пользователя на /questionnaire по ошибке сети.
-    // Реальная страница анкеты сама проверит и покажет нужное состояние.
-    return true
+    // Безопасный дефолт — false (НЕ заполнено). Раньше тут было true,
+    // и при флапающей сети новичка кидало сразу на /dashboard без анкеты,
+    // а с /questionnaire его оттуда снова сносило. Сейчас при ошибке
+    // лучше показать форму анкеты — если она реально заполнена,
+    // Supabase отдаст данные при предзагрузке и пользователь сможет
+    // нажать «Завершить», чтобы вернуться на dashboard.
+    return false
   }
 }

@@ -84,8 +84,12 @@ function AuthContent() {
                 return '/payment'
             }
 
-            // Оплачено — проверяем анкеты
-            const done = await withBudget(isQuestionnaireCompleted(), true, 4000)
+            // Оплачено — проверяем анкеты.
+            // Fallback при таймауте = false (НЕ заполнено): лучше показать
+            // анкету и дать пользователю возможность её заполнить, чем тихо
+            // увести на dashboard, где основной анкеты вообще нет в виде
+            // активной точки входа (только баннер питания).
+            const done = await withBudget(isQuestionnaireCompleted(), false, 4000)
             if (!done) return '/questionnaire'
 
             try {
@@ -93,7 +97,7 @@ function AuthContent() {
                     await import('@/lib/services/nutrition')
                 const needsNutrition = await withBudget(isNutritionQuestionnaireRequired(), false, 4000)
                 if (needsNutrition) {
-                    const nutritionDone = await withBudget(isNutritionQuestionnaireCompleted(), true, 4000)
+                    const nutritionDone = await withBudget(isNutritionQuestionnaireCompleted(), false, 4000)
                     if (!nutritionDone) return '/questionnaire/nutrition'
                 }
             } catch {}
