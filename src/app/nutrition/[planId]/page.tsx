@@ -12,6 +12,7 @@ import {
     type NutritionProgram, type NutritionDay,
     type NutritionMeal, type NutritionRecipe, type SportSupplement,
 } from '@/lib/services/nutrition-programs'
+import { useFailsafe } from '@/lib/hooks/useFailsafe'
 
 type PageTab = 'plan' | 'recipes' | 'supplements'
 
@@ -371,6 +372,9 @@ export default function NutritionPlanDetailPage() {
             .catch(console.error)
             .finally(() => setIsLoading(false))
     }, [user, authLoading, planId, router])
+
+    // Аварийный таймер от вечного лоадера на десктопе
+    useFailsafe(isLoading, () => setIsLoading(false), 8_000, 'nutrition-plan')
 
     if (authLoading || isLoading || !plan) {
         return (

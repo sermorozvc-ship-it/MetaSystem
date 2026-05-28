@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Apple, ChevronRight, Loader2, Zap, Calendar } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { getMyNutritionPrograms, type NutritionProgram } from '@/lib/services/nutrition-programs'
+import { useFailsafe } from '@/lib/hooks/useFailsafe'
 
 export default function NutritionPage() {
     const { user, isLoading: authLoading } = useAuth()
@@ -24,6 +25,9 @@ export default function NutritionPage() {
             .catch(console.error)
             .finally(() => setIsLoading(false))
     }, [user, authLoading])
+
+    // Аварийный таймер от вечного лоадера на десктопе
+    useFailsafe(isLoading, () => setIsLoading(false), 8_000, 'nutrition')
 
     if (authLoading || isLoading) {
         return (

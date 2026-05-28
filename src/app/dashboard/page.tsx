@@ -20,6 +20,7 @@ import { getMySubscriptionInfo, type SubscriptionInfo } from '@/lib/services/ren
 import { getMyStreakStats, type StreakStats } from '@/lib/services/streaks'
 import StreakCard from '@/components/StreakCard'
 import InstallPWABanner from '@/components/InstallPWABanner'
+import { useFailsafe } from '@/lib/hooks/useFailsafe'
 
 export default function DashboardPage() {
     const { user, isLoading: authLoading } = useAuth()
@@ -123,6 +124,10 @@ export default function DashboardPage() {
 
         loadDashboardData()
     }, [user?.id])
+
+    // Аварийный таймер: если за 8с страница не сняла isLoading — снимаем сами,
+    // чтобы пользователь не висел на лоадере (см. desktop-page-load.md).
+    useFailsafe(isLoading, () => setIsLoading(false), 8_000, 'dashboard')
 
     if (!authLoading && !user) {
         return null

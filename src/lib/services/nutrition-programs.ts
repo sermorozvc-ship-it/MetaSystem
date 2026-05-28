@@ -1,7 +1,8 @@
 // MetaSystem v2 — Nutrition Programs Service
 // Сервис для работы с планами питания (аналог training.ts)
 
-import { createClient } from '@/lib/supabase/client'
+import { createClient, safeGetUser } from '@/lib/supabase/client'
+import { withTimeout } from '@/lib/utils/with-timeout'
 
 // ──────────────────────────────────────────────────────────────────────────
 // Типы
@@ -115,26 +116,32 @@ export interface NutritionProgram {
 // ──────────────────────────────────────────────────────────────────────────
 
 /**
- * Получить все планы питания текущего пользователя
+ * Получить все планы питания текущего пользователя.
+ * При таймауте возвращает [] чтобы UI не висел.
  */
 export async function getMyNutritionPrograms(): Promise<NutritionProgram[]> {
+  const user = await safeGetUser()
+  if (!user) return []
+
   const supabase = createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not authenticated')
-
-  const { data, error } = await supabase
-    .from('nutrition_programs')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('plan_number', { ascending: false })
-
-  if (error) {
-    console.error('[NutritionPrograms] Error fetching:', error)
-    throw error
+  try {
+    const { data, error } = await withTimeout<{ data: NutritionProgram[] | null; error: any }>(
+      supabase
+        .from('nutrition_programs')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('plan_number', { ascending: false }),
+      'getMyNutritionPrograms',
+    )
+    if (error) {
+      console.error('[NutritionPrograms] Error fetching:', error)
+      return []
+    }
+    return data || []
+  } catch (e) {
+    console.error('[NutritionPrograms] timeout/network:', e)
+    return []
   }
-
-  return data || []
 }
 
 /**
@@ -142,55 +149,69 @@ export async function getMyNutritionPrograms(): Promise<NutritionProgram[]> {
  */
 export async function getNutritionProgramById(planId: string): Promise<NutritionProgram | null> {
   const supabase = createClient()
-
-  const { data, error } = await supabase
-    .from('nutrition_programs')
-    .select('*')
-    .eq('id', planId)
-    .maybeSingle()
-
-  if (error) {
-    console.error('[NutritionPrograms] Error fetching by id:', error)
+  try {
+    const { data, error } = await withTimeout<{ data: NutritionProgram | null; error: any }>(
+      supabase
+        .from('nutrition_programs')
+        .select('*')
+        .eq('id', planId)
+        .maybeSingle(),
+      'getNutritionProgramById',
+    )
+    if (error) {
+      console.error('[NutritionPrograms] Error fetching by id:', error)
+      return null
+    }
+    return data
+  } catch (e) {
+    console.error('[NutritionPrograms] getById timeout/network:', e)
     return null
   }
-
-  return data
 }
 
 /**
- * Получить текущий активный план питания
+ * Получить текущий активный план питания.
+ * При таймауте возвращает null — на dashboard это значит «нет плана».
  */
 export async function getCurrentNutritionProgram(): Promise<NutritionProgram | null> {
+  const user = await safeGetUser()
+  if (!user) return null
+
   const supabase = createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not authenticated')
-
   const today = new Date().toISOString().split('T')[0]
 
-  // Ищем план, в диапазон которого попадает сегодня
-  const { data: exact } = await supabase
-    .from('nutrition_programs')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .lte('start_date', today)
-    .gte('end_date', today)
-    .maybeSingle()
+  try {
+    // Ищем план, в диапазон которого попадает сегодня
+    const { data: exact } = await withTimeout<{ data: NutritionProgram | null }>(
+      supabase
+        .from('nutrition_programs')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .lte('start_date', today)
+        .gte('end_date', today)
+        .maybeSingle(),
+      'getCurrentNutritionProgram:exact',
+    )
+    if (exact) return exact
 
-  if (exact) return exact
-
-  // Fallback: последний активный план
-  const { data: latest } = await supabase
-    .from('nutrition_programs')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .order('plan_number', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  return latest ?? null
+    // Fallback: последний активный план
+    const { data: latest } = await withTimeout<{ data: NutritionProgram | null }>(
+      supabase
+        .from('nutrition_programs')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .order('plan_number', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      'getCurrentNutritionProgram:latest',
+    )
+    return latest ?? null
+  } catch (e) {
+    console.error('[NutritionPrograms] getCurrent timeout/network:', e)
+    return null
+  }
 }
 
 /**

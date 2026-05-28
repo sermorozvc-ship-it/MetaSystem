@@ -2,7 +2,8 @@
 // Чистая логика: стрики по неделям и календарь активности.
 // Работает поверх training_programs + training_entries + client_metrics.
 
-import { createClient } from '@/lib/supabase/client'
+import { createClient, safeGetUser } from '@/lib/supabase/client'
+import { withTimeout } from '@/lib/utils/with-timeout'
 import type { TrainingProgram, TrainingEntry } from './training'
 import type { ClientMetric } from './metrics'
 
@@ -213,13 +214,20 @@ export function calculateStreakStats(history: WeekStatus[]): StreakStats {
 // Загрузка данных текущего пользователя
 
 async function loadMyTrainingData(): Promise<{ programs: TrainingProgram[]; entries: TrainingEntry[] }> {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) return { programs: [], entries: [] }
 
+  const supabase = createClient()
+  // Каждый запрос с таймаутом — иначе на флапающей сети дашборд висит
+  const safe = <T,>(p: PromiseLike<T>, label: string): Promise<T> =>
+    withTimeout<T>(p, label, 6_000).catch((e) => {
+      console.warn(`[Streaks] ${label} failed:`, e?.message || e)
+      return { data: [] } as any
+    })
+
   const [pr, er] = await Promise.all([
-    supabase.from('training_programs').select('*').eq('user_id', user.id),
-    supabase.from('training_entries').select('*').eq('user_id', user.id),
+    safe<{ data: any[] | null }>(supabase.from('training_programs').select('*').eq('user_id', user.id), 'streaks:programs'),
+    safe<{ data: any[] | null }>(supabase.from('training_entries').select('*').eq('user_id', user.id), 'streaks:entries'),
   ])
 
   return {
@@ -242,14 +250,22 @@ async function loadClientTrainingData(userId: string): Promise<{ programs: Train
 }
 
 async function loadMyMetrics(): Promise<ClientMetric[]> {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) return []
-  const { data } = await supabase
-    .from('client_metrics')
-    .select('id,user_id,measured_at,weight_kg,notes')
-    .eq('user_id', user.id)
-  return (data || []) as ClientMetric[]
+  const supabase = createClient()
+  try {
+    const { data } = await withTimeout<{ data: any[] | null }>(
+      supabase
+        .from('client_metrics')
+        .select('id,user_id,measured_at,weight_kg,notes')
+        .eq('user_id', user.id),
+      'streaks:loadMyMetrics',
+      6_000,
+    )
+    return (data || []) as ClientMetric[]
+  } catch {
+    return []
+  }
 }
 
 async function loadClientMetrics(userId: string): Promise<ClientMetric[]> {
@@ -356,17 +372,26 @@ export function buildCalendarMonth(
 }
 
 export async function getMyCalendarMonth(year: number, month: number): Promise<CalendarMonth> {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) return buildCalendarMonth(year, month, [], [], [], [])
+
+  const supabase = createClient()
+  const safe = <T,>(p: PromiseLike<T>, label: string): Promise<T> =>
+    withTimeout<T>(p, label, 6_000).catch((e) => {
+      console.warn(`[Streaks] ${label} failed:`, e?.message || e)
+      return { data: [] } as any
+    })
 
   const [{ programs, entries }, metrics, checkinsRes] = await Promise.all([
     loadMyTrainingData(),
     loadMyMetrics(),
-    supabase
-      .from('scheduled_checkins')
-      .select('id,scheduled_date,notes,completed_at')
-      .eq('user_id', user.id),
+    safe<{ data: any[] | null }>(
+      supabase
+        .from('scheduled_checkins')
+        .select('id,scheduled_date,notes,completed_at')
+        .eq('user_id', user.id),
+      'streaks:checkins',
+    ),
   ])
   const checkins = (checkinsRes.data || []) as Array<{ id: string; scheduled_date: string; notes?: string; completed_at?: string }>
   return buildCalendarMonth(year, month, programs, entries, metrics, checkins)

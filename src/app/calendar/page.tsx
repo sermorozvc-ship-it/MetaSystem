@@ -13,6 +13,7 @@ import {
   type CalendarMonth,
   type CalendarDay,
 } from '@/lib/services/streaks'
+import { useFailsafe } from '@/lib/hooks/useFailsafe'
 
 function todayParts(): { year: number; month: number } {
   const d = new Date()
@@ -62,6 +63,9 @@ export default function CalendarPage() {
     load()
     return () => { cancelled = true }
   }, [user, year, month])
+
+  // Аварийный таймер: убираем вечный лоадер на десктопе
+  useFailsafe(isLoading, () => setIsLoading(false), 8_000, 'calendar')
 
   const last8Weeks = useMemo(() => {
     if (!stats) return []

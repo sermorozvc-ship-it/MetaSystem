@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth'
 import { getAllMyTrainingData, type TrainingProgram, type TrainingEntry } from '@/lib/services/training'
 import ExerciseProgressView from '@/components/ExerciseProgressView'
 import WeeklyTonnageChart from '@/components/WeeklyTonnageChart'
+import { useFailsafe } from '@/lib/hooks/useFailsafe'
 
 type Tab = 'tonnage' | 'exercises'
 
@@ -39,6 +40,9 @@ export default function ProgressPage() {
     }
     load()
   }, [user?.id])
+
+  // Аварийный таймер от вечного лоадера на десктопе
+  useFailsafe(isLoading, () => setIsLoading(false), 8_000, 'progress')
 
   if (authLoading || isLoading) {
     return (

@@ -18,6 +18,7 @@ import {
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
+import { useFailsafe } from '@/lib/hooks/useFailsafe'
 
 export default function MetricsPage() {
     const { user, isLoading: authLoading } = useAuth()
@@ -63,6 +64,9 @@ export default function MetricsPage() {
 
         loadMetrics()
     }, [user?.id])
+
+    // Аварийный таймер от вечного лоадера на десктопе
+    useFailsafe(isLoading, () => setIsLoading(false), 8_000, 'metrics')
 
     const updateField = (field: keyof MetricFormData, value: any) => {
         setFormData((prev) => ({ ...prev, [field]: value }))

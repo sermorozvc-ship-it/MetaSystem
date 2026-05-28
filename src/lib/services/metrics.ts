@@ -1,7 +1,8 @@
 // MetaSystem v2 — Metrics Service
 // Сервис для работы с метриками и замерами клиентов
 
-import { createClient } from '@/lib/supabase/client'
+import { createClient, safeGetUser } from '@/lib/supabase/client'
+import { withTimeout } from '@/lib/utils/with-timeout'
 
 export interface ClientMetric {
   id: string
@@ -65,26 +66,32 @@ export interface MetricsDelta {
 }
 
 /**
- * Получить все метрики пользователя
+ * Получить все метрики пользователя.
+ * При таймауте возвращает [] — UI покажет пустое состояние, а не вечный лоадер.
  */
 export async function getMyMetrics(): Promise<ClientMetric[]> {
+  const user = await safeGetUser()
+  if (!user) return []
+
   const supabase = createClient()
-  
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not authenticated')
-
-  const { data, error } = await supabase
-    .from('client_metrics')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('measured_at', { ascending: false })
-
-  if (error) {
-    console.error('Error fetching metrics:', error)
-    throw error
+  try {
+    const { data, error } = await withTimeout<{ data: ClientMetric[] | null; error: any }>(
+      supabase
+        .from('client_metrics')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('measured_at', { ascending: false }),
+      'getMyMetrics',
+    )
+    if (error) {
+      console.error('[Metrics] getMyMetrics error:', error)
+      return []
+    }
+    return data || []
+  } catch (e) {
+    console.error('[Metrics] getMyMetrics timeout/network:', e)
+    return []
   }
-
-  return data || []
 }
 
 /**
@@ -132,28 +139,34 @@ export async function getMetricByDate(date: string): Promise<ClientMetric | null
 }
 
 /**
- * Получить последнюю метрику
+ * Получить последнюю метрику.
+ * При таймауте возвращает null — на dashboard это просто значит «нет замеров».
  */
 export async function getLatestMetric(): Promise<ClientMetric | null> {
+  const user = await safeGetUser()
+  if (!user) return null
+
   const supabase = createClient()
-  
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not authenticated')
-
-  const { data, error } = await supabase
-    .from('client_metrics')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('measured_at', { ascending: false })
-    .limit(1)
-    .single()
-
-  if (error && error.code !== 'PGRST116') {
-    console.error('Error fetching latest metric:', error)
-    throw error
+  try {
+    const { data, error } = await withTimeout<{ data: ClientMetric | null; error: any }>(
+      supabase
+        .from('client_metrics')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('measured_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      'getLatestMetric',
+    )
+    if (error) {
+      console.error('[Metrics] getLatestMetric error:', error)
+      return null
+    }
+    return data
+  } catch (e) {
+    console.error('[Metrics] getLatestMetric timeout/network:', e)
+    return null
   }
-
-  return data
 }
 
 /**
