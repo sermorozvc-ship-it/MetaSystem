@@ -2,6 +2,7 @@
 // Позволяет админу сохранять часто используемые программы и применять их клиентам.
 
 import { createClient, safeGetUser } from '@/lib/supabase/client'
+import { withTimeout } from '@/lib/utils/with-timeout'
 import type { ProgramData } from './training'
 
 export interface ProgramTemplate {
@@ -32,19 +33,31 @@ export interface ProgramTemplateInput {
 /**
  * Получить все шаблоны (свои + глобальные).
  * Сортировка: сначала самые недавно изменённые.
+ *
+ * Под withTimeout — на десктопе с инкогнито/расширениями запрос
+ * к *.supabase.co иногда виснет, и страница админки оставалась
+ * на спиннере. Таймаут возвращает [] вместо throw, чтобы UI показал
+ * пустое состояние, а не вечный лоадер.
  */
 export async function listTemplates(): Promise<ProgramTemplate[]> {
     const supabase = createClient()
-    const { data, error } = await supabase
-        .from('program_templates')
-        .select('*')
-        .order('updated_at', { ascending: false })
-
-    if (error) {
-        console.error('[program-templates] list error:', error)
-        throw new Error(error.message)
+    try {
+        const { data, error } = await withTimeout<{ data: ProgramTemplate[] | null; error: any }>(
+            supabase
+                .from('program_templates')
+                .select('*')
+                .order('updated_at', { ascending: false }),
+            'listTemplates',
+        )
+        if (error) {
+            console.error('[program-templates] list error:', error)
+            return []
+        }
+        return data || []
+    } catch (e) {
+        console.error('[program-templates] list timeout/network:', e)
+        return []
     }
-    return data || []
 }
 
 /**

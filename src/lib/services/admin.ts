@@ -1,4 +1,5 @@
 import { createClient, safeGetUser } from '@/lib/supabase/client'
+import { withTimeout } from '@/lib/utils/with-timeout'
 
 export interface UserProfile {
     id: string
@@ -173,15 +174,23 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
 
     // 1. Попробовать RPC, если не сработает — прямой запрос к profiles
     try {
-        const { data, error } = await supabase.rpc('get_all_users_secure')
+        const { data, error } = await withTimeout<{ data: any[] | null; error: any }>(
+            supabase.rpc('get_all_users_secure'),
+            'getAllUsers:rpc',
+            8_000,
+        )
         if (!error && data) {
             profiles = data
         } else {
             console.warn('[Admin] RPC failed, trying direct query:', error?.message)
-            const fallback = await supabase
-                .from('profiles')
-                .select('*')
-                .order('created_at', { ascending: false })
+            const fallback = await withTimeout<{ data: any[] | null; error: any }>(
+                supabase
+                    .from('profiles')
+                    .select('*')
+                    .order('created_at', { ascending: false }),
+                'getAllUsers:profiles',
+                8_000,
+            )
 
             if (fallback.error) {
                 throw new Error(fallback.error.message)
@@ -190,7 +199,8 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
         }
     } catch (e: any) {
         console.error('[Admin] Exception fetching profiles:', e)
-        throw new Error(`Ошибка загрузки: ${e.message}`)
+        // Возвращаем пустой массив вместо throw — иначе админка висит на спиннере
+        return []
     }
 
     if (!profiles || profiles.length === 0) {
@@ -204,9 +214,18 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
 
     try {
         const [progressResult, reportsResult, paymentsResult] = await Promise.all([
-            supabase.from('user_progress').select('user_id, completed').eq('completed', true),
-            supabase.from('day_reports').select('user_id, created_at').order('created_at', { ascending: false }),
-            supabase.from('payments').select('user_id, status, plan_type, created_at').order('created_at', { ascending: false })
+            withTimeout<{ data: any[] | null }>(
+                supabase.from('user_progress').select('user_id, completed').eq('completed', true),
+                'getAllUsers:progress', 6_000,
+            ).catch(() => ({ data: [] })),
+            withTimeout<{ data: any[] | null }>(
+                supabase.from('day_reports').select('user_id, created_at').order('created_at', { ascending: false }),
+                'getAllUsers:reports', 6_000,
+            ).catch(() => ({ data: [] })),
+            withTimeout<{ data: any[] | null }>(
+                supabase.from('payments').select('user_id, status, plan_type, created_at').order('created_at', { ascending: false }),
+                'getAllUsers:payments', 6_000,
+            ).catch(() => ({ data: [] })),
         ])
 
         allProgress = progressResult.data || []
@@ -611,15 +630,21 @@ export async function getAdminStats(): Promise<{
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    // Параллельно выполняем все запросы
+    const safe = <T,>(p: PromiseLike<T>, label: string): Promise<T> =>
+        withTimeout<T>(p, label, 6_000).catch((e) => {
+            console.warn(`[Admin] ${label} failed:`, e?.message || e)
+            return { count: 0 } as any
+        })
+
+    // Параллельно выполняем все запросы — каждый с собственным таймаутом
     const [totalR, activeR, blockedR, pendingR, completedR, pendingPayR, confirmedPayR] = await Promise.all([
-        supabase.from('profiles').select('*', { count: 'exact', head: true }),
-        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', false),
-        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', true),
-        supabase.from('day_reports').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-        supabase.from('user_progress').select('*', { count: 'exact', head: true }).eq('completed', true).gte('completed_at', today.toISOString()),
-        supabase.from('payments').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-        supabase.from('payments').select('*', { count: 'exact', head: true }).eq('status', 'confirmed'),
+        safe<{ count: number | null }>(supabase.from('profiles').select('*', { count: 'exact', head: true }), 'stats:total'),
+        safe<{ count: number | null }>(supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', false), 'stats:active'),
+        safe<{ count: number | null }>(supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_blocked', true), 'stats:blocked'),
+        safe<{ count: number | null }>(supabase.from('day_reports').select('*', { count: 'exact', head: true }).eq('status', 'pending'), 'stats:pendingReports'),
+        safe<{ count: number | null }>(supabase.from('user_progress').select('*', { count: 'exact', head: true }).eq('completed', true).gte('completed_at', today.toISOString()), 'stats:completedToday'),
+        safe<{ count: number | null }>(supabase.from('payments').select('*', { count: 'exact', head: true }).eq('status', 'pending'), 'stats:pendingPay'),
+        safe<{ count: number | null }>(supabase.from('payments').select('*', { count: 'exact', head: true }).eq('status', 'confirmed'), 'stats:confirmedPay'),
     ])
 
     return {
@@ -678,21 +703,36 @@ export async function getPaymentsByMonth(monthsBack: number = 12): Promise<Month
     since.setDate(1)
     since.setHours(0, 0, 0, 0)
 
-    const { data, error } = await supabase
-        .from('payments')
-        .select('id, user_id, amount, status, created_at, confirmed_at')
-        .in('status', ['confirmed', 'refunded'])
-        .gte('created_at', since.toISOString())
-        .order('created_at', { ascending: true })
+    let data: any[] | null = null
+    let allFirstPayments: any[] | null = null
+    try {
+        const r1 = await withTimeout<{ data: any[] | null; error: any }>(
+            supabase
+                .from('payments')
+                .select('id, user_id, amount, status, created_at, confirmed_at')
+                .in('status', ['confirmed', 'refunded'])
+                .gte('created_at', since.toISOString())
+                .order('created_at', { ascending: true }),
+            'getPaymentsByMonth:list',
+            8_000,
+        )
+        if (r1.error || !r1.data) return []
+        data = r1.data
 
-    if (error || !data) return []
-
-    // Получаем первый платёж каждого клиента (для подсчёта новых)
-    const { data: allFirstPayments } = await supabase
-        .from('payments')
-        .select('user_id, created_at')
-        .eq('status', 'confirmed')
-        .order('created_at', { ascending: true })
+        const r2 = await withTimeout<{ data: any[] | null }>(
+            supabase
+                .from('payments')
+                .select('user_id, created_at')
+                .eq('status', 'confirmed')
+                .order('created_at', { ascending: true }),
+            'getPaymentsByMonth:firsts',
+            6_000,
+        ).catch(() => ({ data: [] }))
+        allFirstPayments = r2.data || []
+    } catch (e) {
+        console.error('[Admin] getPaymentsByMonth timeout/network:', e)
+        return []
+    }
 
     // Строим карту: user_id → первый месяц оплаты
     const firstPaymentMonth = new Map<string, string>()
@@ -754,38 +794,51 @@ export async function getPaymentsByMonth(monthsBack: number = 12): Promise<Month
 export async function getAllPayments(): Promise<AdminPayment[]> {
     const supabase = createClient()
 
-    // Шаг 1: Получаем все платежи
-    const { data: payments, error } = await supabase
-        .from('payments')
-        .select('*')
-        .order('created_at', { ascending: false })
+    try {
+        // Шаг 1: Получаем все платежи
+        const { data: payments, error } = await withTimeout<{ data: any[] | null; error: any }>(
+            supabase
+                .from('payments')
+                .select('*')
+                .order('created_at', { ascending: false }),
+            'getAllPayments:list',
+            8_000,
+        )
 
-    if (error) {
-        console.error('[Admin] Error fetching payments:', error)
+        if (error) {
+            console.error('[Admin] Error fetching payments:', error)
+            return []
+        }
+
+        if (!payments || payments.length === 0) return []
+
+        // Шаг 2: Получаем профили отдельным запросом по user_id
+        const userIds = [...new Set(payments.map((p: any) => p.user_id))]
+
+        const { data: profiles, error: profilesError } = await withTimeout<{ data: any[] | null; error: any }>(
+            supabase
+                .from('profiles')
+                .select('id, full_name, email')
+                .in('id', userIds),
+            'getAllPayments:profiles',
+            6_000,
+        )
+
+        if (profilesError) {
+            console.error('[Admin] Error fetching profiles for payments:', profilesError)
+        }
+
+        // Шаг 3: Объединяем payment + profile
+        const profilesMap = new Map((profiles || []).map((p: any) => [p.id, p]))
+
+        return payments.map((p: any) => ({
+            ...p,
+            user: profilesMap.get(p.user_id) || null,
+        }))
+    } catch (e) {
+        console.error('[Admin] getAllPayments timeout/network:', e)
         return []
     }
-
-    if (!payments || payments.length === 0) return []
-
-    // Шаг 2: Получаем профили отдельным запросом по user_id
-    const userIds = [...new Set(payments.map((p: any) => p.user_id))]
-
-    const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, full_name, email')
-        .in('id', userIds)
-
-    if (profilesError) {
-        console.error('[Admin] Error fetching profiles for payments:', profilesError)
-    }
-
-    // Шаг 3: Объединяем payment + profile
-    const profilesMap = new Map((profiles || []).map((p: any) => [p.id, p]))
-
-    return payments.map((p: any) => ({
-        ...p,
-        user: profilesMap.get(p.user_id) || null
-    }))
 }
 
 

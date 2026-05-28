@@ -80,7 +80,18 @@ export default function AdminTemplatesPage() {
             }
         }
         init()
-        return () => { cancelled = true }
+
+        // Аварийный таймаут: если данные не успели загрузиться за 8с —
+        // снимаем спиннер, чтобы пользователь не сидел на лоадере вечно
+        // (см. .kiro/steering/desktop-page-load.md).
+        const failsafe = setTimeout(() => {
+            if (!cancelled) {
+                console.warn('[Templates] Failsafe — forcing loading=false')
+                setLoading(false)
+            }
+        }, 8000)
+
+        return () => { cancelled = true; clearTimeout(failsafe) }
     }, [user, authLoading, router])
 
     const allTags = useMemo(() => {

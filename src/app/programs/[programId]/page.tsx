@@ -2379,9 +2379,11 @@ export default function ProgramDetailPage() {
             <RestTimer onClose={() => setRestTimerVisible(false)} />
         )}
 
-        {/* Модалка альтернативных упражнений */}
+        {/* Модалка альтернативных упражнений.
+            z-[300] — выше RestTimer (z-index:200), чтобы таймер не перекрывал
+            окно выбора. items-center всегда — центр экрана и на мобиле. */}
         {altModal && (
-            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setAltModal(null)}>
+            <div className="fixed inset-0 z-[300] flex items-center justify-center p-4" onClick={() => setAltModal(null)}>
                 <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
                 <div className="relative z-10 glass-card w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-between mb-4">
@@ -2425,7 +2427,7 @@ export default function ProgramDetailPage() {
         )}
 
         {/* Модалка суперсета */}
-        {supersetModal && (            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setSupersetModal(null)}>
+        {supersetModal && (            <div className="fixed inset-0 z-[300] flex items-center justify-center p-4" onClick={() => setSupersetModal(null)}>
                 <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
                 <div className="relative z-10 glass-card w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center gap-3 mb-4">
