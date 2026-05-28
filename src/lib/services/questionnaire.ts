@@ -363,82 +363,86 @@ export async function getQuestionnaireByUserId(userId: string): Promise<ClientQu
   return data
 }
 
+/**
+ * Сохранение анкеты идёт через серверный роут /api/questionnaire/save.
+ *
+ * Причина: прямой supabase-js upsert из браузера в инкогнито/при флапающей
+ * сети висел >15с (см. dev_log fix(questionnaire)). Серверный роут идёт
+ * на собственный домен Vercel — без CORS preflight, без клиентского
+ * inTabLock, без auto-refresh JWT в середине запроса.
+ */
 export async function upsertQuestionnaire(
   formData: QuestionnaireFormData
 ): Promise<ClientQuestionnaire> {
   const supabase = createClient()
-  // safeGetUser кеширует юзера 10с — экономит сетевой запрос auth.getUser
-  // на каждом сохранении и не блокирует "Сохранить" если сеть флапает
-  const user = await safeGetUser()
-  if (!user) throw new Error('Не удалось определить пользователя. Перезайдите.')
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+  if (!token) throw new Error('Не удалось определить пользователя. Перезайдите.')
 
-  const payload: Record<string, any> = { user_id: user.id, updated_at: new Date().toISOString() }
-  for (const [key, value] of Object.entries(formData)) {
-    if (value !== undefined && value !== null) {
-      payload[key] = value
-    }
-  }
-
-  // 15с таймаут на сам upsert через общий withTimeout
-  const { data, error } = await withTimeout<{ data: ClientQuestionnaire | null; error: any }>(
-    supabase
-      .from('client_questionnaires')
-      .upsert(payload, { onConflict: 'user_id' })
-      .select()
-      .single(),
+  const res = await withTimeout(
+    fetch('/api/questionnaire/save', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(formData),
+    }),
     'upsertQuestionnaire',
     15_000,
   )
 
-  if (error) {
-    console.error('[Questionnaire] upsert error:', error)
-    throw new Error('Ошибка сохранения: ' + error.message)
-  }
-  if (!data) {
-    throw new Error('Ошибка сохранения анкеты: пустой ответ от сервера')
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`
+    try {
+      const j = await res.json()
+      if (j?.error) message = j.error
+    } catch {}
+    throw new Error('Ошибка сохранения: ' + message)
   }
 
-  // Обновляем профиль в фоне — не блокируем возврат данных
-  supabase
-    .from('profiles')
-    .update({ questionnaire_completed: true })
-    .eq('id', user.id)
-    .then(() => {})
-
-  return data
+  const j = await res.json()
+  return j.data as ClientQuestionnaire
 }
 
+/**
+ * Загрузка фото идёт через серверный роут /api/questionnaire/upload-photo.
+ * Причины те же, что и в upsertQuestionnaire — обходим CORS/lock/JWT-refresh.
+ */
 export async function uploadQuestionnairePhoto(
   file: File,
   type: 'front' | 'side' | 'back'
 ): Promise<string> {
   const supabase = createClient()
-  const user = await safeGetUser()
-  if (!user) throw new Error('Не удалось определить пользователя. Перезайдите.')
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+  if (!token) throw new Error('Не удалось определить пользователя. Перезайдите.')
 
-  const fileExt = file.name.split('.').pop() || 'jpg'
-  const fileName = `${user.id}/questionnaire/${type}_${Date.now()}.${fileExt}`
+  const form = new FormData()
+  form.append('file', file)
+  form.append('type', type)
 
-  // 30с таймаут — крупное фото на медленной сети может грузиться долго,
-  // но висеть бесконечно мы не даём
-  const { data, error } = await withTimeout<{ data: { path: string }; error: any }>(
-    supabase.storage
-      .from('client-photos')
-      .upload(fileName, file, { cacheControl: '3600', upsert: true }) as any,
+  const res = await withTimeout(
+    fetch('/api/questionnaire/upload-photo', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    }),
     'uploadQuestionnairePhoto',
     30_000,
   )
 
-  if (error) {
-    console.error('[Questionnaire] upload photo error:', error)
-    throw error
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`
+    try {
+      const j = await res.json()
+      if (j?.error) message = j.error
+    } catch {}
+    throw new Error('Ошибка загрузки фото: ' + message)
   }
 
-  const { data: { publicUrl } } = supabase.storage
-    .from('client-photos')
-    .getPublicUrl(data.path)
-
-  return publicUrl
+  const j = await res.json()
+  return j.url as string
 }
 
 export async function isQuestionnaireCompleted(): Promise<boolean> {

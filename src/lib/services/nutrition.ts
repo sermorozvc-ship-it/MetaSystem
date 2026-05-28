@@ -233,54 +233,42 @@ export async function getNutritionQuestionnaireByUserId(
   return data as NutritionQuestionnaire | null
 }
 
+/**
+ * Сохранение через серверный роут /api/questionnaire/nutrition-save.
+ * Причины — см. /api/questionnaire/save и upsertQuestionnaire.
+ */
 export async function upsertNutritionQuestionnaire(
   answers: NutritionAnswers
 ): Promise<NutritionQuestionnaire> {
-  const user = await safeGetUser()
-  if (!user) throw new Error('Не удалось определить пользователя. Перезайдите.')
-
   const supabase = createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+  if (!token) throw new Error('Не удалось определить пользователя. Перезайдите.')
 
-  const payload = {
-    user_id: user.id,
-    answers,
-    // денормализованные поля для быстрого показа в списке клиентов
-    current_weight_kg: answers.current_weight_kg ?? null,
-    height_cm: answers.height_cm ?? null,
-    age: answers.age ?? null,
-    gender: answers.gender ?? null,
-    nutrition_goal: answers.nutrition_goal ?? null,
-    diet_type: answers.diet_type ?? null,
-    updated_at: new Date().toISOString(),
-  }
-
-  // 15с таймаут через общий withTimeout
-  const { data, error } = await withTimeout<{ data: NutritionQuestionnaire | null; error: any }>(
-    supabase
-      .from('client_nutrition_questionnaires')
-      .upsert(payload, { onConflict: 'user_id' })
-      .select()
-      .single(),
+  const res = await withTimeout(
+    fetch('/api/questionnaire/nutrition-save', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ answers }),
+    }),
     'upsertNutritionQuestionnaire',
     15_000,
   )
 
-  if (error) {
-    console.error('[Nutrition] Error upserting:', error)
-    throw new Error('Ошибка сохранения анкеты питания: ' + error.message)
-  }
-  if (!data) {
-    throw new Error('Ошибка сохранения анкеты питания: пустой ответ от сервера')
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`
+    try {
+      const j = await res.json()
+      if (j?.error) message = j.error
+    } catch {}
+    throw new Error('Ошибка сохранения анкеты питания: ' + message)
   }
 
-  // Обновляем флаг в профиле — fire-and-forget, не блокируем возврат
-  supabase
-    .from('profiles')
-    .update({ nutrition_questionnaire_completed: true })
-    .eq('id', user.id)
-    .then(() => {})
-
-  return data
+  const j = await res.json()
+  return j.data as NutritionQuestionnaire
 }
 
 export async function isNutritionQuestionnaireCompleted(): Promise<boolean> {
