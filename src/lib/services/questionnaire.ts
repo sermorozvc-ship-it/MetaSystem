@@ -1,7 +1,7 @@
 // MetaSystem v2 — Questionnaire Service
 // Сервис для работы с анкетами клиентов
 
-import { createClient } from '@/lib/supabase/client'
+import { createClient, safeGetUser } from '@/lib/supabase/client'
 import { withTimeout } from '@/lib/utils/with-timeout'
 
 export interface ClientQuestionnaire {
@@ -317,20 +317,34 @@ export const QUESTIONNAIRE_LABELS = {
 
 export async function getMyQuestionnaire(): Promise<ClientQuestionnaire | null> {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not authenticated')
+  // safeGetUser использует кеш + таймаут 4с — не висит, если сеть подвисла
+  const user = await safeGetUser()
+  if (!user) return null
 
-  const { data, error } = await supabase
-    .from('client_questionnaires')
-    .select('*')
-    .eq('user_id', user.id)
-    .single()
+  try {
+    const { data, error } = await withTimeout<{ data: ClientQuestionnaire | null; error: any }>(
+      supabase
+        .from('client_questionnaires')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle(),
+      'getMyQuestionnaire',
+    )
 
-  if (error && error.code !== 'PGRST116') {
-    console.error('Error fetching questionnaire:', error)
-    throw error
+    if (error) {
+      // PGRST116 = "no rows" — это нормально для новой анкеты
+      if (error.code !== 'PGRST116') {
+        console.error('[Questionnaire] getMyQuestionnaire error:', error)
+      }
+      return null
+    }
+    return data
+  } catch (e) {
+    // Таймаут или сеть — возвращаем null, чтобы UI показал пустую форму,
+    // а не висел на спиннере. Анкета всё равно сохранится при отправке.
+    console.error('[Questionnaire] getMyQuestionnaire timeout/network:', e)
+    return null
   }
-  return data
 }
 
 export async function getQuestionnaireByUserId(userId: string): Promise<ClientQuestionnaire | null> {
@@ -353,8 +367,10 @@ export async function upsertQuestionnaire(
   formData: QuestionnaireFormData
 ): Promise<ClientQuestionnaire> {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not authenticated')
+  // safeGetUser кеширует юзера 10с — экономит сетевой запрос auth.getUser
+  // на каждом сохранении и не блокирует "Сохранить" если сеть флапает
+  const user = await safeGetUser()
+  if (!user) throw new Error('Не удалось определить пользователя. Перезайдите.')
 
   const payload: Record<string, any> = { user_id: user.id, updated_at: new Date().toISOString() }
   for (const [key, value] of Object.entries(formData)) {
@@ -363,21 +379,23 @@ export async function upsertQuestionnaire(
     }
   }
 
-  const upsertPromise = supabase
-    .from('client_questionnaires')
-    .upsert(payload, { onConflict: 'user_id' })
-    .select()
-    .single()
-
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('Превышено время ожидания сохранения анкеты (15 сек)')), 15_000)
+  // 15с таймаут на сам upsert через общий withTimeout
+  const { data, error } = await withTimeout<{ data: ClientQuestionnaire | null; error: any }>(
+    supabase
+      .from('client_questionnaires')
+      .upsert(payload, { onConflict: 'user_id' })
+      .select()
+      .single(),
+    'upsertQuestionnaire',
+    15_000,
   )
 
-  const { data, error } = await Promise.race([upsertPromise, timeoutPromise])
-
   if (error) {
-    console.error('Error upserting questionnaire:', error)
+    console.error('[Questionnaire] upsert error:', error)
     throw new Error('Ошибка сохранения: ' + error.message)
+  }
+  if (!data) {
+    throw new Error('Ошибка сохранения анкеты: пустой ответ от сервера')
   }
 
   // Обновляем профиль в фоне — не блокируем возврат данных
@@ -395,25 +413,24 @@ export async function uploadQuestionnairePhoto(
   type: 'front' | 'side' | 'back'
 ): Promise<string> {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not authenticated')
+  const user = await safeGetUser()
+  if (!user) throw new Error('Не удалось определить пользователя. Перезайдите.')
 
   const fileExt = file.name.split('.').pop() || 'jpg'
   const fileName = `${user.id}/questionnaire/${type}_${Date.now()}.${fileExt}`
 
-  // Таймаут 30 сек — если Storage завис, не блокируем UI вечно
-  const uploadPromise = supabase.storage
-    .from('client-photos')
-    .upload(fileName, file, { cacheControl: '3600', upsert: true })
-
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('Превышено время ожидания загрузки фото (30 сек)')), 30_000)
+  // 30с таймаут — крупное фото на медленной сети может грузиться долго,
+  // но висеть бесконечно мы не даём
+  const { data, error } = await withTimeout<{ data: { path: string }; error: any }>(
+    supabase.storage
+      .from('client-photos')
+      .upload(fileName, file, { cacheControl: '3600', upsert: true }) as any,
+    'uploadQuestionnairePhoto',
+    30_000,
   )
 
-  const { data, error } = await Promise.race([uploadPromise, timeoutPromise])
-
   if (error) {
-    console.error('Error uploading photo:', error)
+    console.error('[Questionnaire] upload photo error:', error)
     throw error
   }
 
@@ -425,10 +442,10 @@ export async function uploadQuestionnairePhoto(
 }
 
 export async function isQuestionnaireCompleted(): Promise<boolean> {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) return false
 
+  const supabase = createClient()
   try {
     const { data: questionnaire } = await withTimeout<{ data: { id: string } | null; error: any }>(
       supabase

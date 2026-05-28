@@ -2,7 +2,7 @@
 // Анкета по питанию — доступ есть только у клиентов, купивших план питания
 // (includes_nutrition = true в последнем подтверждённом платеже)
 
-import { createClient } from '@/lib/supabase/client'
+import { createClient, safeGetUser } from '@/lib/supabase/client'
 import { withTimeout } from '@/lib/utils/with-timeout'
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -112,11 +112,10 @@ export interface NutritionQuestionnaire {
  * - Fallback: profiles.has_nutrition_plan = true
  */
 export async function isNutritionQuestionnaireRequired(): Promise<boolean> {
-  const supabase = createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) return false
 
+  const supabase = createClient()
   try {
     // Сначала проверяем профиль — самый надёжный источник после активации подписки
     const { data: profile } = await withTimeout<{ data: any; error: any }>(
@@ -191,22 +190,29 @@ export async function userHasNutritionAccess(userId: string): Promise<boolean> {
 // ──────────────────────────────────────────────────────────────────────────
 
 export async function getMyNutritionQuestionnaire(): Promise<NutritionQuestionnaire | null> {
+  const user = await safeGetUser()
+  if (!user) return null
+
   const supabase = createClient()
+  try {
+    const { data, error } = await withTimeout<{ data: NutritionQuestionnaire | null; error: any }>(
+      supabase
+        .from('client_nutrition_questionnaires')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle(),
+      'getMyNutritionQuestionnaire',
+    )
 
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not authenticated')
-
-  const { data, error } = await supabase
-    .from('client_nutrition_questionnaires')
-    .select('*')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (error) {
-    console.error('[Nutrition] Error fetching questionnaire:', error)
+    if (error) {
+      console.error('[Nutrition] Error fetching questionnaire:', error)
+      return null
+    }
+    return data
+  } catch (e) {
+    console.error('[Nutrition] getMyNutritionQuestionnaire timeout/network:', e)
     return null
   }
-  return data as NutritionQuestionnaire | null
 }
 
 export async function getNutritionQuestionnaireByUserId(
@@ -230,10 +236,10 @@ export async function getNutritionQuestionnaireByUserId(
 export async function upsertNutritionQuestionnaire(
   answers: NutritionAnswers
 ): Promise<NutritionQuestionnaire> {
-  const supabase = createClient()
+  const user = await safeGetUser()
+  if (!user) throw new Error('Не удалось определить пользователя. Перезайдите.')
 
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not authenticated')
+  const supabase = createClient()
 
   const payload = {
     user_id: user.id,
@@ -248,22 +254,23 @@ export async function upsertNutritionQuestionnaire(
     updated_at: new Date().toISOString(),
   }
 
-  // Таймаут 15 сек — если Supabase завис, не блокируем UI вечно
-  const upsertPromise = supabase
-    .from('client_nutrition_questionnaires')
-    .upsert(payload, { onConflict: 'user_id' })
-    .select()
-    .single()
-
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('Превышено время ожидания сохранения (15 сек). Проверьте соединение.')), 15_000)
+  // 15с таймаут через общий withTimeout
+  const { data, error } = await withTimeout<{ data: NutritionQuestionnaire | null; error: any }>(
+    supabase
+      .from('client_nutrition_questionnaires')
+      .upsert(payload, { onConflict: 'user_id' })
+      .select()
+      .single(),
+    'upsertNutritionQuestionnaire',
+    15_000,
   )
-
-  const { data, error } = await Promise.race([upsertPromise, timeoutPromise])
 
   if (error) {
     console.error('[Nutrition] Error upserting:', error)
     throw new Error('Ошибка сохранения анкеты питания: ' + error.message)
+  }
+  if (!data) {
+    throw new Error('Ошибка сохранения анкеты питания: пустой ответ от сервера')
   }
 
   // Обновляем флаг в профиле — fire-and-forget, не блокируем возврат
@@ -273,15 +280,14 @@ export async function upsertNutritionQuestionnaire(
     .eq('id', user.id)
     .then(() => {})
 
-  return data as NutritionQuestionnaire
+  return data
 }
 
 export async function isNutritionQuestionnaireCompleted(): Promise<boolean> {
-  const supabase = createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) return false
 
+  const supabase = createClient()
   try {
     const { data } = await withTimeout<{ data: { id: string } | null; error: any }>(
       supabase

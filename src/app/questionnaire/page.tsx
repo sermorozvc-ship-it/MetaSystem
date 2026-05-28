@@ -241,22 +241,10 @@ export default function QuestionnairePage() {
         ),
       ])
 
-      try {
-        const { isNutritionQuestionnaireRequired, isNutritionQuestionnaireCompleted } =
-          await import('@/lib/services/nutrition')
-        // Таймаут 10 сек на проверку питания
-        const needsNutrition = await Promise.race([
-          isNutritionQuestionnaireRequired(),
-          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 10_000)),
-        ])
-        if (needsNutrition) {
-          const nutritionDone = await Promise.race([
-            isNutritionQuestionnaireCompleted(),
-            new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 10_000)),
-          ])
-          if (!nutritionDone) { router.push('/questionnaire/nutrition'); return }
-        }
-      } catch {}
+      // Сохранили — сразу на dashboard. Если нужна анкета по питанию, dashboard
+      // сам покажет баннер и предложит её заполнить. Не блокируем переход
+      // дополнительными сетевыми проверками — это создавало впечатление,
+      // что после "Завершить" страница зависла.
       router.push('/dashboard')
     } catch (e: any) {
       setError(e?.message || 'Ошибка сохранения анкеты')

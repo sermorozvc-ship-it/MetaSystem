@@ -36,14 +36,14 @@ export default function AdminPaymentsPage() {
 
     useEffect(() => {
         if (authLoading) return
-        if (!user) { window.location.href = '/auth'; return }
+        if (!user) { router.replace('/auth'); return }
 
         let cancelled = false
 
         const load = async () => {
             const admin = await isAdmin(user)
             if (cancelled) return
-            if (!admin) { window.location.href = '/admin'; return }
+            if (!admin) { router.replace('/admin'); return }
 
             setIsAdminUser(true)
 
@@ -64,7 +64,7 @@ export default function AdminPaymentsPage() {
 
         load()
         return () => { cancelled = true }
-    }, [user, authLoading])
+    }, [user, authLoading, router])
 
     const handleConfirm = async (paymentId: string) => {
         setActionLoading(paymentId)

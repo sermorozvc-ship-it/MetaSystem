@@ -10,36 +10,44 @@ export default function OnboardingPage() {
     const router = useRouter()
     const { user, isLoading } = useAuth()
 
-    // Если пользователь уже авторизован — пропускаем онбординг
+    // Если пользователь уже авторизован — пропускаем онбординг.
+    // ВАЖНО: используем router.replace, а НЕ window.location.href.
+    // Полный reload поверх валидной сессии = вечный лоадер на десктопе
+    // (см. .kiro/steering/desktop-page-load.md).
     useEffect(() => {
         if (isLoading) return
         if (!user) return
-        // Авторизован — проверяем анкеты и ведём по правильному пути
+        let cancelled = false
         const go = async () => {
             try {
                 const done = await isQuestionnaireCompleted()
+                if (cancelled) return
                 if (!done) {
-                    window.location.href = '/questionnaire'
+                    router.replace('/questionnaire')
                     return
                 }
                 // Основная анкета заполнена — проверяем питание
                 const { isNutritionQuestionnaireRequired, isNutritionQuestionnaireCompleted } =
                     await import('@/lib/services/nutrition')
+                if (cancelled) return
                 const needsNutrition = await isNutritionQuestionnaireRequired()
+                if (cancelled) return
                 if (needsNutrition) {
                     const nutritionDone = await isNutritionQuestionnaireCompleted()
+                    if (cancelled) return
                     if (!nutritionDone) {
-                        window.location.href = '/questionnaire/nutrition'
+                        router.replace('/questionnaire/nutrition')
                         return
                     }
                 }
-                window.location.href = '/dashboard'
+                router.replace('/dashboard')
             } catch {
-                window.location.href = '/questionnaire'
+                if (!cancelled) router.replace('/questionnaire')
             }
         }
         go()
-    }, [user, isLoading])
+        return () => { cancelled = true }
+    }, [user, isLoading, router])
 
     return (
         <div className="min-h-screen bg-bg-main flex items-center justify-center p-4">
