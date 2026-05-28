@@ -277,33 +277,34 @@ function AuthContent() {
                 {/* Баннер контекста оплаты */}
                 {isPaymentFlow && (
                     <div className="mb-5 rounded-2xl border border-accent/30 bg-accent/5 p-4">
-                        {/* Шаги */}
+                        {/* Шаги. В новом флоу пользователь приходит сюда ДО выбора тарифа
+                            (с лендинга → /get-started → сюда), поэтому шаг 1 — это сама регистрация. */}
                         <div className="flex items-center justify-center gap-2 mb-3 text-xs font-medium">
-                            <span className="flex items-center gap-1 text-accent">
-                                <span className="w-5 h-5 rounded-full bg-accent text-bg-main flex items-center justify-center font-bold text-[10px]">1</span>
-                                Тариф выбран
+                            <span className="flex items-center gap-1 text-white font-semibold">
+                                <span className="w-5 h-5 rounded-full bg-white text-bg-main flex items-center justify-center font-bold text-[10px]">1</span>
+                                Регистрация
                             </span>
                             <span className="text-white/20">──</span>
-                            <span className="flex items-center gap-1 text-white font-semibold">
-                                <span className="w-5 h-5 rounded-full bg-white text-bg-main flex items-center justify-center font-bold text-[10px]">2</span>
-                                Аккаунт
+                            <span className="flex items-center gap-1 text-white/40">
+                                <span className="w-5 h-5 rounded-full border border-white/20 flex items-center justify-center font-bold text-[10px]">2</span>
+                                Тариф и оплата
                             </span>
                             <span className="text-white/20">──</span>
                             <span className="flex items-center gap-1 text-white/40">
                                 <span className="w-5 h-5 rounded-full border border-white/20 flex items-center justify-center font-bold text-[10px]">3</span>
-                                Оплата
+                                Анкета
                             </span>
                         </div>
 
                         <p className="text-sm text-white/80 text-center mb-3">
-                            Создайте аккаунт — это нужно чтобы привязать платёж к вашему личному кабинету.
-                            Займёт 30 секунд.
+                            Создайте аккаунт — это нужно чтобы привязать оплату и программу к вашему
+                            личному кабинету. Займёт 30 секунд.
                         </p>
 
                         <div className="flex flex-col gap-1.5">
                             <div className="flex items-center gap-2 text-xs text-white/60">
                                 <ShieldCheck className="w-3.5 h-3.5 text-accent flex-shrink-0" />
-                                После регистрации вы вернётесь на страницу оплаты
+                                После регистрации вы выберете тариф и оплатите
                             </div>
                             <div className="flex items-center gap-2 text-xs text-white/60">
                                 <CreditCard className="w-3.5 h-3.5 text-accent flex-shrink-0" />

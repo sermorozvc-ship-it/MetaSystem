@@ -423,10 +423,11 @@ function PaymentContent() {
                             <CheckCircle2 className="w-5 h-5 text-bg-main" />
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-white font-semibold mb-1">Аккаунт создан — вы вернулись на страницу оплаты</p>
+                            <p className="text-white font-semibold mb-1">Аккаунт создан — выберите тариф</p>
                             <p className="text-text-secondary text-sm">
-                                Всё в порядке. Выберите тариф и нажмите «Оплатить» — вас перенаправит на ЮMoney.
-                                После оплаты вы сразу попадёте в личный кабинет.
+                                Это шаг 2 из 3: выберите тариф, при необходимости добавьте план питания
+                                и промокод, затем оплатите через ЮMoney. После оплаты сразу попадёте
+                                в личный кабинет к анкете.
                             </p>
                         </div>
                         <button

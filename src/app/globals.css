@@ -652,6 +652,21 @@ input[type="range"]::-webkit-slider-thumb {
   color: var(--text-muted);
 }
 
+.hero-login {
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.hero-login a {
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.2s;
+}
+.hero-login a:hover {
+  color: var(--accent);
+}
+
 /* Section titles */
 .section-title {
   font-family: var(--font-display);

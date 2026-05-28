@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 export default function PageWrapper({ children }: { children: React.ReactNode }) {
     const pathname = usePathname()
 
-    const noNavPaths = ['/', '/auth', '/payment', '/questionnaire', '/onboarding']
+    const noNavPaths = ['/', '/auth', '/payment', '/questionnaire', '/onboarding', '/get-started']
     const needsPadding = !noNavPaths.some(p => pathname === p || pathname.startsWith(p + '/'))
 
     if (!needsPadding) return <>{children}</>

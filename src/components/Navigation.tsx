@@ -13,7 +13,7 @@ export default function Navigation() {
   const router = useRouter()
   const pathname = usePathname()
 
-  const noNavPaths = ['/', '/auth', '/payment', '/questionnaire', '/onboarding']
+  const noNavPaths = ['/', '/auth', '/payment', '/questionnaire', '/onboarding', '/get-started']
   if (!user || noNavPaths.some(p => pathname === p || pathname.startsWith(p + '/'))) {
     return null
   }

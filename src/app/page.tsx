@@ -779,11 +779,13 @@ export default function LandingPage() {
         return () => observer.disconnect()
     }, [])
 
-    const handleBuyPlan = (planKey: string) => {
-        // Сохраняем выбранный план и переходим на страницу оплаты
-        // Регистрация происходит после оплаты через /onboarding
-        sessionStorage.setItem('selected_plan', planKey)
-        router.push(`/payment?plan=${planKey}`)
+    const handleBuyPlan = (_planKey: string) => {
+        // Раньше тариф сохранялся в sessionStorage и пользователь шёл сразу
+        // на /payment — но без аккаунта, что приводило к двойному показу
+        // /payment (до и после регистрации). Теперь любой клик по тарифу
+        // ведёт на информационную страницу /get-started, где пользователь
+        // регистрируется и уже после этого попадает на /payment один раз.
+        router.push('/get-started')
     }
 
     const scrollTo = (id: string) => {
@@ -861,6 +863,15 @@ export default function LandingPage() {
                     </a>
                 </div>
                 <p className="hero-people">👤 Прямо сейчас со мной занимаются 23 человека</p>
+                <p className="hero-login">
+                    Уже есть аккаунт?{' '}
+                    <a
+                        href="/auth?mode=login"
+                        onClick={(e) => { e.preventDefault(); router.push('/auth?mode=login') }}
+                    >
+                        Войти →
+                    </a>
+                </p>
             </section>
 
             {/* ВИДЕО */}
