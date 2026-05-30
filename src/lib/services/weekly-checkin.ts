@@ -5,6 +5,7 @@
 // (формирует блок "Чек-ин клиента" в markdown).
 
 import { createClient } from '@/lib/supabase/client'
+import { withTimeout } from '@/lib/utils/with-timeout'
 
 export interface WeeklyCheckin {
     id: string
@@ -21,17 +22,25 @@ export interface WeeklyCheckin {
  */
 export async function getWeeklyCheckin(programId: string): Promise<WeeklyCheckin | null> {
     const supabase = createClient()
-    const { data, error } = await supabase
-        .from('weekly_checkins')
-        .select('*')
-        .eq('program_id', programId)
-        .maybeSingle()
+    try {
+        const { data, error } = await withTimeout<{ data: WeeklyCheckin | null; error: any }>(
+            supabase
+                .from('weekly_checkins')
+                .select('*')
+                .eq('program_id', programId)
+                .maybeSingle(),
+            'getWeeklyCheckin',
+        )
 
-    if (error) {
-        console.error('[weekly-checkin] getWeeklyCheckin error:', error)
+        if (error) {
+            console.error('[weekly-checkin] getWeeklyCheckin error:', error)
+            return null
+        }
+        return data as WeeklyCheckin | null
+    } catch (e) {
+        console.error('[weekly-checkin] getWeeklyCheckin (timeout/network):', e)
         return null
     }
-    return data as WeeklyCheckin | null
 }
 
 /**
@@ -52,11 +61,14 @@ export async function upsertWeeklyCheckin(params: {
     }
     if (params.completed) payload.completed_at = new Date().toISOString()
 
-    const { data, error } = await supabase
-        .from('weekly_checkins')
-        .upsert(payload, { onConflict: 'program_id' })
-        .select()
-        .single()
+    const { data, error } = await withTimeout<{ data: WeeklyCheckin | null; error: any }>(
+        supabase
+            .from('weekly_checkins')
+            .upsert(payload, { onConflict: 'program_id' })
+            .select()
+            .single(),
+        'upsertWeeklyCheckin',
+    )
 
     if (error) {
         console.error('[weekly-checkin] upsertWeeklyCheckin error:', error)
@@ -73,13 +85,21 @@ export async function upsertWeeklyCheckin(params: {
  */
 export async function markWeeklyCheckinCompleted(programId: string): Promise<void> {
     const supabase = createClient()
-    const { error } = await supabase
-        .from('weekly_checkins')
-        .update({ completed_at: new Date().toISOString() })
-        .eq('program_id', programId)
-        .is('completed_at', null)
-    if (error) {
-        console.error('[weekly-checkin] markWeeklyCheckinCompleted error:', error)
+    try {
+        const { error } = await withTimeout<{ error: any }>(
+            supabase
+                .from('weekly_checkins')
+                .update({ completed_at: new Date().toISOString() })
+                .eq('program_id', programId)
+                .is('completed_at', null),
+            'markWeeklyCheckinCompleted',
+        )
+        if (error) {
+            console.error('[weekly-checkin] markWeeklyCheckinCompleted error:', error)
+            // Не бросаем — не критично для основного flow
+        }
+    } catch (e) {
+        console.error('[weekly-checkin] markWeeklyCheckinCompleted (timeout/network):', e)
         // Не бросаем — не критично для основного flow
     }
 }

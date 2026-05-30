@@ -589,44 +589,132 @@ function CheckinBlock({ programId, userId, text }: { programId: string; userId: 
     // Парсим вопросы один раз
     const questions = useMemo(() => parseCheckinQuestions(text), [text])
 
-    // Загружаем существующий чек-ин
+    // Ключ локального бэкапа — страховка от потери ответов при reload/сетевом сбое.
+    const draftKey = `checkin_draft_${programId}`
+
+    // Всегда свежие answers для flush из обработчиков (blur/pagehide),
+    // чтобы не ловить stale-closure.
+    const answersRef = useRef(answers)
+    useEffect(() => { answersRef.current = answers }, [answers])
+
+    // Загружаем существующий чек-ин. Если локальный черновик новее серверного
+    // updated_at — восстанавливаем его (последнее сохранение не дошло).
     useEffect(() => {
         let cancelled = false
+        let localDraft: { answers?: Record<string, string>; savedAt?: number } | null = null
+        try {
+            const raw = localStorage.getItem(draftKey)
+            if (raw) localDraft = JSON.parse(raw)
+        } catch { /* noop */ }
+
         getWeeklyCheckin(programId)
             .then(checkin => {
                 if (cancelled) return
+                const serverUpdatedAt = checkin?.updated_at ? new Date(checkin.updated_at).getTime() : 0
+                const draftIsNewer = !!localDraft?.savedAt && localDraft.savedAt > serverUpdatedAt + 1000
                 if (checkin) {
-                    setAnswers(checkin.answers || {})
                     setCompletedAt(checkin.completed_at)
+                    if (draftIsNewer && localDraft?.answers && !checkin.completed_at) {
+                        setAnswers(localDraft.answers)
+                        dirtyRef.current = true   // досохраним
+                        console.info('[checkin] restored local draft (newer than server)')
+                    } else {
+                        setAnswers(checkin.answers || {})
+                        try { localStorage.removeItem(draftKey) } catch { /* noop */ }
+                    }
+                } else if (localDraft?.answers) {
+                    // Записи на сервере нет, но есть черновик — поднимаем его.
+                    setAnswers(localDraft.answers)
+                    dirtyRef.current = true
                 }
             })
             .finally(() => { if (!cancelled) setLoading(false) })
         return () => { cancelled = true }
-    }, [programId])
+    }, [programId, draftKey])
 
-    // Debounce-автосохранение
+    // ─── Сохранение с мьютексом + очередью ──────────────────────────────────
+    // Гарантии (как в основном дневнике):
+    //  - параллельных upsert нет (inFlightRef);
+    //  - правки во время сохранения не теряются (pendingRef → повтор);
+    //  - upsertWeeklyCheckin обёрнут в withTimeout — спиннер «Сохраняю...»
+    //    больше не висит вечно при флапающей сети.
     const dirtyRef = useRef(false)
+    const inFlightRef = useRef(false)
+    const pendingRef = useRef(false)
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    const doSave = useCallback(async () => {
+        if (inFlightRef.current) { pendingRef.current = true; return }
+        inFlightRef.current = true
+        setSaveStatus('saving')
+        setError(null)
+        try {
+            await upsertWeeklyCheckin({ programId, userId, answers: answersRef.current })
+            dirtyRef.current = false
+            try { localStorage.removeItem(draftKey) } catch { /* noop */ }
+            setSaveStatus('saved')
+            setTimeout(() => setSaveStatus(s => s === 'saved' ? 'idle' : s), 1500)
+        } catch (e: any) {
+            setSaveStatus('error')
+            setError(e?.message || 'Ошибка сохранения')
+        } finally {
+            inFlightRef.current = false
+            if (pendingRef.current) {
+                pendingRef.current = false
+                setTimeout(() => { void doSave() }, 50)
+            }
+        }
+    }, [programId, userId, draftKey])
+
+    // Немедленный сброс (flush): отменяет дебаунс и сохраняет сейчас.
+    // Вызывается при blur поля и при уходе со страницы — закрывает дыру
+    // «ввёл ответ → сразу нажал Завершить, дебаунс не успел».
+    const flush = useCallback(() => {
+        if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null }
+        if (dirtyRef.current) void doSave()
+    }, [doSave])
+
+    // Debounce-автосохранение 800мс
     useEffect(() => {
         if (!dirtyRef.current) return
-        const t = setTimeout(async () => {
-            setSaveStatus('saving')
-            setError(null)
+        if (debounceRef.current) clearTimeout(debounceRef.current)
+        debounceRef.current = setTimeout(() => { void doSave() }, 800)
+        return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+    }, [answers, doSave])
+
+    // Flush при уходе со страницы / сворачивании вкладки — последняя линия защиты.
+    useEffect(() => {
+        const onHide = () => {
+            // Пишем черновик синхронно (сеть может не успеть на pagehide).
             try {
-                await upsertWeeklyCheckin({ programId, userId, answers })
-                setSaveStatus('saved')
-                setTimeout(() => setSaveStatus(s => s === 'saved' ? 'idle' : s), 1500)
-            } catch (e: any) {
-                setSaveStatus('error')
-                setError(e?.message || 'Ошибка сохранения')
-            }
-            dirtyRef.current = false
-        }, 800)
-        return () => clearTimeout(t)
-    }, [answers, programId, userId])
+                if (dirtyRef.current) {
+                    localStorage.setItem(draftKey, JSON.stringify({ answers: answersRef.current, savedAt: Date.now() }))
+                }
+            } catch { /* noop */ }
+            flush()
+        }
+        const onVisibility = () => { if (document.visibilityState === 'hidden') onHide() }
+        window.addEventListener('pagehide', onHide)
+        window.addEventListener('beforeunload', onHide)
+        document.addEventListener('visibilitychange', onVisibility)
+        return () => {
+            window.removeEventListener('pagehide', onHide)
+            window.removeEventListener('beforeunload', onHide)
+            document.removeEventListener('visibilitychange', onVisibility)
+        }
+    }, [flush, draftKey])
 
     const updateAnswer = (key: string, value: string) => {
         setAnswers(prev => ({ ...prev, [key]: value }))
         dirtyRef.current = true
+        // Сразу пишем локальный черновик — данные не пропадут даже если
+        // вкладку закроют до срабатывания дебаунса.
+        try {
+            localStorage.setItem(draftKey, JSON.stringify({
+                answers: { ...answersRef.current, [key]: value },
+                savedAt: Date.now(),
+            }))
+        } catch { /* noop */ }
     }
 
     const filledCount = questions.filter(q => {
@@ -691,6 +779,7 @@ function CheckinBlock({ programId, userId, text }: { programId: string; userId: 
                                                 id={inputId}
                                                 value={value}
                                                 onChange={e => updateAnswer(q.key, e.target.value)}
+                                                onBlur={flush}
                                                 disabled={isCompleted}
                                                 rows={2}
                                                 className="glass-input w-full text-sm resize-y disabled:opacity-60"
@@ -702,6 +791,7 @@ function CheckinBlock({ programId, userId, text }: { programId: string; userId: 
                                                 type="number"
                                                 value={value}
                                                 onChange={e => updateAnswer(q.key, e.target.value)}
+                                                onBlur={flush}
                                                 disabled={isCompleted}
                                                 min={q.min}
                                                 max={q.max}
@@ -714,6 +804,7 @@ function CheckinBlock({ programId, userId, text }: { programId: string; userId: 
                                                 type="text"
                                                 value={value}
                                                 onChange={e => updateAnswer(q.key, e.target.value)}
+                                                onBlur={flush}
                                                 disabled={isCompleted}
                                                 className="glass-input w-full text-sm disabled:opacity-60"
                                                 placeholder="Свободный ответ..."
@@ -858,6 +949,23 @@ export default function ProgramDetailPage() {
     //  3. UI всегда видит реальный статус (saveStatus), а не залипший isSaving.
     const inFlightRef = useRef(false)
     const pendingRef = useRef(false)
+    // Когда был захвачен inFlightRef. Нужно для защиты от «вечного» лока:
+    // если по какой-то причине finally не отработал (например вкладку
+    // усыпили прямо во время запроса и таймер withTimeout не сработал),
+    // лок старше STALE_LOCK_MS считается протухшим и принудительно снимается.
+    // Иначе кнопки «Сохранить»/«Завершить» залипали бы до hard reload.
+    const inFlightSinceRef = useRef<number>(0)
+    const STALE_LOCK_MS = 20_000
+    // true если лок свободен ИЛИ протух — можно стартовать новую операцию.
+    const lockIsFree = useCallback(() => {
+        if (!inFlightRef.current) return true
+        if (Date.now() - inFlightSinceRef.current > STALE_LOCK_MS) {
+            console.warn('[program] stale in-flight lock force-released after', STALE_LOCK_MS, 'ms')
+            inFlightRef.current = false
+            return true
+        }
+        return false
+    }, [])
     const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
     const [saveError, setSaveError] = useState<string | null>(null)
@@ -994,8 +1102,8 @@ export default function ProgramDetailPage() {
             try {
                 const entry = await getTrainingEntry(program.id, currentDay.dayNumber)
                 if (entry) {
-                    // Запоминаем серверный снимок — он будет защитой от
-                    // деструктивной записи в isDestructiveSave.
+                    // Запоминаем серверный снимок — он используется для
+                    // не деструктивного merge в reconcileWithServer.
                     lastServerEntryRef.current = entry.entry_data || null
 
                     const converted: Record<string, ExerciseClientData> = {}
@@ -1146,15 +1254,12 @@ export default function ProgramDetailPage() {
             } catch (e) {
                 console.error('Error loading entry:', e)
                 // Сеть/RLS отвалились — НЕ знаем, что на сервере.
-                // ОЧЕНЬ ВАЖНО: ставим lastServerEntryRef = null, чтобы
-                // защита от деструктивной записи в saveEntry была отключена
-                // только если на самом сервере записи реально нет. Если
-                // мы просто не дозвонились, — автосейв должен молчать
-                // и не имеет права писать пустоту поверх возможно полных
-                // данных. См. ниже: при null серверного снимка автосейв
-                // в isDestructiveSave не блокирует, но мы дополнительно
-                // НЕ запускаем автосейв на этой загрузке (userChangedRef
-                // ставится только если мы реально подняли черновик).
+                // ОЧЕНЬ ВАЖНО: ставим lastServerEntryRef = null. При null
+                // reconcileWithServer не вмешивается (нечего сравнивать), но
+                // мы дополнительно НЕ запускаем автосейв на этой загрузке
+                // (userChangedRef ставится только если мы реально подняли
+                // черновик), чтобы не писать пустоту поверх возможно полных
+                // серверных данных.
                 lastServerEntryRef.current = null
                 // Пробуем хотя бы поднять локальный черновик, чтобы
                 // пользователь не остался с пустыми полями.
@@ -1261,41 +1366,39 @@ export default function ProgramDetailPage() {
      * @returns true если сохранилось, false если упало (но кнопка свободна)
      */
     /**
-     * Проверка деструктивности upsert. Возвращает true если предлагаемая
-     * запись «уменьшает» серверную (теряет упражнения с уже введёнными
-     * подходами). Используется как предохранитель от race condition между
-     * двумя устройствами:
-     *   - десктоп открыл страницу,
-     *   - сервер не отдал запись (таймаут),
-     *   - десктоп показал пустые поля,
-     *   - автосейв стартовал и затёр работу с другого устройства.
+     * Сверка с серверным снимком. Раньше здесь был жёсткий БЛОК: если
+     * предлагаемая запись «теряла» упражнения, заполненные на сервере, —
+     * upsert отменялся (return false). Проблема: lastServerEntryRef при этом
+     * не обновлялся, поэтому КАЖДЫЙ следующий save снова блокировался —
+     * кнопка «Сохранить» намертво залипала до hard reload.
+     *
+     * Новое поведение: вместо блокировки — НЕ деструктивный merge. Любое
+     * упражнение, которое на сервере имеет заполненные подходы, а в текущем
+     * снимке стало пустым/пропало (например другое устройство дозаполнило,
+     * а наш стейт устарел), — переносится из серверного снимка в запись.
+     * Так данные не теряются И запись всегда проходит — UI не залипает.
      */
-    const isDestructiveSave = useCallback((nextEntryData: Record<string, any>): { destructive: boolean; reason?: string } => {
+    const reconcileWithServer = useCallback((nextEntryData: Record<string, any>): { merged: Record<string, any>; preserved: string[] } => {
         const serverData = lastServerEntryRef.current
-        if (!serverData) return { destructive: false }
+        if (!serverData) return { merged: nextEntryData, preserved: [] }
 
         const hasFilledSets = (ex: any): boolean => {
             if (!ex || !Array.isArray(ex.sets)) return false
             return ex.sets.some((s: any) => (s?.weight && String(s.weight).trim() !== '') || (s?.reps && String(s.reps).trim() !== ''))
         }
 
-        const lostExercises: string[] = []
+        const merged = { ...nextEntryData }
+        const preserved: string[] = []
         for (const key of Object.keys(serverData)) {
             if (key === '__meta__') continue
             const serverEx = (serverData as any)[key]
             const nextEx = (nextEntryData as any)[key]
             if (hasFilledSets(serverEx) && !hasFilledSets(nextEx)) {
-                lostExercises.push(key)
+                merged[key] = serverEx
+                preserved.push(key)
             }
         }
-
-        if (lostExercises.length > 0) {
-            return {
-                destructive: true,
-                reason: `Отказался затирать ${lostExercises.length} упражн. с заполненными подходами на сервере: ${lostExercises.join(', ')}`,
-            }
-        }
-        return { destructive: false }
+        return { merged, preserved }
     }, [])
 
     const saveEntry = useCallback(async (silent = false): Promise<boolean> => {
@@ -1305,11 +1408,13 @@ export default function ProgramDetailPage() {
 
         // Если запрос уже в полёте — отметим, что нужен повторный прогон,
         // и выйдем. Текущий saveEntry внутри finally сам перезапустится.
-        if (inFlightRef.current) {
+        // lockIsFree() заодно снимает протухший лок (см. inFlightSinceRef).
+        if (!lockIsFree()) {
             pendingRef.current = true
             return false
         }
         inFlightRef.current = true
+        inFlightSinceRef.current = Date.now()
 
         if (!silent) setIsSaving(true)
         setSaveError(null)
@@ -1331,31 +1436,31 @@ export default function ProgramDetailPage() {
         try {
             const snap = buildEntrySnapshot()
 
-            // ─── ПРЕДОХРАНИТЕЛЬ от деструктивной записи ──────────────────────
+            // ─── НЕ деструктивный merge с серверным снимком ──────────────────
             // Если на сервере было больше заполненных упражнений, чем сейчас
-            // в стейте — это значит:
-            //   а) сервер не успел загрузиться (таймаут), мы видим пустоту
-            //   б) на другом устройстве пользователь дозаполнил, к нам
-            //      пришёл свежий снимок через focus-reload, а наш стейт
-            //      устарел.
-            // В обоих случаях затирать чужие данные нельзя. Отказываемся
-            // молча — на следующем focus-reload подтянем актуальное состояние.
-            const guard = isDestructiveSave(snap.entryData)
-            if (guard.destructive) {
-                console.warn('[program] DESTRUCTIVE SAVE BLOCKED:', guard.reason)
-                if (savingIndicatorTimer) {
-                    clearTimeout(savingIndicatorTimer)
-                    savingIndicatorTimer = null
+            // в стейте (другое устройство дозаполнило / наш стейт устарел) —
+            // переносим эти упражнения в запись, чтобы их не потерять.
+            // Раньше тут был жёсткий блок, который залипал навсегда — см.
+            // комментарий в reconcileWithServer.
+            const { merged, preserved } = reconcileWithServer(snap.entryData)
+            if (preserved.length > 0) {
+                console.warn('[program] preserved', preserved.length, 'server-filled exercises during save:', preserved.join(', '))
+                // Подтянем сохранённые с сервера упражнения обратно в UI-стейт,
+                // чтобы пользователь увидел, что данные не пропали.
+                const restore: Record<string, ExerciseClientData> = {}
+                for (const key of preserved) {
+                    const ex = (merged as any)[key]
+                    if (ex?.sets) restore[key] = { sets: ex.sets, comment: ex.comment || '', selectedAlternativeId: ex.selectedAlternativeId }
                 }
-                setSaveStatus('idle')
-                if (!silent) setSaveMessage('Не сохранено: на сервере есть более полные данные. Обнови страницу.')
-                return false
+                if (Object.keys(restore).length > 0) {
+                    setExerciseData(prev => ({ ...restore, ...prev }))
+                }
             }
 
-            await upsertTrainingEntry(program.id, currentDay.dayNumber, snap.entryData, snap.metadata)
+            await upsertTrainingEntry(program.id, currentDay.dayNumber, merged, snap.metadata)
 
             // Запоминаем, что теперь на сервере — наш только что записанный снимок.
-            lastServerEntryRef.current = snap.entryData
+            lastServerEntryRef.current = merged
 
             lastSavedAtRef.current = Date.now()
             // Серверная запись подтверждена — локальный бэкап больше не нужен,
@@ -1407,7 +1512,7 @@ export default function ProgramDetailPage() {
                 setTimeout(() => { saveEntryRef.current?.(true) }, 50)
             }
         }
-    }, [program, currentDayIndex, user, buildEntrySnapshot, backupKey, isDestructiveSave])
+    }, [program, currentDayIndex, user, buildEntrySnapshot, backupKey, reconcileWithServer, lockIsFree])
 
     // Ref на актуальный saveEntry, чтобы можно было дёргать его внутри
     // самого saveEntry (для pending-проброса) и из flush-on-unmount без
@@ -1597,9 +1702,16 @@ export default function ProgramDetailPage() {
         if (!program) return
         const currentDay = program.program_data.days[currentDayIndex]
         if (!currentDay) return
-        // Защита от двойного клика и от гонки с автосейвом
-        if (inFlightRef.current) return
+        // Защита от двойного клика и от гонки с автосейвом.
+        // lockIsFree() снимает протухший лок — иначе кнопка «Завершить»
+        // могла залипнуть навсегда после подвисшего автосейва.
+        if (!lockIsFree()) {
+            setSaveMessage('Идёт сохранение, подожди секунду…')
+            setTimeout(() => setSaveMessage(''), 2000)
+            return
+        }
         inFlightRef.current = true
+        inFlightSinceRef.current = Date.now()
         // Если есть «висящий» дебаунс — отменяем, чтобы не записать дважды
         if (debounceTimerRef.current) {
             clearTimeout(debounceTimerRef.current)
@@ -1650,8 +1762,13 @@ export default function ProgramDetailPage() {
         if (!program) return
         const currentDay = program.program_data.days[currentDayIndex]
         if (!currentDay) return
-        if (inFlightRef.current) return
+        if (!lockIsFree()) {
+            setSaveMessage('Идёт сохранение, подожди секунду…')
+            setTimeout(() => setSaveMessage(''), 2000)
+            return
+        }
         inFlightRef.current = true
+        inFlightSinceRef.current = Date.now()
         if (debounceTimerRef.current) {
             clearTimeout(debounceTimerRef.current)
             debounceTimerRef.current = null

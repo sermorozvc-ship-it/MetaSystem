@@ -53,26 +53,28 @@ export default function StreakCard({ stats, compact, showLink, onLinkClick }: Pr
 
   return (
     <div className="glass-card p-6">
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3">
+      <div className="flex items-start justify-between gap-2 mb-4">
+        <div className="flex items-center gap-3 min-w-0">
           <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
             currentStreak >= 1 ? 'bg-accent/15' : currentWeekProgress && currentWeekProgress.completed > 0 ? 'bg-accent/10' : 'bg-bg-elevated'
           }`}>
             <Flame className={`w-6 h-6 ${flameColor}`} />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs text-text-muted uppercase tracking-wider">Стрик</p>
-            <p className="text-3xl font-display font-bold text-white leading-tight">
-              {currentStreak}
-              <span className="text-base text-text-muted ml-1.5 font-normal">
+            <div className="flex items-baseline gap-1.5 flex-wrap">
+              <span className="text-3xl font-display font-bold text-white leading-tight">
+                {currentStreak}
+              </span>
+              <span className="text-sm text-text-muted font-normal whitespace-nowrap">
                 {currentStreak === 1 ? 'неделя' : currentStreak >= 2 && currentStreak <= 4 ? 'недели' : 'недель'} подряд
               </span>
-            </p>
+            </div>
           </div>
         </div>
         {bestStreak > 0 && (
-          <div className="flex items-center gap-1.5 text-xs text-text-muted bg-bg-elevated/60 rounded-full px-2.5 py-1">
-            <Trophy className="w-3.5 h-3.5 text-warning" />
+          <div className="flex items-center gap-1.5 text-xs text-text-muted bg-bg-elevated/60 rounded-full px-2.5 py-1 flex-shrink-0 whitespace-nowrap">
+            <Trophy className="w-3.5 h-3.5 text-warning flex-shrink-0" />
             <span>Лучший: {bestStreak}</span>
           </div>
         )}

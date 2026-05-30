@@ -1,7 +1,7 @@
 // MetaSystem v2 — Training Service
 // Сервис для работы с тренировочными программами
 
-import { createClient } from '@/lib/supabase/client'
+import { createClient, safeGetUser } from '@/lib/supabase/client'
 import { notifyProgramUploaded } from './notifications'
 import { withTimeout } from '@/lib/utils/with-timeout'
 
@@ -399,8 +399,13 @@ export async function upsertTrainingEntry(
   }
 ): Promise<TrainingEntry> {
   const supabase = createClient()
-  
-  const { data: { user } } = await supabase.auth.getUser()
+
+  // safeGetUser имеет таймаут 4с + 10с кеш. Голый supabase.auth.getUser()
+  // здесь раньше мог «висеть» на флапающей сети ДО запуска upsert —
+  // тогда withTimeout ниже не срабатывал, finally в вызывающем коде не
+  // выполнялся, inFlightRef залипал в true и кнопки «Сохранить»/«Завершить»
+  // переставали работать до hard reload. Используем safeGetUser.
+  const user = await safeGetUser()
   if (!user) throw new Error('Not authenticated')
 
   const { data, error } = await withTimeout<{ data: TrainingEntry | null; error: any }>(
@@ -439,7 +444,9 @@ export async function completeTrainingDay(
 ): Promise<void> {
   const supabase = createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  // safeGetUser — таймаут 4с + кеш. См. комментарий в upsertTrainingEntry:
+  // голый getUser мог подвесить весь flow «Завершить» до hard reload.
+  const user = await safeGetUser()
   if (!user) throw new Error('Not authenticated')
 
   const { error } = await withTimeout<{ error: any }>(
