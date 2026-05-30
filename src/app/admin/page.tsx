@@ -33,14 +33,14 @@ export default function AdminDashboardPage() {
         let cancelled = false
 
         const load = async () => {
-            // Проверяем admin и грузим данные за один проход
-            const admin = await isAdmin(user)
-            if (cancelled) return
-            if (!admin) { router.replace('/dashboard'); return }
-
-            setIsAdminUser(true)
-
             try {
+                // Проверяем admin и грузим данные за один проход
+                const admin = await isAdmin(user)
+                if (cancelled) return
+                if (!admin) { router.replace('/dashboard'); return }
+
+                setIsAdminUser(true)
+
                 const [usersData, statsData] = await Promise.all([
                     getAllUsers(),
                     getAdminStats(),
@@ -52,6 +52,8 @@ export default function AdminDashboardPage() {
             } catch (e) {
                 console.error('Error loading admin data:', e)
             } finally {
+                // ВСЕГДА снимаем спиннер, даже если isAdmin/загрузка упали или
+                // эффект был отменён до завершения — иначе вечный лоадер.
                 if (!cancelled) setIsLoading(false)
             }
         }
@@ -68,9 +70,26 @@ export default function AdminDashboardPage() {
         }, 8000)
 
         return () => { cancelled = true; clearTimeout(failsafe) }
-    }, [user, authLoading, router])
+        // Зависим от user?.id (стабильная строка), а НЕ от объекта user:
+        // onAuthStateChange (token refresh / focus) создаёт новый объект user
+        // с тем же id, и зависимость от объекта перезапускала бы эффект,
+        // отменяя текущую загрузку до finally → вечный спиннер при SPA-навигации.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, authLoading])
 
-    if (authLoading || isLoading || !isAdminUser) {
+    // Спиннер показываем пока идёт первичная загрузка. НЕ гейтим по isAdminUser:
+    // failsafe сбрасывает только isLoading, и при подвисшей проверке прав
+    // гейт по !isAdminUser держал бы лоадер вечно. Не-админ редиректится выше.
+    if (authLoading || isLoading) {
+        return (
+            <div className="min-h-screen bg-bg-main flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-accent animate-spin" />
+            </div>
+        )
+    }
+
+    // Защита: если права не подтвердились (редирект уже инициирован) — не мигаем контентом
+    if (!isAdminUser) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />

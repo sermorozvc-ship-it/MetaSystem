@@ -27,13 +27,13 @@ export default function AdminClientsPage() {
         let cancelled = false
 
         const load = async () => {
-            const admin = await isAdmin(user)
-            if (cancelled) return
-            if (!admin) { router.replace('/dashboard'); return }
-
-            setIsAdminUser(true)
-
             try {
+                const admin = await isAdmin(user)
+                if (cancelled) return
+                if (!admin) { router.replace('/dashboard'); return }
+
+                setIsAdminUser(true)
+
                 const data = await getAllUsers()
                 if (cancelled) return
                 const clientsOnly = data.filter(u => u.role !== 'admin' && u.role !== 'trainer')
@@ -46,8 +46,15 @@ export default function AdminClientsPage() {
         }
 
         load()
-        return () => { cancelled = true }
-    }, [user, authLoading, router])
+        const failsafe = setTimeout(() => {
+            if (!cancelled) setIsLoading(false)
+        }, 8000)
+        return () => { cancelled = true; clearTimeout(failsafe) }
+        // user?.id — стабильная строка: onAuthStateChange создаёт новый объект
+        // user, и зависимость от объекта перезапускала бы эффект, отменяя
+        // загрузку до finally → вечный спиннер при SPA-навигации.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, authLoading])
 
     const activeClients = clients.filter(c => !c.is_archived)
     const archivedClients = clients.filter(c => c.is_archived)
@@ -109,7 +116,15 @@ export default function AdminClientsPage() {
         }
     }
 
-    if (authLoading || isLoading || !isAdminUser) {
+    if (authLoading || isLoading) {
+        return (
+            <div className="min-h-screen bg-bg-main flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-accent animate-spin" />
+            </div>
+        )
+    }
+
+    if (!isAdminUser) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />

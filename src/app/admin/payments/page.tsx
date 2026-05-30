@@ -41,13 +41,13 @@ export default function AdminPaymentsPage() {
         let cancelled = false
 
         const load = async () => {
-            const admin = await isAdmin(user)
-            if (cancelled) return
-            if (!admin) { router.replace('/admin'); return }
-
-            setIsAdminUser(true)
-
             try {
+                const admin = await isAdmin(user)
+                if (cancelled) return
+                if (!admin) { router.replace('/admin'); return }
+
+                setIsAdminUser(true)
+
                 const [paymentsData, statsData] = await Promise.all([
                     getAllPayments(),
                     getPaymentsByMonth(12),
@@ -63,8 +63,13 @@ export default function AdminPaymentsPage() {
         }
 
         load()
-        return () => { cancelled = true }
-    }, [user, authLoading, router])
+        const failsafe = setTimeout(() => {
+            if (!cancelled) setIsLoading(false)
+        }, 8000)
+        return () => { cancelled = true; clearTimeout(failsafe) }
+        // user?.id стабилен — см. коммент в admin/page.tsx про гонку с onAuthStateChange.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, authLoading])
 
     const handleConfirm = async (paymentId: string) => {
         setActionLoading(paymentId)
@@ -105,7 +110,16 @@ export default function AdminPaymentsPage() {
     const totalConfirmed = payments.filter(p => p.status === 'confirmed').reduce((s, p) => s + p.amount, 0)
     const totalPending = payments.filter(p => p.status === 'pending').length
 
-    if (authLoading || isLoading || !isAdminUser) {
+    if (authLoading || isLoading) {
+        return (
+            <div className="min-h-screen bg-bg-main flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-accent animate-spin" />
+            </div>
+        )
+    }
+
+    // Права не подтвердились (редирект уже инициирован) — не мигаем контентом
+    if (!isAdminUser) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />

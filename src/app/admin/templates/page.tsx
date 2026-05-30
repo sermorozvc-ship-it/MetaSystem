@@ -66,11 +66,11 @@ export default function AdminTemplatesPage() {
 
         let cancelled = false
         const init = async () => {
-            const admin = await isAdmin(user)
-            if (cancelled) return
-            if (!admin) { router.replace('/dashboard'); return }
-            setIsAdminUser(true)
             try {
+                const admin = await isAdmin(user)
+                if (cancelled) return
+                if (!admin) { router.replace('/dashboard'); return }
+                setIsAdminUser(true)
                 const data = await listTemplates()
                 if (!cancelled) setTemplates(data)
             } catch (e: unknown) {
@@ -92,7 +92,9 @@ export default function AdminTemplatesPage() {
         }, 8000)
 
         return () => { cancelled = true; clearTimeout(failsafe) }
-    }, [user, authLoading, router])
+        // user?.id стабилен — см. коммент в admin/page.tsx про гонку с onAuthStateChange.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, authLoading])
 
     const allTags = useMemo(() => {
         const set = new Set<string>()
@@ -220,7 +222,16 @@ export default function AdminTemplatesPage() {
         }
     }
 
-    if (authLoading || loading || !isAdminUser) {
+    if (authLoading || loading) {
+        return (
+            <div className="min-h-screen bg-bg-main flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-accent animate-spin" />
+            </div>
+        )
+    }
+
+    // Права не подтвердились (редирект уже инициирован) — не мигаем контентом
+    if (!isAdminUser) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />
