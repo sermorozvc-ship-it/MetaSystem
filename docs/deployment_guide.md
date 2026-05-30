@@ -47,9 +47,8 @@ ORDER BY table_name;
 NEXT_PUBLIC_SUPABASE_URL=https://bzyypoyvihqhrbllgffh.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key из Supabase Dashboard>
 SUPABASE_SERVICE_ROLE_KEY=<service role key из Supabase Dashboard>
-YOOMONEY_WALLET=410014990008683
-YOOMONEY_SECRET=<секрет из настроек ЮMoney>
-NEXT_PUBLIC_YOOMONEY_WALLET=410014990008683
+NEXT_PUBLIC_PRODAMUS_FORM_URL=https://metasystem.payform.ru
+PRODAMUS_SECRET_KEY=<секрет из ЛК Prodamus → Интеграция>
 NEXT_PUBLIC_APP_URL=https://meta-system-ja1o.vercel.app
 ```
 
@@ -142,16 +141,16 @@ npm run dev
 
 ---
 
-## Шаг 5: Настройка вебхука ЮMoney
+## Шаг 5: Настройка вебхука Prodamus
 
 ### Инструкция:
-1. Войдите в кошелек ЮMoney: https://yoomoney.ru
-2. Перейдите в **Настройки** → **Уведомления**
-3. Добавьте HTTP-уведомление:
-   - **URL:** `https://meta-system-ja1o.vercel.app/api/payments/yoomoney-webhook`
-   - **Секрет:** `STtr6NB+i52qaZAKS7PgLwA2`
-   - **События:** Успешный платеж
-4. Сохраните настройки
+1. Войдите в ЛК Prodamus и откройте свою платёжную страницу
+2. Перейдите в раздел **«Уведомления»** / **«Интеграция»**
+3. Заполните «URL для уведомлений»:
+   - **URL:** `https://meta-system-ja1o.vercel.app/api/payments/prodamus-webhook`
+   - **Секретный ключ:** оттуда же → в переменную `PRODAMUS_SECRET_KEY` (Vercel)
+4. Убедитесь, что канал в режиме **«Активный»** (для боевых платежей)
+5. Сохраните настройки
 
 ### Проверка вебхука:
 После настройки сделайте тестовый платеж и проверьте:
@@ -195,7 +194,7 @@ git push -f origin main
 - [ ] Локальное тестирование пройдено
 - [ ] Код запушен на GitHub
 - [ ] Проект задеплоен на Vercel
-- [ ] Вебхук ЮMoney настроен
+- [ ] Вебхук Prodamus настроен
 - [ ] Тестовый платеж прошел успешно
 - [ ] Создан тестовый клиент
 - [ ] Создан админ-аккаунт
@@ -210,7 +209,7 @@ git push -f origin main
 - **Vercel Dashboard:** https://vercel.com/dashboard
 - **GitHub Repo:** https://github.com/dgmuk/MetaSystem
 - **Production URL:** https://meta-system-ja1o.vercel.app
-- **ЮMoney:** https://yoomoney.ru
+- **Prodamus:** https://metasystem.payform.ru
 
 ---
 

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/client'
 import { withTimeout } from '@/lib/utils/with-timeout'
+import { PLAN_PRICES, NUTRITION_ADDON_PRICE } from '@/lib/payments/pricing'
 
 export interface Payment {
     id: string
@@ -7,7 +8,7 @@ export interface Payment {
     amount: number
     currency: string
     status: 'pending' | 'confirmed' | 'refunded'
-    payment_method: 'manual' | 'stripe' | 'yookassa'
+    payment_method: 'manual' | 'stripe' | 'yookassa' | 'yoomoney' | 'prodamus'
     confirmed_by: string | null
     confirmed_at: string | null
     // MetaSystem v2: новые поля для тарифов
@@ -156,14 +157,8 @@ export async function createPaymentRequest(
     }
 
     // Рассчитываем стоимость
-    const prices = {
-        '1_month': 5,
-        '3_months': 6,
-        '6_months': 7,
-    }
-    
-    const baseAmount = prices[planType]
-    const nutritionAmount = planType === '6_months' ? 0 : (includesNutrition ? 2 : 0)
+    const baseAmount = PLAN_PRICES[planType]
+    const nutritionAmount = planType === '6_months' ? 0 : (includesNutrition ? NUTRITION_ADDON_PRICE : 0)
     const subtotal = baseAmount + nutritionAmount
     const discountAmount = calculatePromoDiscount(subtotal, promoCode)
     const totalAmount = subtotal - discountAmount
@@ -177,7 +172,7 @@ export async function createPaymentRequest(
             amount: totalAmount,
             currency: 'RUB',
             status: 'pending',
-            payment_method: 'yookassa',
+            payment_method: 'prodamus',
             plan_type: planType,
             plan_months: planMonths,
             includes_nutrition: planType === '6_months' ? true : includesNutrition,
@@ -230,14 +225,8 @@ export async function createTestPayment(
     await supabase.from('payments').delete().eq('user_id', user.id)
 
     // Рассчитываем стоимость
-    const prices = {
-        '1_month': 5,
-        '3_months': 6,
-        '6_months': 7,
-    }
-    
-    const baseAmount = prices[planType]
-    const nutritionAmount = planType === '6_months' ? 0 : (includesNutrition ? 2 : 0)
+    const baseAmount = PLAN_PRICES[planType]
+    const nutritionAmount = planType === '6_months' ? 0 : (includesNutrition ? NUTRITION_ADDON_PRICE : 0)
     const totalAmount = baseAmount + nutritionAmount
     const planMonths = planType === '1_month' ? 1 : planType === '3_months' ? 3 : 6
 

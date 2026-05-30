@@ -40,7 +40,7 @@
 
 ### Backend:
 - **Supabase** — Auth, PostgreSQL, Realtime, Storage
-- **ЮMoney** — прием платежей (вебхук)
+- **Prodamus** — прием платежей (вебхук)
 
 ### Дизайн:
 - **Dark Theme** — темная тема с lime accent (#c8f542)
@@ -70,9 +70,9 @@ NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
-# ЮMoney
-NEXT_PUBLIC_YOOMONEY_WALLET=your_wallet_number
-YOOMONEY_SECRET=your_notification_secret
+# Prodamus
+NEXT_PUBLIC_PRODAMUS_FORM_URL=https://metasystem.payform.ru
+PRODAMUS_SECRET_KEY=your_prodamus_secret_key
 
 # App
 NEXT_PUBLIC_APP_URL=http://localhost:3000
@@ -198,10 +198,10 @@ metasystem/
 2. Добавьте переменные окружения из `.env.example`
 3. Задеплойте
 
-### Настройка вебхука ЮMoney:
-1. Зайдите в настройки кошелька ЮMoney
-2. Добавьте URL вебхука: `https://your-domain.com/api/payments/yoomoney-webhook`
-3. Укажите секрет из `YOOMONEY_SECRET`
+### Настройка вебхука Prodamus:
+1. Войдите в ЛК Prodamus → платёжная страница → раздел «Уведомления» / «Интеграция»
+2. Укажите URL для уведомлений: `https://your-domain.com/api/payments/prodamus-webhook`
+3. Скопируйте секретный ключ в переменную `PRODAMUS_SECRET_KEY`
 
 ---
 

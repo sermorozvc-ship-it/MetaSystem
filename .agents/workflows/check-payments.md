@@ -1,32 +1,34 @@
 ---
-description: Проверка платёжного флоу ЮMoney — диагностика всех компонентов
+description: Проверка платёжного флоу Prodamus — диагностика всех компонентов
 ---
 
-## /check-payments — Диагностика платёжного флоу ЮMoney
+## /check-payments — Диагностика платёжного флоу Prodamus
 
 Этот воркфлоу проверяет полный платёжный цикл: БД, webhook, переменные окружения и статусы платежей.
 
 ### Шаг 1: Проверить webhook endpoint доступен
 
-Открой в браузере:
+Открой в браузере (health-check):
 ```
-https://meta-system-ja1o.vercel.app/api/payments/yoomoney-webhook
+https://meta-system-ja1o.vercel.app/api/payments/prodamus-webhook
 ```
 
 Ожидаемый ответ:
 ```json
 {
   "status": "ok",
+  "service": "prodamus-webhook",
   "config": {
     "hasSecret": true,
-    "hasWallet": true,
+    "hasFormUrl": true,
     "hasServiceKey": true
   }
 }
 ```
 
-❌ Если `hasServiceKey: false` — добавь `SUPABASE_SERVICE_ROLE_KEY` в Vercel Environment Variables.  
-❌ Если `hasSecret: false` — добавь `YOOMONEY_SECRET` в Vercel.
+❌ Если `hasSecret: false` — добавь `PRODAMUS_SECRET_KEY` в Vercel Environment Variables.
+❌ Если `hasFormUrl: false` — добавь `NEXT_PUBLIC_PRODAMUS_FORM_URL` в Vercel.
+❌ Если `hasServiceKey: false` — добавь `SUPABASE_SERVICE_ROLE_KEY` в Vercel.
 
 ---
 
@@ -38,7 +40,7 @@ https://meta-system-ja1o.vercel.app/api/payments/yoomoney-webhook
 ```
 
 // turbo
-Агент использует mcp_supabase-mcp-server_execute_sql с запросом:
+Агент использует mcp_supabase_execute_sql с запросом:
 ```sql
 SELECT p.id, p.user_id, p.amount, p.status, p.payment_method,
        p.created_at, p.confirmed_at,
@@ -105,12 +107,12 @@ WHERE conrelid = 'public.payments'::regclass
   AND contype = 'c';
 ```
 
-Ожидаемый результат должен включать `'yoomoney'` в списке допустимых значений.  
+Ожидаемый результат должен включать `'prodamus'` в списке допустимых значений.
 Если нет — выполни:
 ```sql
 ALTER TABLE public.payments DROP CONSTRAINT IF EXISTS payments_payment_method_check;
 ALTER TABLE public.payments ADD CONSTRAINT payments_payment_method_check
-  CHECK (payment_method IN ('manual', 'stripe', 'yookassa', 'yoomoney'));
+  CHECK (payment_method IN ('manual', 'stripe', 'yookassa', 'yoomoney', 'prodamus'));
 ```
 
 ---
@@ -122,31 +124,32 @@ ALTER TABLE public.payments ADD CONSTRAINT payments_payment_method_check
 https://vercel.com/dashboard → Проект → Logs
 ```
 
-Фильтруй по `/api/payments/yoomoney-webhook`.
+Фильтруй по `/api/payments/prodamus-webhook`.
 
 Успешный лог выглядит так:
 ```
-[YooMoney Webhook] RAW BODY: notification_type=p2p-incoming&...
-[YooMoney Webhook] ✓ Signature OK
-[YooMoney Webhook] ✓ Payment CONFIRMED for user: UUID amount: 10.00
+[Prodamus Webhook] RAW BODY: order_id=init_...&payment_status=success&...
+[Prodamus Webhook] Parsed: { orderId: 'init_...', paymentStatus: 'success', sum: '14900.00' }
+[Prodamus Webhook] ✓ Subscription activated for user: UUID
 ```
 
 Признаки ошибок:
-- `SIGNATURE MISMATCH` → неверный `YOOMONEY_SECRET`
-- `DB update error` → проблема с RLS или constraint
-- `No label` → платёж без user_id (оплата не через сайт)
+- `SIGNATURE MISMATCH` → неверный `PRODAMUS_SECRET_KEY` (или демо-платёж — он
+  подписывается иначе и законно не проходит боевую проверку)
+- `PRODAMUS_SECRET_KEY not set` → не задана переменная окружения
+- `Cannot parse order_id` → платёж не через сайт (нет нашего order_id)
 
 ---
 
-### Шаг 7: Сверить настройки ЮMoney P2P
+### Шаг 7: Сверить настройки Prodamus ЛК
 
-В личном кабинете ЮMoney → **Переводы и платежи → Настройки уведомлений**:
+В личном кабинете Prodamus → платёжная страница → раздел «Уведомления» / «Интеграция»:
 
 | Параметр | Значение |
 |---|---|
-| HTTP-уведомления | ✅ Включены |
-| URL уведомлений | `https://meta-system-ja1o.vercel.app/api/payments/yoomoney-webhook` |
-| Секрет | Совпадает с `YOOMONEY_SECRET` в Vercel |
+| Режим канала | ✅ Активный (не «Тестовый» для боевых платежей) |
+| URL для уведомлений | `https://meta-system-ja1o.vercel.app/api/payments/prodamus-webhook` |
+| Секретный ключ | Совпадает с `PRODAMUS_SECRET_KEY` в Vercel |
 
 ---
 
@@ -154,12 +157,13 @@ https://vercel.com/dashboard → Проект → Logs
 
 | Компонент | Проверка | OK? |
 |---|---|---|
-| Webhook endpoint | GET /api/payments/yoomoney-webhook | — |
+| Webhook endpoint | GET /api/payments/prodamus-webhook | — |
+| PRODAMUS_SECRET_KEY | hasSecret в конфиге | — |
+| NEXT_PUBLIC_PRODAMUS_FORM_URL | hasFormUrl в конфиге | — |
 | SUPABASE_SERVICE_ROLE_KEY | hasServiceKey в конфиге | — |
-| YOOMONEY_SECRET | hasSecret в конфиге | — |
-| payment_method constraint | содержит 'yoomoney' | — |
+| payment_method constraint | содержит 'prodamus' | — |
 | Триггер профилей | handle_new_user на auth.users | — |
-| URL в ЮMoney ЛК | совпадает с продакшн URL | — |
+| URL в Prodamus ЛК | совпадает с продакшн URL | — |
 
 ---
 

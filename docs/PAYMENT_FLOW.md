@@ -1,7 +1,10 @@
-# 💳 PAYMENT FLOW — Документация и отладка
+# 💳 PAYMENT FLOW — Документация и отладка (Prodamus)
 
-> Этот файл описывает полную конфигурацию платёжной системы ЮMoney P2P.
+> Этот файл описывает полную конфигурацию платёжной системы Prodamus.
 > При любых сбоях используй этот документ как чеклист.
+>
+> ⚠️ Миграция с ЮMoney → Prodamus выполнена 2026-05-30. Старый вебхук
+> `/api/payments/yoomoney-webhook` удалён, оплаты полностью на Prodamus.
 
 ---
 
@@ -11,41 +14,39 @@
 Регистрация (/auth)
     ↓ автоматический вход (email confirmation ОТКЛЮЧЁН)
 Страница оплаты (/payment)
-    ↓ нажимает "Оплатить 10 ₽"
-ЮMoney QuickPay (внешняя страница)
+    ↓ создаётся pending-запись в payments, нажимает «Оплатить»
+Prodamus (платёжная форма metasystem.payform.ru)
     ↓ пользователь оплачивает
-ЮMoney → HTTP Notification (webhook) → /api/payments/yoomoney-webhook
-    ↓ webhook верифицирует SHA1, обновляет payments.status = 'confirmed'
+Prodamus → HTTP Notification (webhook) → /api/payments/prodamus-webhook
+    ↓ webhook проверяет подпись (заголовок Sign, HMAC-SHA256),
+      обновляет payments.status = 'confirmed', активирует подписку
 Страница оплаты автополлинг (каждые 3 сек) → обнаруживает 'confirmed'
     ↓ window.location.href = '/onboarding'
-Онбординг (/onboarding)
-    ↓ нажимает "Перейти в зал ожидания"
-Зал ожидания (/waiting-room) — таймер до старта когорты в понедельник 07:00
-    ↓ автоматически при наступлении времени
-Dashboard (/dashboard) — основной курс
+Онбординг (/onboarding) → Зал ожидания → Dashboard
 ```
+
+Подтверждением оплаты считается **только webhook с валидной подписью**.
+Возврат пользователя на `urlSuccess` фактом оплаты НЕ является.
 
 ---
 
 ## ⚙️ Переменные окружения
 
-### `.env.local` (локально)
+### `.env.local` (локально) и Vercel (продакшн)
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://bzyypoyvihqhrbllgffh.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
-SUPABASE_SERVICE_ROLE_KEY=eyJ...   # Для webhook — обходит RLS
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...        # Для webhook — обходит RLS
 
-YOOMONEY_WALLET=410014990008683    # Номер кошелька получателя
-YOOMONEY_SECRET=STtr6NB+i52qaZAKS7PgLwA2   # Секрет для SHA1
-NEXT_PUBLIC_YOOMONEY_WALLET=410014990008683
+# Prodamus
+NEXT_PUBLIC_PRODAMUS_FORM_URL=https://metasystem.payform.ru
+PRODAMUS_SECRET_KEY=...              # Секрет для проверки подписи вебхука
 NEXT_PUBLIC_APP_URL=https://meta-system-ja1o.vercel.app
 ```
 
-### Vercel Environment Variables (продакшн)
-Все те же переменные должны быть в:
-**Vercel Dashboard → Project → Settings → Environment Variables**
-
 > ⚠️ После изменения переменных на Vercel — сделайте Redeploy!
+> `PRODAMUS_SECRET_KEY` берётся в ЛК Prodamus → Настройки платёжной страницы →
+> вкладка «Интеграция» (там же, где URL для уведомлений).
 
 ---
 
@@ -53,74 +54,72 @@ NEXT_PUBLIC_APP_URL=https://meta-system-ja1o.vercel.app
 
 | Файл | Назначение |
 |---|---|
-| `src/app/payment/page.tsx` | Страница оплаты — UI + polling |
-| `src/app/api/payments/yoomoney-webhook/route.ts` | Webhook от ЮMoney |
-| `src/lib/services/payment.ts` | Функции работы с payments таблицей |
-| `src/app/onboarding/page.tsx` | После оплаты — расписание курса |
-| `src/app/waiting-room/page.tsx` | Зал ожидания с таймером |
+| `src/app/payment/page.tsx` | Первичная оплата — UI + polling |
+| `src/app/renew/page.tsx` | Продление тарифа |
+| `src/app/add-nutrition/page.tsx` | Докупка плана питания |
+| `src/lib/payments/prodamus-link.ts` | Сборка ссылки + кодирование order_id (клиент-safe) |
+| `src/lib/payments/prodamus-signature.ts` | Проверка подписи вебхука (сервер) |
+| `src/app/api/payments/prodamus-webhook/route.ts` | Webhook от Prodamus |
+| `src/lib/services/payment.ts` | Функции работы с payments (первичная оплата) |
+| `src/lib/services/renewal.ts` | Продление + докупка питания |
+
+---
+
+## 🔗 Связка платёж ↔ пользователь: order_id
+
+Вместо `label` (как было в ЮMoney) используется параметр `order_id`:
+
+```
+init_<userId>_<paymentId>        → первичная оплата
+renewal_<userId>_<paymentId>     → продление тарифа
+nutrition_<userId>_<paymentId>   → докупка питания
+```
+
+UUID имеет фиксированную длину 36 символов и не содержит `_`, поэтому
+`parseOrderId` разбирает строку однозначно (см. `prodamus-link.ts`).
+
+---
+
+## 🔐 Алгоритм подписи Prodamus
+
+Используется и для проверки вебхука (`prodamus-signature.ts`). Подпись приходит
+в HTTP-заголовке **`Sign`**. Шаги (как в библиотеке Hmac от Prodamus):
+
+1. Все значения привести к строкам (рекурсивно).
+2. Отсортировать ключи по алфавиту, в том числе вглубь (PHP `ksort`).
+3. Перевести в JSON-строку (кириллица остаётся литералом — `JSON_UNESCAPED_UNICODE`).
+4. Экранировать `/` → `\/`.
+5. HMAC-SHA256 от строки секретным ключом → hex.
+
+`products` кодируется как JSON-массив (`[{...}]`), т.к. ключи 0..n-1.
+
+> Демо-платежи Prodamus намеренно подписываются ключом с суффиксом и НЕ должны
+> проходить боевую проверку — это by design, чтобы демо не принимались за реальные.
+
+---
+
+## 💰 Тарифы (боевые)
+
+| Тариф | Цена | Месяцев |
+|---|---|---|
+| 1 месяц | 14 900 ₽ | 1 |
+| 3 месяца | 35 900 ₽ | 3 |
+| 6 месяцев | 59 900 ₽ | 6 (питание в подарок) |
+| Докупка питания | 3 000 ₽ | — |
+
+Цены заданы в `src/lib/services/payment.ts` (первичная) и
+`src/lib/services/renewal.ts` (`RENEWAL_PRICES`, `NUTRITION_ADDON_PRICE`).
 
 ---
 
 ## 🗄️ База данных Supabase
 
-### Проект
-- **ID:** `bzyypoyvihqhrbllgffh`
-- **Регион:** eu-central-1
+### Таблица `payments` (без изменений структуры)
+`payment_method` теперь допускает значение `'prodamus'`
+(миграция `20260530_add_prodamus_payment_method.sql`).
 
-### Таблица `payments`
 ```sql
-id            UUID PRIMARY KEY
-user_id       UUID → auth.users
-amount        DECIMAL(10,2) DEFAULT 10.00
-currency      TEXT DEFAULT 'RUB'
-status        TEXT CHECK IN ('pending', 'confirmed', 'refunded')
-payment_method TEXT CHECK IN ('manual', 'stripe', 'yookassa', 'yoomoney')
-confirmed_by  UUID → auth.users (NULL для webhook-подтверждений)
-confirmed_at  TIMESTAMPTZ
-cohort_start  DATE
-created_at    TIMESTAMPTZ
-updated_at    TIMESTAMPTZ
-```
-
-### RLS политики
-```sql
--- Пользователь видит только свои платежи
-"Users can view own payments" → SELECT WHERE auth.uid() = user_id
-
--- Пользователь создаёт pending запрос
-"Users can create payment requests" → INSERT WHERE status = 'pending'
-
--- Админ управляет всеми
-"Admins can manage all payments" → ALL WHERE role = 'admin'
-```
-
-### Триггеры
-```sql
--- Автосоздание профиля при регистрации (критично!)
-handle_new_user() → AFTER INSERT ON auth.users
-```
-
----
-
-## 🔗 ЮMoney настройки
-
-### QuickPay URL
-```
-https://yoomoney.ru/quickpay/confirm?receiver=WALLET&quickpay-form=button
-  &paymentType=AC&sum=AMOUNT&label=USER_ID&successURL=APP_URL/onboarding
-```
-
-Параметр **`label=USER_ID`** — это ключ связки webhook → пользователь!
-
-### HTTP Notification (webhook)
-- **URL в настройках ЮMoney:** `https://meta-system-ja1o.vercel.app/api/payments/yoomoney-webhook`
-- **Метод:** POST, `application/x-www-form-urlencoded`
-- **Секрет:** `YOOMONEY_SECRET` (совпадает с настройкой в ЛК ЮMoney)
-
-### Верификация SHA1
-```
-hash = SHA1(notification_type & operation_id & amount & currency 
-            & datetime & sender & codepro & secret & label)
+CHECK (payment_method IN ('manual','stripe','yookassa','yoomoney','prodamus'))
 ```
 
 ---
@@ -128,94 +127,62 @@ hash = SHA1(notification_type & operation_id & amount & currency
 ## 🔧 Диагностика неполадок
 
 ### Webhook не срабатывает
-1. Проверь **Vercel Logs** → найди `/api/payments/yoomoney-webhook`
-2. Зайди по URL вручную — должно вернуть:
+1. Проверь health-check: `GET https://meta-system-ja1o.vercel.app/api/payments/prodamus-webhook`
    ```json
-   {"status":"ok","config":{"hasSecret":true,"hasWallet":true,"hasServiceKey":true}}
+   {"status":"ok","config":{"hasSecret":true,"hasFormUrl":true,"hasServiceKey":true}}
    ```
-3. Если `hasServiceKey: false` — добавь `SUPABASE_SERVICE_ROLE_KEY` в Vercel
+2. Если `hasSecret: false` — добавь `PRODAMUS_SECRET_KEY` в Vercel.
+3. Проверь Vercel Logs → фильтр `/api/payments/prodamus-webhook`.
+
+### SIGNATURE MISMATCH в логах
+- Неверный `PRODAMUS_SECRET_KEY` (не совпадает с ЛК Prodamus).
+- Или прилетел демо-платёж (демо подписывается иначе — это норма).
 
 ### После оплаты не редиректит на /onboarding
-1. Проверь таблицу `payments` в Supabase — статус должен быть `confirmed`
-2. Если `pending` — webhook не пришёл или упал
-3. Если запись `yoomoney` не появилась — проверь constraint:
-   ```sql
-   -- Должен включать 'yoomoney'
-   SELECT constraint_name FROM information_schema.table_constraints 
-   WHERE table_name = 'payments';
-   ```
+1. Проверь таблицу `payments` — статус должен стать `confirmed`.
+2. Если `pending` — webhook не пришёл или упал на подписи (см. логи).
 
-### Пользователь платит но не в БД
-Запрос для поиска:
+### Поиск платежей в БД
 ```sql
--- Все payments с профилями
-SELECT p.id, p.user_id, p.amount, p.status, p.payment_method, 
-       pr.email, pr.full_name
+SELECT p.id, p.user_id, p.amount, p.status, p.payment_method,
+       p.created_at, p.confirmed_at, pr.email, pr.full_name
 FROM payments p
 LEFT JOIN profiles pr ON pr.id = p.user_id
-ORDER BY p.created_at DESC;
+ORDER BY p.created_at DESC LIMIT 20;
 ```
 
 Ручное подтверждение:
 ```sql
 UPDATE payments SET status = 'confirmed', confirmed_at = now()
-WHERE user_id = 'USER_UUID';
+WHERE id = 'PAYMENT_UUID';
 ```
-
-### Профиль пользователя не создался (показывает "Без имени")
-```sql
--- Создать пропущенные профили
-INSERT INTO profiles (id, email, full_name, role, is_blocked)
-SELECT u.id, u.email, COALESCE(u.raw_user_meta_data->>'full_name', ''),
-       'user', false
-FROM auth.users u
-LEFT JOIN profiles p ON p.id = u.id
-WHERE p.id IS NULL;
-```
-
-### email rate limit exceeded при регистрации
-- **Причина:** Supabase лимитирует 3-4 email/час на бесплатном плане
-- **Решение:** Supabase Dashboard → Authentication → Providers → Email → **отключить "Confirm email"**
 
 ---
 
-## 🔒 Supabase Auth настройки
+## ⚙️ Настройки в ЛК Prodamus
 
-| Настройка | Значение |
-|---|---|
-| Email Confirm | ❌ ОТКЛЮЧЕНО |
-| Password min length | 6 символов |
-| Site URL | https://meta-system-ja1o.vercel.app |
+1. **Каналы продаж** → платёжная страница в режиме «Активный» (не «Тестовый»),
+   иначе подпись боевых платежей будет отличаться.
+2. **Уведомления** (или вкладка «Интеграция») → «URL для уведомлений»:
+   ```
+   https://meta-system-ja1o.vercel.app/api/payments/prodamus-webhook
+   ```
+3. Секретный ключ из этой же вкладки → в `PRODAMUS_SECRET_KEY`.
 
 ---
 
 ## 🚀 Деплой чеклист
 
 ```bash
-# 1. Изменения кода
-git add .
-git commit -m "описание"
-git push   # → Vercel автодеплой за ~1-2 мин
+git add <файлы>
+git commit -m "feat(payments): миграция на Prodamus"
+git push origin main   # → Vercel автодеплой
 
-# 2. Проверить переменные на Vercel
-# Dashboard → Settings → Environment Variables
-
-# 3. SQL миграции — выполнить в Supabase SQL Editor
-# или через MCP: mcp_supabase-mcp-server_apply_migration
+# Vercel → Settings → Environment Variables:
+#   NEXT_PUBLIC_PRODAMUS_FORM_URL, PRODAMUS_SECRET_KEY → Redeploy
+# Supabase: применить миграцию 20260530_add_prodamus_payment_method.sql
 ```
 
 ---
 
-## 📱 Тестовый флоу (end-to-end)
-
-1. Открыть `https://meta-system-ja1o.vercel.app` в режиме инкогнито
-2. Нажать «Начать» → попасть на `/auth`
-3. Зарегистрироваться → должен появиться экран «Аккаунт создан!» + redirect на `/payment`
-4. Нажать «Оплатить 10 ₽» → откроется ЮMoney в новом окне
-5. Оплатить → через 3-10 сек автоматически перейти на `/onboarding`
-6. Нажать «Перейти в зал ожидания» → `/waiting-room` с таймером
-7. Проверить в Supabase: `payments` → статус `confirmed`, `profiles` → запись создана
-
----
-
-*Последнее обновление: 2026-03-21*
+*Последнее обновление: 2026-05-30 (миграция ЮMoney → Prodamus)*

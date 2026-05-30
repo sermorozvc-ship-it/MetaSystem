@@ -3,6 +3,11 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { withTimeout } from '@/lib/utils/with-timeout'
+import {
+  PLAN_PRICES,
+  PLAN_MONTHS,
+  NUTRITION_ADDON_PRICE as PRICING_NUTRITION_ADDON,
+} from '@/lib/payments/pricing'
 
 export type PlanType = '1_month' | '3_months' | '6_months'
 export type RenewalType = 'renewal' | 'nutrition_upgrade' | 'plan_change'
@@ -111,19 +116,11 @@ export async function getMySubscriptionInfo(): Promise<SubscriptionInfo> {
 // Создание запроса на продление
 // ──────────────────────────────────────────────────────────────────────────
 
-export const RENEWAL_PRICES: Record<PlanType, number> = {
-  '1_month': 14900,
-  '3_months': 35900,
-  '6_months': 59900,
-}
+export const RENEWAL_PRICES: Record<PlanType, number> = PLAN_PRICES
 
-export const RENEWAL_MONTHS: Record<PlanType, number> = {
-  '1_month': 1,
-  '3_months': 3,
-  '6_months': 6,
-}
+export const RENEWAL_MONTHS: Record<PlanType, number> = PLAN_MONTHS
 
-export const NUTRITION_ADDON_PRICE = 3000
+export const NUTRITION_ADDON_PRICE = PRICING_NUTRITION_ADDON
 
 /**
  * Создать запрос на продление тарифа
@@ -170,7 +167,7 @@ export async function createRenewalRequest(
       amount: totalAmount,
       currency: 'RUB',
       status: 'pending',
-      payment_method: 'yookassa',
+      payment_method: 'prodamus',
       plan_type: planType,
       plan_months: planMonths,
       includes_nutrition: finalIncludesNutrition,
@@ -265,7 +262,7 @@ export async function createNutritionUpgradeRequest(): Promise<{
       amount: NUTRITION_ADDON_PRICE,
       currency: 'RUB',
       status: 'pending',
-      payment_method: 'yookassa',
+      payment_method: 'prodamus',
       plan_type: planType,
       plan_months: planMonths,
       includes_nutrition: true,

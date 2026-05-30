@@ -8,34 +8,48 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { getUserPayment, createPaymentRequest, createTestPayment, calculatePromoDiscount, PROMO_CODES, type Payment } from '@/lib/services/payment'
+import { buildProdamusLink, buildOrderId } from '@/lib/payments/prodamus-link'
+import { PLAN_PRICES, NUTRITION_ADDON_PRICE, PLAN_MONTHS } from '@/lib/payments/pricing'
 import { isAdminUser } from '@/lib/auth/isAdminUser'
 
-const YOOMONEY_WALLET = process.env.NEXT_PUBLIC_YOOMONEY_WALLET || '410014990008683'
+const PRODAMUS_FORM_URL = process.env.NEXT_PUBLIC_PRODAMUS_FORM_URL || 'https://metasystem.payform.ru'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://meta-system-ja1o.vercel.app'
 
 type PlanType = '1_month' | '3_months' | '6_months'
 
 const PLANS = {
-    '1_month': { price: 5, months: 1, label: '1 месяц' },
-    '3_months': { price: 6, months: 3, label: '3 месяца' },
-    '6_months': { price: 7, months: 6, label: '6 месяцев' },
+    '1_month': { price: PLAN_PRICES['1_month'], months: PLAN_MONTHS['1_month'], label: '1 месяц' },
+    '3_months': { price: PLAN_PRICES['3_months'], months: PLAN_MONTHS['3_months'], label: '3 месяца' },
+    '6_months': { price: PLAN_PRICES['6_months'], months: PLAN_MONTHS['6_months'], label: '6 месяцев' },
 }
 
-const NUTRITION_PRICE = 2
+const NUTRITION_PRICE = NUTRITION_ADDON_PRICE
 
-function buildYooMoneyUrl(userId: string, amount: number) {
-    const params = new URLSearchParams({
-        receiver: YOOMONEY_WALLET,
-        'quickpay-form': 'button',
-        paymentType: 'AC',
-        sum: amount.toString(),
-        label: userId,
-        successURL: `${APP_URL}/onboarding`,
-        targets: 'MetaSystem — Онлайн-ведение',
-        'short-dest': 'Платформа MetaSystem',
-        comment: 'Оплата тарифа MetaSystem',
+const PLAN_LABELS: Record<PlanType, string> = {
+    '1_month': '1 месяц',
+    '3_months': '3 месяца',
+    '6_months': '6 месяцев',
+}
+
+/**
+ * Строит ссылку на оплату Продамус для конкретной pending-записи платежа.
+ * order_id = init_<userId>_<paymentId> — по нему вебхук находит пользователя.
+ */
+function buildPaymentLink(payment: Payment, userEmail?: string | null): string {
+    const label = PLAN_LABELS[payment.plan_type ?? '1_month'] ?? 'Тариф'
+    const productName = payment.includes_nutrition
+        ? `MetaSystem — ${label} + план питания`
+        : `MetaSystem — ${label}`
+
+    return buildProdamusLink({
+        formUrl: PRODAMUS_FORM_URL,
+        orderId: buildOrderId('init', payment.user_id, payment.id),
+        productName,
+        price: payment.amount,
+        customerEmail: userEmail,
+        urlSuccess: `${APP_URL}/onboarding`,
+        customerExtra: productName,
     })
-    return `https://yoomoney.ru/quickpay/confirm?${params.toString()}`
 }
 
 export default function PaymentPage() {
@@ -131,7 +145,7 @@ function PaymentContent() {
                 console.log('[Payment] Loaded payment:', existing)
                 
                 if (process.env.NEXT_PUBLIC_DISABLE_REDIRECTS === 'true') {
-                    setPayment(existing?.status === 'pending' && existing.amount <= 10 ? existing : null)
+                    setPayment(existing?.status === 'pending' ? existing : null)
                     setIsLoading(false)
                     return
                 }
@@ -141,7 +155,7 @@ function PaymentContent() {
                     return
                 }
                 
-                if (existing?.status === 'pending' && existing.amount <= 10) {
+                if (existing?.status === 'pending') {
                     setPayment(existing)
                 } else {
                     setPayment(null)
@@ -177,7 +191,7 @@ function PaymentContent() {
         return () => clearInterval(interval)
     }, [user, isLoading, payment?.status])
 
-    // Создать платеж и открыть ЮMoney
+    // Создать платеж и открыть Продамус
     const handlePayment = async () => {
         // Если не авторизован — сначала регистрация, потом вернёмся сюда
         if (!user) {
@@ -189,7 +203,9 @@ function PaymentContent() {
         setIsSubmitting(true)
 
         try {
-            if (!payment || payment.status !== 'pending') {
+            let activePayment = payment
+
+            if (!activePayment || activePayment.status !== 'pending') {
                 const { payment: newPayment, error: paymentError } = await createPaymentRequest(
                     selectedPlan,
                     hasNutritionIncluded,
@@ -207,14 +223,21 @@ function PaymentContent() {
                     setIsSubmitting(false)
                     return
                 }
+                activePayment = newPayment
                 setPayment(newPayment)
             }
 
-            // Переходим на ЮMoney — isSubmitting остаётся true пока идёт навигация
-            const yooUrl = buildYooMoneyUrl(user.id, totalAmount)
+            if (!activePayment) {
+                setError('Не удалось создать платёж. Попробуйте позже.')
+                setIsSubmitting(false)
+                return
+            }
+
+            // Переходим на Продамус — isSubmitting остаётся true пока идёт навигация
+            const payUrl = buildPaymentLink(activePayment, user.email)
             setIsPolling(true)
-            window.location.href = yooUrl
-            // НЕ сбрасываем isSubmitting — страница уходит на ЮMoney
+            window.location.href = payUrl
+            // НЕ сбрасываем isSubmitting — страница уходит на Продамус
         } catch (e) {
             setError('Произошла ошибка. Попробуйте позже.')
             setIsSubmitting(false)
@@ -333,8 +356,8 @@ function PaymentContent() {
                         <button
                             onClick={() => {
                                 if (user) {
-                                    const yooUrl = buildYooMoneyUrl(user.id, payment.amount)
-                                    window.open(yooUrl, '_blank')
+                                    const payUrl = buildPaymentLink(payment, user.email)
+                                    window.open(payUrl, '_blank')
                                     setIsPolling(true)
                                 }
                             }}
@@ -426,7 +449,7 @@ function PaymentContent() {
                             <p className="text-white font-semibold mb-1">Аккаунт создан — выберите тариф</p>
                             <p className="text-text-secondary text-sm">
                                 Это шаг 2 из 3: выберите тариф, при необходимости добавьте план питания
-                                и промокод, затем оплатите через ЮMoney. После оплаты сразу попадёте
+                                и промокод, затем оплатите через Продамус. После оплаты сразу попадёте
                                 в личный кабинет к анкете.
                             </p>
                         </div>
@@ -728,7 +751,7 @@ function PaymentContent() {
                 )}
 
                 <p className="text-center text-xs text-text-muted mt-4">
-                    Безопасная оплата через ЮMoney. После оплаты вы перейдете к заполнению анкеты.
+                    Безопасная оплата через Продамус. После оплаты вы перейдете к заполнению анкеты.
                 </p>
             </div>
         </div>

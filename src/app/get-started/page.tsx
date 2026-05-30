@@ -30,7 +30,7 @@ const STEPS = [
     {
         icon: CreditCard,
         title: 'Выбираете тариф и оплачиваете',
-        text: 'После регистрации откроется страница с актуальными тарифами. Там же добавляете план питания, вводите промокод и оплачиваете через ЮMoney.',
+        text: 'После регистрации откроется страница с актуальными тарифами. Там же добавляете план питания, вводите промокод и оплачиваете через Продамус.',
     },
     {
         icon: Sparkles,
@@ -114,7 +114,7 @@ export default function GetStartedPage() {
                     <div className="mt-6 pt-5 border-t border-white/10 grid sm:grid-cols-2 gap-3">
                         <div className="flex items-center gap-2 text-xs text-text-secondary">
                             <ShieldCheck className="w-4 h-4 text-accent flex-shrink-0" />
-                            Оплата через ЮMoney без комиссии
+                            Оплата через Продамус без комиссии
                         </div>
                         <div className="flex items-center gap-2 text-xs text-text-secondary">
                             <CheckCircle2 className="w-4 h-4 text-accent flex-shrink-0" />

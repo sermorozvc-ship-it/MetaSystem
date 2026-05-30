@@ -13,23 +13,22 @@ import {
   NUTRITION_ADDON_PRICE,
   type SubscriptionInfo,
 } from '@/lib/services/renewal'
+import { buildProdamusLink, buildOrderId } from '@/lib/payments/prodamus-link'
 
-const YOOMONEY_WALLET = process.env.NEXT_PUBLIC_YOOMONEY_WALLET || '410014990008683'
+const PRODAMUS_FORM_URL = process.env.NEXT_PUBLIC_PRODAMUS_FORM_URL || 'https://metasystem.payform.ru'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://meta-system-ja1o.vercel.app'
 
-function buildYooMoneyUrl(userId: string, paymentId: string) {
-  const params = new URLSearchParams({
-    receiver: YOOMONEY_WALLET,
-    'quickpay-form': 'button',
-    paymentType: 'AC',
-    sum: NUTRITION_ADDON_PRICE.toString(),
-    label: `nutrition_${userId}_${paymentId}`,
-    successURL: `${APP_URL}/questionnaire/nutrition?upgraded=true`,
-    targets: 'MetaSystem — Подключение питания',
-    'short-dest': 'Питание MetaSystem',
-    comment: 'Подключение плана питания MetaSystem',
+function buildNutritionLink(userId: string, paymentId: string, email?: string | null) {
+  const productName = 'MetaSystem — план питания'
+  return buildProdamusLink({
+    formUrl: PRODAMUS_FORM_URL,
+    orderId: buildOrderId('nutrition', userId, paymentId),
+    productName,
+    price: NUTRITION_ADDON_PRICE,
+    customerEmail: email,
+    urlSuccess: `${APP_URL}/questionnaire/nutrition?upgraded=true`,
+    customerExtra: productName,
   })
-  return `https://yoomoney.ru/quickpay/confirm?${params.toString()}`
 }
 
 export default function AddNutritionPage() {
@@ -86,8 +85,8 @@ export default function AddNutritionPage() {
       }
 
       setIsPending(true)
-      const yooUrl = buildYooMoneyUrl(user.id, paymentId)
-      window.location.href = yooUrl
+      const payUrl = buildNutritionLink(user.id, paymentId, user.email)
+      window.location.href = payUrl
     } catch {
       setError('Произошла ошибка. Попробуйте позже.')
       setIsSubmitting(false)
@@ -289,7 +288,7 @@ export default function AddNutritionPage() {
         )}
 
         <p className="text-center text-xs text-text-muted mt-4">
-          Безопасная оплата через ЮMoney
+          Безопасная оплата через Продамус
         </p>
       </div>
     </div>

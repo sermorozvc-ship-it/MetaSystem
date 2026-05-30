@@ -312,7 +312,7 @@ function AuthContent() {
                             </div>
                             <div className="flex items-center gap-2 text-xs text-white/60">
                                 <CreditCard className="w-3.5 h-3.5 text-accent flex-shrink-0" />
-                                Оплата через ЮMoney — безопасно и без комиссии
+                                Оплата через Продамус — безопасно и без комиссии
                             </div>
                             <div className="flex items-center gap-2 text-xs text-white/60">
                                 <ShieldCheck className="w-3.5 h-3.5 text-accent flex-shrink-0" />

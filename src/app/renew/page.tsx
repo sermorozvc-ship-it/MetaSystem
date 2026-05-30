@@ -18,8 +18,9 @@ import {
   type PlanType,
   type SubscriptionInfo,
 } from '@/lib/services/renewal'
+import { buildProdamusLink, buildOrderId } from '@/lib/payments/prodamus-link'
 
-const YOOMONEY_WALLET = process.env.NEXT_PUBLIC_YOOMONEY_WALLET || '410014990008683'
+const PRODAMUS_FORM_URL = process.env.NEXT_PUBLIC_PRODAMUS_FORM_URL || 'https://metasystem.payform.ru'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://meta-system-ja1o.vercel.app'
 
 const PLAN_LABELS: Record<PlanType, string> = {
@@ -28,19 +29,32 @@ const PLAN_LABELS: Record<PlanType, string> = {
   '6_months': '6 месяцев',
 }
 
-function buildYooMoneyUrl(userId: string, amount: number, label: string) {
-  const params = new URLSearchParams({
-    receiver: YOOMONEY_WALLET,
-    'quickpay-form': 'button',
-    paymentType: 'AC',
-    sum: amount.toString(),
-    label: `renewal_${userId}_${label}`,
-    successURL: `${APP_URL}/dashboard?renewed=true`,
-    targets: 'MetaSystem — Продление тарифа',
-    'short-dest': 'Продление MetaSystem',
-    comment: 'Продление тарифа MetaSystem',
+/**
+ * Ссылка на оплату продления через Продамус.
+ * order_id = renewal_<userId>_<paymentId> — по нему вебхук продлевает подписку.
+ */
+function buildRenewalLink(
+  userId: string,
+  paymentId: string,
+  amount: number,
+  planType: PlanType,
+  includesNutrition: boolean,
+  email?: string | null,
+) {
+  const label = PLAN_LABELS[planType] ?? 'Тариф'
+  const productName = includesNutrition
+    ? `MetaSystem — продление ${label} + питание`
+    : `MetaSystem — продление ${label}`
+
+  return buildProdamusLink({
+    formUrl: PRODAMUS_FORM_URL,
+    orderId: buildOrderId('renewal', userId, paymentId),
+    productName,
+    price: amount,
+    customerEmail: email,
+    urlSuccess: `${APP_URL}/dashboard?renewed=true`,
+    customerExtra: productName,
   })
-  return `https://yoomoney.ru/quickpay/confirm?${params.toString()}`
 }
 
 export default function RenewPage() {
@@ -138,8 +152,15 @@ function RenewContent() {
       }
 
       setIsPending(true)
-      const yooUrl = buildYooMoneyUrl(user.id, amount, paymentId)
-      window.location.href = yooUrl
+      const payUrl = buildRenewalLink(
+        user.id,
+        paymentId,
+        amount,
+        selectedPlan,
+        finalIncludesNutrition,
+        user.email,
+      )
+      window.location.href = payUrl
     } catch {
       setError('Произошла ошибка. Попробуйте позже.')
       setIsSubmitting(false)
@@ -476,7 +497,7 @@ function RenewContent() {
         )}
 
         <p className="text-center text-xs text-text-muted mt-4">
-          Безопасная оплата через ЮMoney
+          Безопасная оплата через Продамус
         </p>
       </div>
     </div>
