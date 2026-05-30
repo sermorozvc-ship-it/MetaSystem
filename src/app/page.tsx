@@ -307,8 +307,8 @@ const PLANS = [
     {
         key: '1_month' as const,
         duration: 'СТАРТ · 1 месяц',
-        price: '5 ₽',
-        perMonth: '5 ₽ в месяц',
+        price: '14 900 ₽',
+        perMonth: '14 900 ₽ в месяц',
         base: [
             'Доступ к личному кабинету MetaSystem',
             'Индивидуальная программа тренировок',
@@ -327,8 +327,8 @@ const PLANS = [
     {
         key: '3_months' as const,
         duration: 'ПРОГРЕСС · 3 месяца',
-        price: '6 ₽',
-        perMonth: '2 ₽ в месяц (экономия 9 800 ₽)',
+        price: '35 900 ₽',
+        perMonth: '11 967 ₽ в месяц (экономия 8 800 ₽)',
         base: [
             'Доступ к личному кабинету MetaSystem',
             'Индивидуальная программа тренировок',
@@ -349,8 +349,8 @@ const PLANS = [
     {
         key: '6_months' as const,
         duration: 'ТРАНСФОРМАЦИЯ · 6 месяцев',
-        price: '7 ₽',
-        perMonth: '1.17 ₽ в месяц (экономия 29 500 ₽)',
+        price: '59 900 ₽',
+        perMonth: '9 983 ₽ в месяц (экономия 29 500 ₽)',
         base: [
             'Доступ к личному кабинету MetaSystem',
             'Индивидуальная программа тренировок',
@@ -1191,7 +1191,7 @@ export default function LandingPage() {
                         ))}
                     </div>
                     <div className="nutrition-addon">
-                        <div>+ Программа питания — 2 ₽ к любому тарифу</div>
+                        <div>+ Программа питания — 3 000 ₽ к любому тарифу</div>
                         <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 8, fontWeight: 400 }}>
                             Это не жёсткая диета, а нормальная схема, которая легко вписывается в привычную жизнь.
                             На тарифе 6 месяцев питание включено в подарок.
