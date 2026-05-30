@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { notifyPaymentConfirmed } from '@/lib/services/notifications'
-import { parseFormBody, verifySignature } from '@/lib/payments/prodamus-signature'
+import { parseFormBody, parseFormEntries, verifySignature } from '@/lib/payments/prodamus-signature'
 
 // Supabase admin client — service role key first, fallback to anon
 function getAdminClient() {
@@ -25,10 +25,8 @@ function getAdminClient() {
  * т.к. форма Prodamus падает на длинных order_id.
  */
 export async function POST(request: NextRequest) {
-    const rawBody = await request.text()
     const sign = request.headers.get('sign') ?? request.headers.get('Sign')
-
-    console.log('[Prodamus Webhook] RAW BODY:', rawBody)
+    const contentType = request.headers.get('content-type') ?? ''
 
     const secret = process.env.PRODAMUS_SECRET_KEY?.trim()
     if (!secret) {
@@ -36,7 +34,20 @@ export async function POST(request: NextRequest) {
         return new NextResponse('Config Error', { status: 500 })
     }
 
-    const data = parseFormBody(rawBody)
+    // Тело вебхука может приходить как multipart/form-data или x-www-form-urlencoded.
+    // Парсим оба формата в одинаковое дерево объектов.
+    let data
+    if (contentType.includes('multipart/form-data')) {
+        const form = await request.formData()
+        console.log('[Prodamus Webhook] multipart entries:', JSON.stringify(Object.fromEntries(
+            Array.from(form.entries()).map(([k, v]) => [k, typeof v === 'string' ? v : '[file]'])
+        )))
+        data = parseFormEntries(form.entries())
+    } else {
+        const rawBody = await request.text()
+        console.log('[Prodamus Webhook] RAW BODY:', rawBody)
+        data = parseFormBody(rawBody)
+    }
 
     // Проверка подписи — критично для безопасности
     if (!verifySignature(data, secret, sign)) {
@@ -44,12 +55,16 @@ export async function POST(request: NextRequest) {
         return new NextResponse('Forbidden', { status: 403 })
     }
 
-    const orderId = typeof data.order_id === 'string' ? data.order_id : ''
+    // Наш номер заказа Продамус возвращает в order_num (order_id — их внутренний ID).
+    // Фолбэк на order_id на случай иных конфигураций.
+    const orderNum = typeof data.order_num === 'string' ? data.order_num : ''
+    const orderIdRaw = typeof data.order_id === 'string' ? data.order_id : ''
+    const orderId = orderNum || orderIdRaw
     const paymentStatus = typeof data.payment_status === 'string' ? data.payment_status : ''
     const sum = typeof data.sum === 'string' ? data.sum : ''
     const amount = parseFloat(sum || '0')
 
-    console.log('[Prodamus Webhook] Parsed:', { orderId, paymentStatus, sum })
+    console.log('[Prodamus Webhook] Parsed:', { orderNum, orderId: orderIdRaw, paymentStatus, sum })
 
     // Реагируем только на успешную оплату. Прочие статусы (например, частичная
     // оплата/ошибка) подтверждаем 200, чтобы Продамус не ретраил бесконечно.

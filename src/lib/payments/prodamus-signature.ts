@@ -74,12 +74,24 @@ function assignNested(root: NestedNode, path: string[], value: string): void {
 }
 
 /**
- * Парсит сырое тело формы в дерево объектов.
+ * Парсит сырое тело формы (x-www-form-urlencoded) в дерево объектов.
  */
 export function parseFormBody(rawBody: string): NestedNode {
     const params = new URLSearchParams(rawBody)
+    return parseFormEntries(params.entries())
+}
+
+/**
+ * Парсит произвольный набор пар [key, value] в дерево объектов.
+ * Подходит и для URLSearchParams, и для FormData (multipart/form-data).
+ * Значения-файлы (не строки) игнорируются — в вебхуке Продамуса их нет.
+ */
+export function parseFormEntries(
+    entries: Iterable<[string, FormDataEntryValue]> | Iterable<[string, string]>,
+): NestedNode {
     const root: NestedNode = {}
-    for (const [key, value] of params.entries()) {
+    for (const [key, value] of entries as Iterable<[string, FormDataEntryValue]>) {
+        if (typeof value !== 'string') continue
         assignNested(root, parseKeyPath(key), value)
     }
     return root
