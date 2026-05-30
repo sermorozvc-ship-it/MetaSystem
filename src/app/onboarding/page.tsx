@@ -116,20 +116,20 @@ export default function OnboardingPage() {
 
                 {/* CTA Button */}
                 <button
-                    onClick={() => router.push('/auth?mode=register&returnTo=/questionnaire')}
+                    onClick={() => router.push('/auth?mode=login&returnTo=/questionnaire')}
                     className="glass-button w-full flex items-center justify-center gap-2 py-4 text-lg"
                 >
-                    Зарегистрироваться
+                    Войти в аккаунт
                     <ArrowRight className="w-5 h-5" />
                 </button>
 
                 <p className="text-xs text-text-muted mt-4">
-                    Уже есть аккаунт?{' '}
+                    Ещё нет аккаунта?{' '}
                     <button
-                        onClick={() => router.push('/auth?mode=login&returnTo=/questionnaire')}
+                        onClick={() => router.push('/auth?mode=register&returnTo=/questionnaire')}
                         className="text-accent hover:underline"
                     >
-                        Войти
+                        Зарегистрироваться
                     </button>
                 </p>
             </div>
