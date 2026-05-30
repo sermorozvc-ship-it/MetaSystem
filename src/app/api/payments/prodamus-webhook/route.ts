@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { notifyPaymentConfirmed } from '@/lib/services/notifications'
 import { parseFormBody, verifySignature } from '@/lib/payments/prodamus-signature'
-import { parseOrderId } from '@/lib/payments/prodamus-link'
 
 // Supabase admin client — service role key first, fallback to anon
 function getAdminClient() {
@@ -21,10 +20,9 @@ function getAdminClient() {
  * Подпись — в HTTP-заголовке `Sign` (HMAC-SHA256 по алгоритму Продамуса).
  * Подтверждением оплаты считается ТОЛЬКО валидный вебхук с payment_status=success.
  *
- * Связка платёж↔пользователь идёт через order_id формата:
- *   init_<userId>_<paymentId>       → первичная оплата
- *   renewal_<userId>_<paymentId>    → продление тарифа
- *   nutrition_<userId>_<paymentId>  → докупка питания
+ * order_id = id записи payments (UUID). Тип платежа и пользователя берём из
+ * самой строки payments (поля renewal_type и user_id) — в order_id их не кодируем,
+ * т.к. форма Prodamus падает на длинных order_id.
  */
 export async function POST(request: NextRequest) {
     const rawBody = await request.text()
@@ -61,34 +59,117 @@ export async function POST(request: NextRequest) {
     }
 
     if (!orderId) {
-        console.warn('[Prodamus Webhook] No order_id — cannot match user')
-        return new NextResponse('OK', { status: 200 })
-    }
-
-    const { type, userId, paymentId } = parseOrderId(orderId)
-    if (!userId) {
-        console.warn('[Prodamus Webhook] Cannot parse order_id:', orderId)
+        console.warn('[Prodamus Webhook] No order_id — cannot match payment')
         return new NextResponse('OK', { status: 200 })
     }
 
     const supabase = getAdminClient()
 
-    if (type === 'renewal') {
-        console.log('[Prodamus Webhook] RENEWAL for user:', userId, 'paymentId:', paymentId)
-        await handleRenewalPayment(supabase, userId, paymentId, amount)
+    // order_id = payments.id. Находим запись и берём из неё user_id + renewal_type.
+    const { data: paymentRow, error: findErr } = await supabase
+        .from('payments')
+        .select('id, user_id, renewal_type, status')
+        .eq('id', orderId)
+        .maybeSingle()
+
+    if (findErr) {
+        console.error('[Prodamus Webhook] DB find error:', findErr)
+        return new NextResponse('DB Error', { status: 500 })
+    }
+
+    if (!paymentRow) {
+        // Платёж не через наш сайт (нет записи) — определяем пользователя по email
+        // и создаём confirmed-запись как fallback по сумме.
+        const email = typeof data.customer_email === 'string' ? data.customer_email : ''
+        console.warn('[Prodamus Webhook] No payment row for order_id:', orderId, 'email:', email)
+        await handleOrphanPayment(supabase, email, amount)
         return new NextResponse('OK', { status: 200 })
     }
 
-    if (type === 'nutrition') {
-        console.log('[Prodamus Webhook] NUTRITION UPGRADE for user:', userId, 'paymentId:', paymentId)
-        await handleNutritionUpgrade(supabase, userId, paymentId)
+    const userId = paymentRow.user_id as string
+    const renewalType = (paymentRow.renewal_type as string) ?? 'initial'
+
+    if (renewalType === 'renewal' || renewalType === 'plan_change') {
+        console.log('[Prodamus Webhook] RENEWAL for user:', userId, 'paymentId:', orderId)
+        await handleRenewalPayment(supabase, userId, orderId, amount)
         return new NextResponse('OK', { status: 200 })
     }
 
-    // Первичная оплата (type === 'init')
-    console.log('[Prodamus Webhook] INITIAL payment for user:', userId, 'paymentId:', paymentId)
-    await handleInitialPayment(supabase, userId, paymentId, amount)
+    if (renewalType === 'nutrition_upgrade') {
+        console.log('[Prodamus Webhook] NUTRITION UPGRADE for user:', userId, 'paymentId:', orderId)
+        await handleNutritionUpgrade(supabase, userId, orderId)
+        return new NextResponse('OK', { status: 200 })
+    }
+
+    // Первичная оплата (renewal_type === 'initial')
+    console.log('[Prodamus Webhook] INITIAL payment for user:', userId, 'paymentId:', orderId)
+    await handleInitialPayment(supabase, userId, orderId, amount)
     return new NextResponse('OK', { status: 200 })
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Платёж без записи в БД (не через сайт) — fallback по email
+// ──────────────────────────────────────────────────────────────────────────
+async function handleOrphanPayment(
+    supabase: ReturnType<typeof getAdminClient>,
+    email: string,
+    amount: number,
+) {
+    if (!email) {
+        console.warn('[Prodamus Webhook] Orphan payment without email — skipping')
+        return
+    }
+
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle()
+
+    if (!profile) {
+        console.warn('[Prodamus Webhook] Orphan payment: no profile for email:', email)
+        return
+    }
+
+    const userId = profile.id as string
+
+    let plan_months = 1
+    let plan_type = '1_month'
+    let includes_nutrition = false
+    if (amount >= 50000) {
+        plan_months = 6; plan_type = '6_months'; includes_nutrition = true
+    } else if (amount >= 30000) {
+        plan_months = 3; plan_type = '3_months'
+    }
+
+    await supabase.from('payments').insert({
+        user_id: userId,
+        amount,
+        currency: 'RUB',
+        status: 'confirmed',
+        payment_method: 'prodamus',
+        confirmed_at: new Date().toISOString(),
+        confirmed_by: null,
+        renewal_type: 'initial',
+        plan_months,
+        plan_type,
+        includes_nutrition,
+    })
+
+    const subscriptionEndDate = new Date()
+    subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + plan_months)
+
+    await supabase
+        .from('profiles')
+        .update({
+            subscription_status: 'active',
+            subscription_end_date: subscriptionEndDate.toISOString().split('T')[0],
+            has_nutrition_plan: includes_nutrition,
+        })
+        .eq('id', userId)
+
+    console.log('[Prodamus Webhook] ✓ Orphan payment activated for user:', userId)
+    await notifyPaymentConfirmed(userId, amount)
 }
 
 // ──────────────────────────────────────────────────────────────────────────

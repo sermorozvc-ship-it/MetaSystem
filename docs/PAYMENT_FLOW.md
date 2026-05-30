@@ -67,16 +67,16 @@ NEXT_PUBLIC_APP_URL=https://meta-system-ja1o.vercel.app
 
 ## 🔗 Связка платёж ↔ пользователь: order_id
 
-Вместо `label` (как было в ЮMoney) используется параметр `order_id`:
+`order_id` = **id записи в таблице `payments`** (UUID, 36 символов).
 
-```
-init_<userId>_<paymentId>        → первичная оплата
-renewal_<userId>_<paymentId>     → продление тарифа
-nutrition_<userId>_<paymentId>   → докупка питания
-```
-
-UUID имеет фиксированную длину 36 символов и не содержит `_`, поэтому
-`parseOrderId` разбирает строку однозначно (см. `prodamus-link.ts`).
+> ⚠️ Форма Prodamus отдаёт 500 на слишком длинных `order_id` (>~50 символов),
+> поэтому тип платежа и `userId` в `order_id` НЕ кодируются. Вебхук находит
+> строку `payments` по этому id и берёт `user_id` + `renewal_type` из неё:
+> - `renewal_type = 'initial'` → первичная оплата
+> - `renewal_type = 'renewal' | 'plan_change'` → продление тарифа
+> - `renewal_type = 'nutrition_upgrade'` → докупка питания
+>
+> Если записи нет (платёж не через сайт) — fallback по `customer_email`.
 
 ---
 

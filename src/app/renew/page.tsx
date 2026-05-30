@@ -18,7 +18,7 @@ import {
   type PlanType,
   type SubscriptionInfo,
 } from '@/lib/services/renewal'
-import { buildProdamusLink, buildOrderId } from '@/lib/payments/prodamus-link'
+import { buildProdamusLink } from '@/lib/payments/prodamus-link'
 
 const PRODAMUS_FORM_URL = process.env.NEXT_PUBLIC_PRODAMUS_FORM_URL || 'https://metasystem.payform.ru'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://meta-system-ja1o.vercel.app'
@@ -31,10 +31,9 @@ const PLAN_LABELS: Record<PlanType, string> = {
 
 /**
  * Ссылка на оплату продления через Продамус.
- * order_id = renewal_<userId>_<paymentId> — по нему вебхук продлевает подписку.
+ * order_id = paymentId — по нему вебхук находит запись и продлевает подписку.
  */
 function buildRenewalLink(
-  userId: string,
   paymentId: string,
   amount: number,
   planType: PlanType,
@@ -48,7 +47,7 @@ function buildRenewalLink(
 
   return buildProdamusLink({
     formUrl: PRODAMUS_FORM_URL,
-    orderId: buildOrderId('renewal', userId, paymentId),
+    orderId: paymentId,
     productName,
     price: amount,
     customerEmail: email,
@@ -153,7 +152,6 @@ function RenewContent() {
 
       setIsPending(true)
       const payUrl = buildRenewalLink(
-        user.id,
         paymentId,
         amount,
         selectedPlan,

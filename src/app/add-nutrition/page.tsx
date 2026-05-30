@@ -13,16 +13,16 @@ import {
   NUTRITION_ADDON_PRICE,
   type SubscriptionInfo,
 } from '@/lib/services/renewal'
-import { buildProdamusLink, buildOrderId } from '@/lib/payments/prodamus-link'
+import { buildProdamusLink } from '@/lib/payments/prodamus-link'
 
 const PRODAMUS_FORM_URL = process.env.NEXT_PUBLIC_PRODAMUS_FORM_URL || 'https://metasystem.payform.ru'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://meta-system-ja1o.vercel.app'
 
-function buildNutritionLink(userId: string, paymentId: string, email?: string | null) {
+function buildNutritionLink(paymentId: string, email?: string | null) {
   const productName = 'MetaSystem — план питания'
   return buildProdamusLink({
     formUrl: PRODAMUS_FORM_URL,
-    orderId: buildOrderId('nutrition', userId, paymentId),
+    orderId: paymentId,
     productName,
     price: NUTRITION_ADDON_PRICE,
     customerEmail: email,
@@ -85,7 +85,7 @@ export default function AddNutritionPage() {
       }
 
       setIsPending(true)
-      const payUrl = buildNutritionLink(user.id, paymentId, user.email)
+      const payUrl = buildNutritionLink(paymentId, user.email)
       window.location.href = payUrl
     } catch {
       setError('Произошла ошибка. Попробуйте позже.')

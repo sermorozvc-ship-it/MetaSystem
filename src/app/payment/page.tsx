@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { getUserPayment, createPaymentRequest, createTestPayment, calculatePromoDiscount, PROMO_CODES, type Payment } from '@/lib/services/payment'
-import { buildProdamusLink, buildOrderId } from '@/lib/payments/prodamus-link'
+import { buildProdamusLink } from '@/lib/payments/prodamus-link'
 import { PLAN_PRICES, NUTRITION_ADDON_PRICE, PLAN_MONTHS } from '@/lib/payments/pricing'
 import { isAdminUser } from '@/lib/auth/isAdminUser'
 
@@ -43,7 +43,7 @@ function buildPaymentLink(payment: Payment, userEmail?: string | null): string {
 
     return buildProdamusLink({
         formUrl: PRODAMUS_FORM_URL,
-        orderId: buildOrderId('init', payment.user_id, payment.id),
+        orderId: payment.id,
         productName,
         price: payment.amount,
         customerEmail: userEmail,
