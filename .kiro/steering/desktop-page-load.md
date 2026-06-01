@@ -87,6 +87,33 @@ inclusion: always
   - signOut (нужно сбросить всё SPA-состояние);
   - return-from-payment (нужно перечитать профиль с сервера).
 
+- **Guard НЕ редиректит на `/auth` по первому же `user === null`.** При
+  обновлении access_token и особенно при смене VPN (рвётся соединение,
+  IP меняется) `onAuthStateChange` на доли секунды отдаёт `user = null`,
+  пока сессия пересоздаётся. Мгновенный `router.replace('/auth')` в этот
+  момент выбрасывал пользователя со страницы прямо во время работы
+  («страница сама закрылась» в дневнике во время тренировки).
+
+  Правильный паттерн — grace-период с перепроверкой через ref:
+
+  ```ts
+  const userRef = useRef(user)
+  useEffect(() => { userRef.current = user }, [user])
+
+  useEffect(() => {
+    if (authLoading) return
+    if (user) return
+    const t = setTimeout(() => {
+      if (!userRef.current) router.replace('/auth')   // сессия не вернулась
+    }, 3000)
+    return () => clearTimeout(t)
+  }, [user, authLoading, router])
+  ```
+
+  3с достаточно, чтобы `onAuthStateChange` восстановил сессию после
+  реконнекта VPN. Реальный разлогин (сессии действительно нет) всё равно
+  отрабатывает — просто на 3с позже.
+
 ## Чек-лист перед пушем
 
 - [ ] В `AuthContext.tsx` таймаут страховки >= 5000мс.
@@ -96,6 +123,9 @@ inclusion: always
 - [ ] В `next.config.js` `reactStrictMode: false`.
 - [ ] Новые страницы используют `router.replace('/auth')`, а НЕ
       `window.location.href = '/auth'` для auth-guard.
+- [ ] Guard НЕ редиректит на `/auth` по первому `user === null` —
+      есть grace-период (~3с) с перепроверкой через `userRef`.
+      Иначе смена VPN / refresh токена выбрасывает со страницы.
 - [ ] Любая новая `services/*.ts` функция, вызываемая на старте
       страницы, оборачивает Supabase-запрос в `withTimeout` из
       `@/lib/utils/with-timeout` и при ошибке/таймауте возвращает
@@ -123,3 +153,7 @@ inclusion: always
    `services/training.ts` (или аналогичных) — нужен таймаут.
 3. Проверить, не появились ли новые `window.location.href` в guard-ах —
    пройтись `grep_search`-ом.
+4. Проверить, не убрали ли grace-период из guard-эффекта (редирект на
+   `/auth` должен идти через `setTimeout` + перепроверку `userRef`, а
+   не мгновенно по `!user`). Особенно если жалоба «страница сама
+   закрывается / выкидывает на вход» совпадает с использованием VPN.

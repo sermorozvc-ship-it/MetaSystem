@@ -955,13 +955,25 @@ export default function ProgramDetailPage() {
     // лок старше STALE_LOCK_MS считается протухшим и принудительно снимается.
     // Иначе кнопки «Сохранить»/«Завершить» залипали бы до hard reload.
     const inFlightSinceRef = useRef<number>(0)
-    const STALE_LOCK_MS = 20_000
+    // 15с = чуть больше сетевого таймаута withTimeout (12с). Логика: если
+    // upsert честно отрабатывает, его finally снимет лок задолго до 15с. Если
+    // же лок «висит» дольше 15с — значит finally не отработал (заморозка
+    // вкладки / оборванная сеть при смене VPN), и лок надо принудительно снять.
+    // Раньше было 20с — лишние 8с «вечного спиннера» после пробуждения вкладки.
+    const STALE_LOCK_MS = 15_000
     // true если лок свободен ИЛИ протух — можно стартовать новую операцию.
     const lockIsFree = useCallback(() => {
         if (!inFlightRef.current) return true
         if (Date.now() - inFlightSinceRef.current > STALE_LOCK_MS) {
             console.warn('[program] stale in-flight lock force-released after', STALE_LOCK_MS, 'ms')
             inFlightRef.current = false
+            // КРИТИЧНО: снимаем и визуальный спиннер. Раньше тут сбрасывался
+            // только ref — и кнопка оставалась disabled со «Сохраняю...», пока
+            // пользователь не перезагрузит страницу. На телефоне (экран гаснет
+            // между подходами → вкладка заморожена → таймер withTimeout не
+            // тикал) это и был тот самый вечный спиннер.
+            setIsSaving(false)
+            setSaveStatus(prev => prev === 'saving' ? 'idle' : prev)
             return true
         }
         return false
@@ -982,8 +994,25 @@ export default function ProgramDetailPage() {
         return `training_draft_${programId}_${dayNumber}`
     }, [programId])
 
+    // Ref на актуального user — нужен внутри отложенной перепроверки гварда,
+    // чтобы не словить stale-closure после grace-периода.
+    const userRef = useRef(user)
+    useEffect(() => { userRef.current = user }, [user])
+
+    // Auth-guard с grace-периодом.
+    // ВАЖНО (см. .kiro/steering/desktop-page-load.md): НЕ редиректим на /auth
+    // по первому же null. При смене VPN / обновлении access_token user на
+    // доли секунды бывает null, пока onAuthStateChange не восстановит сессию.
+    // Мгновенный router.replace('/auth') в этот момент выбрасывал со страницы
+    // прямо во время тренировки («страница сама закрылась»). Ждём 3с и
+    // перепроверяем: если сессия вернулась — остаёмся.
     useEffect(() => {
-        if (!authLoading && !user) router.replace('/auth')
+        if (authLoading) return
+        if (user) return
+        const t = setTimeout(() => {
+            if (!userRef.current) router.replace('/auth')
+        }, 3000)
+        return () => clearTimeout(t)
     }, [user, authLoading, router])
 
     // Проверка подписки
@@ -1689,6 +1718,44 @@ export default function ProgramDetailPage() {
             window.removeEventListener('focus', onFocus)
         }
     }, [program, user, currentDayIndex])
+
+    // ─── Watchdog: восстановление после заморозки вкладки / смены сети ─────────
+    // Сценарий тренировки: телефон гасит экран между подходами → вкладка
+    // заморожена браузером → таймер withTimeout НЕ тикает. Если в этот момент
+    // VPN сменил IP (или сеть мигнула), активный upsert умирает, но лок
+    // inFlightRef остаётся true, а спиннер «Сохраняю...» висит. Раньше это
+    // чинилось только hard reload.
+    //
+    // Здесь при возврате вкладки (visible/focus) и при восстановлении сети
+    // (online) мы:
+    //   1) принудительно снимаем протухший лок и спиннер (lockIsFree чистит
+    //      и isSaving/saveStatus);
+    //   2) если остались несохранённые правки — дотягиваем их тихим автосейвом.
+    // Это и есть «раз и навсегда»: даже если запрос подвис незаметно, кнопка
+    // не залипает, а данные досохраняются сами.
+    useEffect(() => {
+        const recover = () => {
+            // Снимаем залипший лок (если протух) — заодно гасит спиннер.
+            const free = lockIsFree()
+            // Есть несохранённые изменения и сервер-снимок известен — досохраняем.
+            if (free && userChangedRef.current && lastServerEntryRef.current !== null) {
+                if (debounceTimerRef.current) {
+                    clearTimeout(debounceTimerRef.current)
+                    debounceTimerRef.current = null
+                }
+                saveEntryRef.current?.(true)
+            }
+        }
+        const onVisible = () => { if (document.visibilityState === 'visible') recover() }
+        document.addEventListener('visibilitychange', onVisible)
+        window.addEventListener('focus', recover)
+        window.addEventListener('online', recover)
+        return () => {
+            document.removeEventListener('visibilitychange', onVisible)
+            window.removeEventListener('focus', recover)
+            window.removeEventListener('online', recover)
+        }
+    }, [lockIsFree])
 
     const updateExercise = (exerciseId: string, data: ExerciseClientData) => {
         userChangedRef.current = true
