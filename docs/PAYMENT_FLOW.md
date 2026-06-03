@@ -62,6 +62,7 @@ NEXT_PUBLIC_APP_URL=https://meta-system-ja1o.vercel.app
 | `src/app/api/payments/prodamus-webhook/route.ts` | Webhook от Prodamus |
 | `src/lib/services/payment.ts` | Функции работы с payments (первичная оплата) |
 | `src/lib/services/renewal.ts` | Продление + докупка питания |
+| `docs/INSTALLMENTS_INFO.md` | Рассрочки — комиссии, расчёты, управление |
 
 ---
 
@@ -109,6 +110,24 @@ NEXT_PUBLIC_APP_URL=https://meta-system-ja1o.vercel.app
 
 Цены заданы в `src/lib/services/payment.ts` (первичная) и
 `src/lib/services/renewal.ts` (`RENEWAL_PRICES`, `NUTRITION_ADDON_PRICE`).
+
+---
+
+## 💳 Рассрочки (Яндекс Сплит, Долями)
+
+**Подключены:** Яндекс Сплит (2/4/6/12/24 мес), Долями (3/6/12 мес)  
+**Отключены:** СБЕР, ОТП Банк (комиссии 15–21% — дорого)
+
+Рассрочки работают **глобально** — показываются на всех тарифах (1/3/6 мес).
+Параметры `available_payment_methods` и `installments_disabled` **не работают**
+через API Продамуса (только GET-ссылки с `do=pay`). Управление методами
+оплаты — только через запросы в поддержку Продамуса (глобально для всего аккаунта).
+
+**Комиссии:** Яндекс 2/4/6 мес (8,5–12%), Долями (12% на всех сроках), Яндекс
+12/24 мес (17,5% — дорого, но отключить нельзя — Яндекс контролирует сам).
+
+**Подробнее:** см. `docs/INSTALLMENTS_INFO.md` (таблица комиссий, расчёты по
+тарифам, почему оставили рассрочки).
 
 ---
 
