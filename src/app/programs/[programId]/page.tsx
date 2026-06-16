@@ -404,24 +404,22 @@ function ExerciseCard({
                     {/* Таблица подходов */}
                     <div className="space-y-2">
                         {/* Заголовок */}
-                        <div className="grid grid-cols-[auto_1fr_1fr_1fr_auto_auto] gap-2 text-xs text-text-muted px-1">
+                        <div className="grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 text-xs text-text-muted px-1">
                             <div className="min-w-[44px]">Подход</div>
                             <div>Вес (кг)</div>
                             <div>Повт.</div>
                             <div>RIR</div>
                             <div className="w-7" />
-                            <div className="w-6" />
                         </div>
                         {Array.from({ length: totalSets }).map((_, setIdx) => {
                             const setData = data.sets[setIdx] || { weight: '', reps: '', rir: '', setComment: '' }
                             const plannedWeight = targetWeights[setIdx] ?? 0
                             const isExtra = setIdx >= plannedSets
-                            const labelInfo = getLabelInfo(setData.label ?? null)
                             const setStatus = setStatuses?.[setIdx]
 
                             return (
                                 <div key={setIdx}>
-                                    <div className={`grid grid-cols-[auto_1fr_1fr_1fr_auto_auto] gap-2 items-center rounded-lg px-1 py-0.5`}>
+                                    <div className={`grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 items-center rounded-lg px-1 py-0.5`}>
                                         {/* Номер подхода */}
                                         <div className="flex flex-col min-w-[44px]">
                                             <div className="flex items-center gap-1">
@@ -441,34 +439,31 @@ function ExerciseCard({
                                         <input type="number" step="0.5" value={setData.weight}
                                             onChange={e => updateSet(setIdx, 'weight', e.target.value)}
                                             className="glass-input text-sm py-2 px-2 text-center min-w-0 font-semibold"
-                                            style={labelInfo ? { color: labelInfo.inputColor } : undefined}
                                             placeholder={plannedWeight > 0 ? String(plannedWeight) : '—'} />
                                         <input type="number" value={setData.reps}
                                             onChange={e => updateSet(setIdx, 'reps', e.target.value)}
                                             className="glass-input text-sm py-2 px-2 text-center min-w-0 font-semibold"
-                                            style={labelInfo ? { color: labelInfo.inputColor } : undefined}
                                             placeholder={activeExercise.reps.split('-')[0] || '—'} />
                                         <input type="number" min="0" max="5" value={setData.rir}
                                             onChange={e => updateSet(setIdx, 'rir', e.target.value)}
                                             className="glass-input text-sm py-2 px-2 text-center min-w-0 font-semibold"
-                                            style={labelInfo ? { color: labelInfo.inputColor } : undefined}
                                             placeholder="2" />
 
                                         {/* Индикатор/кнопка сохранения подхода.
-                                            Появляется только когда есть статус
-                                            (dirty/saving/saved/error). В обычном
-                                            состоянии — пустое место той же ширины,
-                                            чтобы grid не «прыгал». */}
+                                            dirty  → зелёная кнопка (нажми чтобы сохранить)
+                                            saving → спиннер
+                                            saved  → зелёная галочка (не кнопка)
+                                            error  → красный ⚠ (нажми чтобы повторить) */}
                                         <div className="w-7 flex justify-center">
                                             {setStatus === 'dirty' && (
                                                 <button
                                                     type="button"
                                                     onClick={() => onSaveSet?.(setIdx)}
-                                                    className="w-7 h-7 flex items-center justify-center rounded-md bg-accent/15 border border-accent/40 text-accent hover:bg-accent/25 transition-colors animate-pulse-slow"
+                                                    className="w-7 h-7 flex items-center justify-center rounded-md bg-success/20 border border-success/50 text-success hover:bg-success/35 transition-colors"
                                                     title="Сохранить подход"
                                                     aria-label="Сохранить подход"
                                                 >
-                                                    <Check className="w-3.5 h-3.5" />
+                                                    <Check className="w-3.5 h-3.5" strokeWidth={3} />
                                                 </button>
                                             )}
                                             {setStatus === 'saving' && (
@@ -502,46 +497,7 @@ function ExerciseCard({
                                             )}
                                         </div>
 
-                                        {/* Кнопка метки — три точки */}
-                                        <div className="w-6 flex justify-center">
-                                            <div className="relative group">
-                                                <button
-                                                    className={`w-6 h-7 flex items-center justify-center rounded transition-colors ${
-                                                        labelInfo
-                                                            ? `${labelInfo.color}`
-                                                            : 'text-text-muted hover:text-accent'
-                                                    }`}
-                                                    title="Метка подхода"
-                                                >
-                                                    <span className="text-base leading-none select-none">⋮</span>
-                                                </button>
-                                                {/* Dropdown меток */}
-                                                <div className="absolute right-0 top-full mt-1 z-30 hidden group-hover:block glass-card border border-border shadow-xl min-w-[130px] p-1.5 space-y-1">
-                                                    {SET_LABELS.map(l => (
-                                                        <button
-                                                            key={l.value}
-                                                            onClick={() => toggleSetLabel(setIdx, l.value)}
-                                                            className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-2 ${
-                                                                setData.label === l.value
-                                                                    ? `${l.bg} ${l.color} font-semibold`
-                                                                    : 'text-text-secondary hover:bg-bg-elevated'
-                                                            }`}
-                                                        >
-                                                            {setData.label === l.value && <span>✓</span>}
-                                                            {l.label}
-                                                        </button>
-                                                    ))}
-                                                    {setData.label && (
-                                                        <button
-                                                            onClick={() => toggleSetLabel(setIdx, setData.label ?? null)}
-                                                            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-text-muted hover:bg-bg-elevated transition-colors"
-                                                        >
-                                                            Снять метку
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
+
                                     </div>
                                 </div>
                             )
@@ -2841,12 +2797,6 @@ export default function ProgramDetailPage() {
                             min-w-0 + truncate — на узких мобильных экранах сообщение об
                             ошибке (текст таймаута/код) не выпирает за края контейнера. */}
                         <div className="flex items-center justify-end gap-2 text-xs min-h-[16px] min-w-0">
-                            {saveStatus === 'saving' && (
-                                <span className="text-text-muted flex items-center gap-1.5 truncate">
-                                    <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" />
-                                    <span className="truncate">Сохраняю...</span>
-                                </span>
-                            )}
                             {saveStatus === 'saved' && (
                                 <span className="text-success truncate">✓ Сохранено автоматически</span>
                             )}
@@ -2855,7 +2805,7 @@ export default function ProgramDetailPage() {
                                     ⚠ {saveError ?? 'Ошибка сохранения. Нажми ✓ на подходе, чтобы повторить'}
                                 </span>
                             )}
-                            {saveStatus === 'idle' && lastSavedAtRef.current !== null && (
+                            {(saveStatus === 'idle' || saveStatus === 'saving') && lastSavedAtRef.current !== null && (
                                 <span className="text-text-muted truncate">Все изменения сохранены</span>
                             )}
                         </div>

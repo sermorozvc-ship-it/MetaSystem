@@ -112,13 +112,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                         if (!existing) {
                             console.log('[Auth] Creating profile for:', newSession.user.email)
-                            await supabase.from('profiles').insert({
+                            const { error: insertError } = await supabase.from('profiles').insert({
                                 id: newSession.user.id,
                                 email: newSession.user.email,
                                 full_name: newSession.user.user_metadata?.full_name || null,
-                                role: 'user',
-                                is_blocked: false
+                                role: 'client',
                             })
+                            if (insertError) {
+                                console.error('[Auth] Profile insert error:', insertError.message, insertError.code)
+                            }
                         }
                     } catch (err) {
                         console.error('[Auth] Profile creation error:', err)

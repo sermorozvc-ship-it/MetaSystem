@@ -218,7 +218,10 @@ export async function getCurrentProgram(): Promise<TrainingProgram | null> {
   const supabase = createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not authenticated')
+  if (!user) {
+    console.warn('[Training] getCurrentProgram: not authenticated')
+    return null
+  }
 
   const today = new Date().toISOString().split('T')[0]
 
