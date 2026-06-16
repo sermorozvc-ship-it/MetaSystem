@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import {
     ArrowLeft, Play, CheckCircle2, Loader2, ChevronLeft, ChevronRight,
     X, Maximize2, Minimize2, ChevronDown, ChevronUp, Timer, Clock,
-    Lock, RefreshCw, Link2, Check,
+    Lock, RefreshCw, Link2, Check, Square, RotateCcw,
 } from 'lucide-react'
 import RestTimer from '@/components/RestTimer'
 import { useAuth } from '@/lib/auth'
@@ -219,6 +219,8 @@ function ExerciseCard({
     collapsed,
     onToggleCollapse,
     supersetLabel,
+    setStatuses,
+    onSaveSet,
 }: {
     exercise: Exercise
     index: number
@@ -231,6 +233,10 @@ function ExerciseCard({
     collapsed: boolean
     onToggleCollapse: () => void
     supersetLabel?: string
+    /** Карта статусов сохранения для подходов этого упражнения (key = setIdx). */
+    setStatuses?: Record<number, 'dirty' | 'saving' | 'saved' | 'error'>
+    /** Клик по индикатору подхода — запрашивает ручное сохранение. */
+    onSaveSet?: (setIdx: number) => void
 }) {
     const altMenuRef = useRef<HTMLDivElement>(null)
     useEffect(() => {
@@ -398,11 +404,12 @@ function ExerciseCard({
                     {/* Таблица подходов */}
                     <div className="space-y-2">
                         {/* Заголовок */}
-                        <div className="grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 text-xs text-text-muted px-1">
+                        <div className="grid grid-cols-[auto_1fr_1fr_1fr_auto_auto] gap-2 text-xs text-text-muted px-1">
                             <div className="min-w-[44px]">Подход</div>
                             <div>Вес (кг)</div>
                             <div>Повт.</div>
                             <div>RIR</div>
+                            <div className="w-7" />
                             <div className="w-6" />
                         </div>
                         {Array.from({ length: totalSets }).map((_, setIdx) => {
@@ -410,10 +417,11 @@ function ExerciseCard({
                             const plannedWeight = targetWeights[setIdx] ?? 0
                             const isExtra = setIdx >= plannedSets
                             const labelInfo = getLabelInfo(setData.label ?? null)
+                            const setStatus = setStatuses?.[setIdx]
 
                             return (
                                 <div key={setIdx}>
-                                    <div className={`grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 items-center rounded-lg px-1 py-0.5`}>
+                                    <div className={`grid grid-cols-[auto_1fr_1fr_1fr_auto_auto] gap-2 items-center rounded-lg px-1 py-0.5`}>
                                         {/* Номер подхода */}
                                         <div className="flex flex-col min-w-[44px]">
                                             <div className="flex items-center gap-1">
@@ -445,6 +453,54 @@ function ExerciseCard({
                                             className="glass-input text-sm py-2 px-2 text-center min-w-0 font-semibold"
                                             style={labelInfo ? { color: labelInfo.inputColor } : undefined}
                                             placeholder="2" />
+
+                                        {/* Индикатор/кнопка сохранения подхода.
+                                            Появляется только когда есть статус
+                                            (dirty/saving/saved/error). В обычном
+                                            состоянии — пустое место той же ширины,
+                                            чтобы grid не «прыгал». */}
+                                        <div className="w-7 flex justify-center">
+                                            {setStatus === 'dirty' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onSaveSet?.(setIdx)}
+                                                    className="w-7 h-7 flex items-center justify-center rounded-md bg-accent/15 border border-accent/40 text-accent hover:bg-accent/25 transition-colors animate-pulse-slow"
+                                                    title="Сохранить подход"
+                                                    aria-label="Сохранить подход"
+                                                >
+                                                    <Check className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
+                                            {setStatus === 'saving' && (
+                                                <div
+                                                    className="w-7 h-7 flex items-center justify-center text-text-muted"
+                                                    title="Сохраняю…"
+                                                    aria-label="Сохраняю"
+                                                >
+                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                </div>
+                                            )}
+                                            {setStatus === 'saved' && (
+                                                <div
+                                                    className="w-7 h-7 flex items-center justify-center rounded-md bg-success/25 border border-success/60 text-success"
+                                                    title="Сохранено"
+                                                    aria-label="Сохранено"
+                                                >
+                                                    <Check className="w-3.5 h-3.5" strokeWidth={3} />
+                                                </div>
+                                            )}
+                                            {setStatus === 'error' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onSaveSet?.(setIdx)}
+                                                    className="w-7 h-7 flex items-center justify-center rounded-md bg-red-500/15 border border-red-500/40 text-red-400 hover:bg-red-500/25 transition-colors"
+                                                    title="Ошибка сохранения — нажми, чтобы повторить"
+                                                    aria-label="Повторить сохранение"
+                                                >
+                                                    <span className="text-xs leading-none">⚠</span>
+                                                </button>
+                                            )}
+                                        </div>
 
                                         {/* Кнопка метки — три точки */}
                                         <div className="w-6 flex justify-center">
@@ -936,6 +992,9 @@ export default function ProgramDetailPage() {
     const [workoutStartTime, setWorkoutStartTime] = useState<number | null>(null)
     const [elapsedSeconds, setElapsedSeconds] = useState(0)
     const [savedDuration, setSavedDuration] = useState<number | null>(null)
+    // Если задано — таймер «остановлен» вручную (кнопка Стоп). Хранит зафиксированное число секунд.
+    // Сессионное состояние: не персистится в localStorage, сбрасывается при загрузке дня.
+    const [stoppedDuration, setStoppedDuration] = useState<number | null>(null)
 
     const dataLoadedRef = useRef(false)
     const userChangedRef = useRef(false)
@@ -979,8 +1038,27 @@ export default function ProgramDetailPage() {
         return false
     }, [])
     const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    // Таймер отложенного ретрая после ошибки автосейва (1 ретрай через 3с, без рекурсии).
+    // Очищается при ручном save / при размонтировании / при следующем вводе.
+    const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
     const [saveError, setSaveError] = useState<string | null>(null)
+
+    // ─── Per-set save status ───────────────────────────────────────────────
+    // Ключ: `${exerciseId}::${setIdx}`. Хранится только для подходов, по
+    // которым есть актуальный статус — после успешного сейва ключи удаляются
+    // через 2 секунды (короткий «✓ Сохранено» прямо на строке подхода).
+    // Это даёт пользователю мгновенную и точечную обратную связь — без
+    // визуального шума глобального «Сохраняю...» внизу страницы.
+    type SetSaveStatus = 'dirty' | 'saving' | 'saved' | 'error'
+    const [setSaveStates, setSetSaveStates] = useState<Record<string, SetSaveStatus>>({})
+    // Снимок ключей, переведённых в 'saving' в начале последнего сейва.
+    // По завершении сейва переводим именно их в 'saved' / 'error', не трогая
+    // подходы, которые юзер успел отредактировать ВО ВРЕМЯ запроса
+    // (они останутся 'dirty' и будут обработаны следующим сейвом).
+    const savingSetKeysRef = useRef<string[]>([])
+    const setSaveFadeTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+    const setKey = (exId: string, idx: number) => `${exId}::${idx}`
     const lastSavedAtRef = useRef<number | null>(null)
 
     // Снимок entry_data, последний раз подтверждённый сервером. Нужен для
@@ -1107,6 +1185,18 @@ export default function ProgramDetailPage() {
         const loadEntry = async () => {
             const currentDay = program.program_data.days[currentDayIndex]
             if (!currentDay) return
+
+            // Сессионный флаг «Стоп» сбрасываем при загрузке любого дня —
+            // он намеренно не персистится в localStorage.
+            setStoppedDuration(null)
+
+            // Per-set save states тоже сбрасываем — они относятся к
+            // прошлому дню/прошлой сессии редактирования и не должны
+            // «протекать» в новый день.
+            for (const t of setSaveFadeTimersRef.current.values()) clearTimeout(t)
+            setSaveFadeTimersRef.current.clear()
+            savingSetKeysRef.current = []
+            setSetSaveStates({})
 
             // Локальный бэкап (если есть). Используем как fallback, если
             // сеть не дала ответа, и как «more-recent override» если бэкап
@@ -1316,6 +1406,10 @@ export default function ProgramDetailPage() {
 
     const startTimerIfNeeded = useCallback(() => {
         if (workoutStartTime !== null) return
+        // Если пользователь явно остановил таймер кнопкой «Стоп» — не перезапускаем
+        // автоматически при правке подходов. Только после явного «Сброса» (stoppedDuration=null)
+        // следующее изменение подхода снова запустит таймер.
+        if (stoppedDuration !== null) return
         const now = Date.now()
         // Сохраняем в localStorage чтобы пережить перезагрузку
         if (program) {
@@ -1323,7 +1417,37 @@ export default function ProgramDetailPage() {
             localStorage.setItem(key, String(now))
         }
         setWorkoutStartTime(now)
-    }, [workoutStartTime, program, currentDayIndex])
+    }, [workoutStartTime, stoppedDuration, program, currentDayIndex])
+
+    // Кнопка «Стоп»: фиксируем текущее значение и останавливаем тикающий счётчик.
+    // localStorage очищаем, чтобы после перезагрузки страницы таймер не «дотикал» лишнее.
+    const stopTimer = useCallback(() => {
+        if (workoutStartTime === null && stoppedDuration === null) return
+        const current = workoutStartTime !== null
+            ? Math.floor((Date.now() - workoutStartTime) / 1000)
+            : elapsedSeconds
+        setStoppedDuration(current)
+        setElapsedSeconds(current)
+        setWorkoutStartTime(null)
+        if (program) {
+            const key = `workout_start_${program.id}_${program.program_data.days[currentDayIndex]?.dayNumber}`
+            localStorage.removeItem(key)
+        }
+    }, [workoutStartTime, stoppedDuration, elapsedSeconds, program, currentDayIndex])
+
+    // Кнопка «Сброс»: confirm-диалог, обнуление. После сброса следующий ввод подхода
+    // снова автоматически запустит таймер с нуля.
+    const resetTimer = useCallback(() => {
+        if (workoutStartTime === null && stoppedDuration === null && elapsedSeconds === 0) return
+        if (typeof window !== 'undefined' && !window.confirm('Сбросить таймер тренировки?')) return
+        setWorkoutStartTime(null)
+        setElapsedSeconds(0)
+        setStoppedDuration(null)
+        if (program) {
+            const key = `workout_start_${program.id}_${program.program_data.days[currentDayIndex]?.dayNumber}`
+            localStorage.removeItem(key)
+        }
+    }, [workoutStartTime, stoppedDuration, elapsedSeconds, program, currentDayIndex])
 
     useEffect(() => {
         if (workoutStartTime === null) return
@@ -1444,9 +1568,35 @@ export default function ProgramDetailPage() {
         }
         inFlightRef.current = true
         inFlightSinceRef.current = Date.now()
+        // Захватили лок — отменяем отложенный ретрай (он сейчас не нужен,
+        // мы и так начали новый сейв).
+        if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current)
+            retryTimerRef.current = null
+        }
 
         if (!silent) setIsSaving(true)
         setSaveError(null)
+
+        // Снимок «dirty» подходов → переводим в 'saving', чтобы UI на каждой
+        // строке показал спиннер сохранения. По завершении (catch/finally в
+        // try ниже) переводим эти же ключи в 'saved' или 'error'.
+        // Подходы, отредактированные ВО ВРЕМЯ запроса, останутся 'dirty'
+        // и попадут в следующий сейв — мы их сюда не включаем.
+        {
+            const keys: string[] = []
+            for (const [k, v] of Object.entries(setSaveStates)) {
+                if (v === 'dirty' || v === 'error') keys.push(k)
+            }
+            savingSetKeysRef.current = keys
+            if (keys.length > 0) {
+                setSetSaveStates(prev => {
+                    const next = { ...prev }
+                    for (const k of keys) next[k] = 'saving'
+                    return next
+                })
+            }
+        }
 
         // Для тихого автосейва индикатор «Сохраняю...» показываем не сразу,
         // а через 400мс. Большинство upsert'ов отрабатывают быстрее — UI
@@ -1511,6 +1661,33 @@ export default function ProgramDetailPage() {
             }
 
             setSaveStatus('saved')
+            // Per-set: переводим зафиксированный снимок в 'saved' и через 2с
+            // удаляем эти ключи — UI вернётся к чистому виду без галочек.
+            if (savingSetKeysRef.current.length > 0) {
+                const keys = savingSetKeysRef.current.slice()
+                savingSetKeysRef.current = []
+                setSetSaveStates(prev => {
+                    const next = { ...prev }
+                    for (const k of keys) {
+                        if (next[k] === 'saving') next[k] = 'saved'
+                    }
+                    return next
+                })
+                for (const k of keys) {
+                    const existing = setSaveFadeTimersRef.current.get(k)
+                    if (existing) clearTimeout(existing)
+                    const t = setTimeout(() => {
+                        setSaveFadeTimersRef.current.delete(k)
+                        setSetSaveStates(prev => {
+                            if (prev[k] !== 'saved') return prev
+                            const next = { ...prev }
+                            delete next[k]
+                            return next
+                        })
+                    }, 2000)
+                    setSaveFadeTimersRef.current.set(k, t)
+                }
+            }
             if (!silent) {
                 setSaveMessage('✓ Сохранено')
                 setTimeout(() => setSaveMessage(''), 2000)
@@ -1528,16 +1705,46 @@ export default function ProgramDetailPage() {
             }
             setSaveStatus('error')
             setSaveError(e?.message || 'Ошибка сохранения')
+            // Per-set: фиксируем 'error' для подходов из снимка.
+            if (savingSetKeysRef.current.length > 0) {
+                const keys = savingSetKeysRef.current.slice()
+                savingSetKeysRef.current = []
+                setSetSaveStates(prev => {
+                    const next = { ...prev }
+                    for (const k of keys) {
+                        if (next[k] === 'saving') next[k] = 'error'
+                    }
+                    return next
+                })
+            }
             if (!silent) setSaveMessage('Ошибка сохранения — попробуй ещё раз')
+            // ⚠️ Раньше тут pendingRef мог запустить бесконечный цикл
+            // «сохранение → таймаут → сразу новое сохранение → опять таймаут».
+            // Теперь: pendingRef снимаем, и делаем ОДНУ отложенную попытку
+            // через 3 секунды (без рекурсии в catch'е), только если правки ещё
+            // есть и сервер по-прежнему «знаком» (lastServerEntryRef !== null).
+            // Если и эта попытка упадёт — стопаем, дальше юзер жмёт вручную
+            // (кнопка на конкретном подходе / «Завершить»).
+            pendingRef.current = false
+            if (retryTimerRef.current) {
+                clearTimeout(retryTimerRef.current)
+                retryTimerRef.current = null
+            }
+            if (silent && userChangedRef.current && lastServerEntryRef.current !== null) {
+                retryTimerRef.current = setTimeout(() => {
+                    retryTimerRef.current = null
+                    saveEntryRef.current?.(true)
+                }, 3000)
+            }
             return false
         } finally {
             inFlightRef.current = false
             if (!silent) setIsSaving(false)
-            // Если за время сохранения накопились новые правки —
-            // сразу запускаем ещё один проход (silent), чтобы не терять их.
+            // Если за время УСПЕШНОГО сохранения накопились новые правки —
+            // запускаем ещё один проход, но ТОЛЬКО если статус не error
+            // (на error pendingRef уже сброшен выше, чтобы не зациклиться).
             if (pendingRef.current) {
                 pendingRef.current = false
-                // Маленький timeout, чтобы дать React зафиксировать стейт-апдейты.
                 setTimeout(() => { saveEntryRef.current?.(true) }, 50)
             }
         }
@@ -1605,6 +1812,19 @@ export default function ProgramDetailPage() {
         window.addEventListener('beforeunload', onBeforeUnload)
         return () => window.removeEventListener('beforeunload', onBeforeUnload)
     }, [program, currentDayIndex, writeLocalDraft])
+
+    // Очистка retry-таймера при размонтировании, чтобы не дёргать saveEntry
+    // на уже несуществующем компоненте.
+    useEffect(() => {
+        return () => {
+            if (retryTimerRef.current) {
+                clearTimeout(retryTimerRef.current)
+                retryTimerRef.current = null
+            }
+            for (const t of setSaveFadeTimersRef.current.values()) clearTimeout(t)
+            setSaveFadeTimersRef.current.clear()
+        }
+    }, [])
 
     // ─── Кросс-устройственная синхронизация ──────────────────────────────────
     // Когда пользователь возвращается во вкладку (фокус / visibilitychange),
@@ -1757,10 +1977,78 @@ export default function ProgramDetailPage() {
         }
     }, [lockIsFree])
 
+    // Группируем per-set статусы по exerciseId — чтобы каждый ExerciseCard
+    // получал только свой кусочек и не ре-рендерился из-за статусов соседей.
+    const setStatusesByExercise = useMemo(() => {
+        const map: Record<string, Record<number, 'dirty' | 'saving' | 'saved' | 'error'>> = {}
+        for (const [k, v] of Object.entries(setSaveStates)) {
+            const sep = k.indexOf('::')
+            if (sep < 0) continue
+            const exId = k.slice(0, sep)
+            const idx = parseInt(k.slice(sep + 2), 10)
+            if (!Number.isFinite(idx)) continue
+            if (!map[exId]) map[exId] = {}
+            map[exId][idx] = v
+        }
+        return map
+    }, [setSaveStates])
+
+    // Клик по кнопке «✓» на конкретном подходе. Запрашиваем ручное (не silent)
+    // сохранение всего снапшота: подход помечен 'dirty' → переедет в 'saving'
+    // на старте saveEntry, и затем в 'saved'/'error' по результату. Если уже
+    // идёт автосейв с этим же подходом — saveEntry молча вернёт false
+    // (лок занят), но pendingRef уже взведён и второй прогон отработает сам.
+    const handleSaveSet = useCallback((exerciseId: string, setIdx: number) => {
+        const k = setKey(exerciseId, setIdx)
+        // На всякий случай — если статус был 'saved' (юзер успел тыкнуть до
+        // того как 'saved' исчез), форсим его в 'dirty', чтобы next save
+        // его подхватил.
+        setSetSaveStates(prev => {
+            if (prev[k] === 'saving') return prev
+            const t = setSaveFadeTimersRef.current.get(k)
+            if (t) { clearTimeout(t); setSaveFadeTimersRef.current.delete(k) }
+            return { ...prev, [k]: 'dirty' }
+        })
+        // Отменяем висящий дебаунс и запускаем сразу — пользователь явно
+        // запросил сохранение.
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current)
+            debounceTimerRef.current = null
+        }
+        saveEntryRef.current?.(false)
+    }, [])
+
     const updateExercise = (exerciseId: string, data: ExerciseClientData) => {
         userChangedRef.current = true
         if (!completedDays.has(program?.program_data.days[currentDayIndex]?.dayNumber ?? -1)) {
             startTimerIfNeeded()
+        }
+        // Помечаем изменившиеся подходы как 'dirty', чтобы кнопка «✓» на
+        // строке подхода стала активной. Сравниваем поля weight/reps/rir
+        // (комментарий и метка не считаются «значимыми» для UI-индикатора —
+        // они и так сохранятся вместе со следующим сейвом).
+        const prevSets = exerciseData[exerciseId]?.sets ?? []
+        const nextSets = data.sets ?? []
+        const len = Math.max(prevSets.length, nextSets.length)
+        const dirtyKeys: string[] = []
+        for (let i = 0; i < len; i++) {
+            const a = prevSets[i] || { weight: '', reps: '', rir: '' }
+            const b = nextSets[i] || { weight: '', reps: '', rir: '' }
+            if (a.weight !== b.weight || a.reps !== b.reps || a.rir !== b.rir || a.label !== b.label) {
+                dirtyKeys.push(setKey(exerciseId, i))
+            }
+        }
+        if (dirtyKeys.length > 0) {
+            setSetSaveStates(prev => {
+                const next = { ...prev }
+                for (const k of dirtyKeys) {
+                    // Если ключ уже был — отменяем «затухающий» таймер saved.
+                    const t = setSaveFadeTimersRef.current.get(k)
+                    if (t) { clearTimeout(t); setSaveFadeTimersRef.current.delete(k) }
+                    next[k] = 'dirty'
+                }
+                return next
+            })
         }
         setExerciseData(prev => ({ ...prev, [exerciseId]: data }))
     }
@@ -1784,8 +2072,15 @@ export default function ProgramDetailPage() {
             clearTimeout(debounceTimerRef.current)
             debounceTimerRef.current = null
         }
+        // Отложенный ретрай тоже отменяем — мы делаем финальный запрос сами.
+        if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current)
+            retryTimerRef.current = null
+        }
         setIsSaving(true)
         setSaveStatus('saving')
+        setSaveError(null)
+        setSaveMessage('')
         const finalDuration = workoutStartTime !== null
             ? Math.floor((Date.now() - workoutStartTime) / 1000)
             : elapsedSeconds || undefined
@@ -1806,6 +2101,7 @@ export default function ProgramDetailPage() {
             setCompletedDays(prev => new Set([...prev, currentDay.dayNumber]))
             setSavedDuration(finalDuration ?? null)
             setWorkoutStartTime(null)
+            setStoppedDuration(null)
             // Очищаем сохранённое время старта и локальный черновик —
             // день закрыт, данные на сервере подтверждены.
             localStorage.removeItem(`workout_start_${program.id}_${currentDay.dayNumber}`)
@@ -1840,8 +2136,14 @@ export default function ProgramDetailPage() {
             clearTimeout(debounceTimerRef.current)
             debounceTimerRef.current = null
         }
+        if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current)
+            retryTimerRef.current = null
+        }
         setIsSaving(true)
         setSaveStatus('saving')
+        setSaveError(null)
+        setSaveMessage('')
         try {
             const snap = buildEntrySnapshot()
             await upsertTrainingEntry(program.id, currentDay.dayNumber, snap.entryData, {
@@ -1939,7 +2241,9 @@ export default function ProgramDetailPage() {
 
     const displayDuration = isCurrentDayCompleted
         ? (savedDuration ?? null)
-        : (workoutStartTime !== null ? elapsedSeconds : null)
+        : (stoppedDuration !== null
+            ? stoppedDuration
+            : (workoutStartTime !== null ? elapsedSeconds : null))
 
     // Упорядоченный список упражнений
     const orderedExercises = currentDay.exercises
@@ -2269,6 +2573,8 @@ export default function ProgramDetailPage() {
                                         onChange={d => updateExercise(exercise.id, d)}
                                         onVideoClick={(url, title) => setVideoModal({ url, title })}
                                         onTimerStart={() => setRestTimerVisible(true)}
+                                        setStatuses={setStatusesByExercise[exercise.id]}
+                                        onSaveSet={(setIdx) => handleSaveSet(exercise.id, setIdx)}
                                         onAltMenuOpen={
                                             (exercise.alternatives?.length ?? 0) > 0
                                                 ? () => setAltModal({
@@ -2415,9 +2721,40 @@ export default function ProgramDetailPage() {
                             {!isStatsCollapsed && (
                                 <div className="px-5 pb-5">
                                     {displayDuration !== null && (
-                                        <div className="flex items-center gap-1.5 text-sm font-mono font-bold text-accent mb-3 -mt-1">
-                                            <Clock className="w-4 h-4" />
-                                            {formatDuration(displayDuration)}
+                                        <div className="flex items-center gap-2 mb-3 -mt-1 flex-wrap">
+                                            <div className="flex items-center gap-1.5 text-sm font-mono font-bold text-accent">
+                                                <Clock className="w-4 h-4" />
+                                                {formatDuration(displayDuration)}
+                                                {stoppedDuration !== null && !isCurrentDayCompleted && (
+                                                    <span className="ml-1 text-[10px] uppercase tracking-wider text-text-muted font-sans font-semibold">
+                                                        остановлен
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {!isCurrentDayCompleted && (workoutStartTime !== null || stoppedDuration !== null) && (
+                                                <div className="flex items-center gap-1.5">
+                                                    {workoutStartTime !== null && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={stopTimer}
+                                                            className="flex items-center gap-1 px-2 py-1 rounded-md bg-bg-elevated hover:bg-white/5 border border-white/10 text-xs text-text-muted hover:text-white transition-colors"
+                                                            title="Остановить таймер"
+                                                        >
+                                                            <Square className="w-3 h-3" />
+                                                            Стоп
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        onClick={resetTimer}
+                                                        className="flex items-center gap-1 px-2 py-1 rounded-md bg-bg-elevated hover:bg-white/5 border border-white/10 text-xs text-text-muted hover:text-white transition-colors"
+                                                        title="Сбросить таймер"
+                                                    >
+                                                        <RotateCcw className="w-3 h-3" />
+                                                        Сброс
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -2515,7 +2852,7 @@ export default function ProgramDetailPage() {
                             )}
                             {saveStatus === 'error' && (
                                 <span className="text-red-400 truncate" title={saveError ?? undefined}>
-                                    ⚠ {saveError ?? 'Ошибка автосохранения, нажми «Сохранить»'}
+                                    ⚠ {saveError ?? 'Ошибка сохранения. Нажми ✓ на подходе, чтобы повторить'}
                                 </span>
                             )}
                             {saveStatus === 'idle' && lastSavedAtRef.current !== null && (
@@ -2523,13 +2860,13 @@ export default function ProgramDetailPage() {
                             )}
                         </div>
                         <div className="flex gap-2 sm:gap-3">
-                            <button onClick={() => saveEntry(false)} disabled={isSaving}
-                                className="glass-button-secondary flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-3 min-w-0">
-                                {isSaving ? <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" /> : <span className="flex-shrink-0">💾</span>}
-                                <span className="truncate">Сохранить</span>
-                            </button>
+                            {/* Кнопки «Сохранить» больше нет: сохранение
+                                теперь происходит автоматически после ввода
+                                и/или по клику на ✓ возле конкретного подхода.
+                                Это убирает гонку с автосейвом и «бесконечное
+                                Сохраняю...» при медленной сети. */}
                             <button onClick={handleCompleteDay} disabled={isSaving}
-                                className="glass-button flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-3 min-w-0">
+                                className="glass-button w-full flex items-center justify-center gap-1.5 sm:gap-2 py-3 min-w-0">
                                 {isSaving ? <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" /> : <CheckCircle2 className="w-4 h-4 flex-shrink-0" />}
                                 <span className="truncate">{currentDayIndex === program.program_data.days.length - 1 ? 'Завершить неделю' : 'Завершить'}</span>
                             </button>
