@@ -222,7 +222,8 @@ function getStoredAccessToken(): string | null {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
         if (!supabaseUrl || typeof window === 'undefined') return null
         const hostname = new URL(supabaseUrl).hostname
-        const key = `sb-${hostname}-auth-token`
+        const projectRef = hostname.split('.')[0]
+        const key = `sb-${projectRef}-auth-token`
         const raw = localStorage.getItem(key)
         if (!raw) return null
         const session = JSON.parse(raw)
