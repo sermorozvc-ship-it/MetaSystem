@@ -1,7 +1,7 @@
 // MetaSystem v2 — Training Service
 // Сервис для работы с тренировочными программами
 
-import { createClient, safeGetUser } from '@/lib/supabase/client'
+import { createClient, safeGetUser, directSupabaseFetch } from '@/lib/supabase/client'
 import { notifyProgramUploaded } from './notifications'
 import { withTimeout } from '@/lib/utils/with-timeout'
 
@@ -414,20 +414,20 @@ export async function upsertTrainingEntry(
   }
 
   try {
-    const supabase = createClient()
-    const { data, error } = await withTimeout(
-      supabase
-        .from('training_entries')
-        .upsert(payload, { onConflict: 'program_id,day_number' })
-        .select()
-        .single(),
-      'upsertTrainingEntry',
+    const result = await directSupabaseFetch<TrainingEntry[]>(
+      'training_entries',
+      {
+        method: 'POST',
+        body: payload,
+        params: 'on_conflict=program_id,day_number',
+        prefer: 'return=representation,resolution=merge-duplicates',
+      },
       10_000,
     )
 
-    if (error) throw error
-    if (!data) throw new Error('Upsert returned no data')
-    return data as TrainingEntry
+    const row = Array.isArray(result) ? result[0] : result
+    if (!row) throw new Error('Upsert returned no data')
+    return row
   } catch (e: any) {
     console.error('Error upserting entry:', e)
     throw e
@@ -445,19 +445,16 @@ export async function completeTrainingDay(
   if (!user) throw new Error('Not authenticated')
 
   try {
-    const supabase = createClient()
-    const { error } = await withTimeout(
-      supabase
-        .from('training_entries')
-        .update({ completed_at: new Date().toISOString() })
-        .eq('program_id', programId)
-        .eq('day_number', dayNumber)
-        .eq('user_id', user.id),
-      'completeTrainingDay',
+    await directSupabaseFetch(
+      'training_entries',
+      {
+        method: 'PATCH',
+        body: { completed_at: new Date().toISOString() },
+        params: `program_id=eq.${programId}&day_number=eq.${dayNumber}&user_id=eq.${user.id}`,
+        prefer: 'return=minimal',
+      },
       10_000,
     )
-
-    if (error) throw error
   } catch (e: any) {
     console.error('Error completing training day:', e)
     throw e

@@ -284,15 +284,17 @@ export async function directSupabaseFetch<T>(
     const token = await getStoredAccessToken()
     if (!token) throw new Error('Not authenticated (no access token in storage)')
 
-    const url = options.params
-        ? `${getSupabaseRestUrl()}/${table}?${options.params}`
-        : `${getSupabaseRestUrl()}/${table}`
+    const urlObj = new URL(`${getSupabaseRestUrl()}/${table}`)
+    if (options.params) {
+        const searchParams = new URLSearchParams(options.params)
+        urlObj.search = searchParams.toString()
+    }
 
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
 
     try {
-        const res = await fetch(url, {
+        const res = await fetch(urlObj.toString(), {
             method: options.method,
             signal: controller.signal,
             headers: {
