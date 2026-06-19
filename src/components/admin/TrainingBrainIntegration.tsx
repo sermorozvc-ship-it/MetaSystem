@@ -78,6 +78,8 @@ export default function TrainingBrainIntegration({ userId, initialSlug, onImport
 
         try {
             const sb = createClient()
+            const { error: authErr } = await sb.auth.getUser()
+            if (authErr) throw new Error('Сессия истекла. Перезайдите в админку.')
             const { data: { session } } = await sb.auth.getSession()
             if (!session?.access_token) throw new Error('Нет токена сессии')
 

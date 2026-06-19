@@ -56,21 +56,29 @@ function ClientMetricsView({ userId }: { userId: string }) {
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
+        let cancelled = false
         const load = async () => {
             try {
                 const { adminFetch } = await import('@/lib/api/admin-fetch')
                 const res = await adminFetch<{ metrics: any[] }>(
                     `/api/admin/clients/${userId}/metrics`,
                 )
-                setMetrics(res.metrics || [])
+                if (!cancelled) setMetrics(res.metrics || [])
             } catch (e) {
                 console.error('ClientMetricsView load error:', e)
-                setMetrics([])
+                if (!cancelled) setMetrics([])
             } finally {
-                setLoading(false)
+                if (!cancelled) setLoading(false)
             }
         }
         load()
+        const failsafe = setTimeout(() => {
+            if (!cancelled) {
+                console.warn('[ClientMetricsView] Failsafe timeout')
+                setLoading(false)
+            }
+        }, 8000)
+        return () => { cancelled = true; clearTimeout(failsafe) }
     }, [userId])
 
     if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-accent animate-spin" /></div>
@@ -465,7 +473,13 @@ function ClientActivityView({ userId }: { userId: string }) {
             }
         }
         load()
-        return () => { cancelled = true }
+        const failsafe = setTimeout(() => {
+            if (!cancelled) {
+                console.warn('[ClientActivityView] Failsafe timeout')
+                setLoading(false)
+            }
+        }, 8000)
+        return () => { cancelled = true; clearTimeout(failsafe) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userId])
 
@@ -1449,21 +1463,31 @@ function AdminExerciseStats({ userId }: { userId: string }) {
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
+        let cancelled = false
         const load = async () => {
             try {
                 const { adminFetch } = await import('@/lib/api/admin-fetch')
                 const res = await adminFetch<{ programs: TrainingProgram[]; entries: TrainingEntry[] }>(
                     `/api/admin/clients/${userId}/training-stats`,
                 )
-                setPrograms(res.programs || [])
-                setEntries(res.entries || [])
+                if (!cancelled) {
+                    setPrograms(res.programs || [])
+                    setEntries(res.entries || [])
+                }
             } catch (e) {
                 console.error('AdminExerciseStats load error:', e)
             } finally {
-                setLoading(false)
+                if (!cancelled) setLoading(false)
             }
         }
         load()
+        const failsafe = setTimeout(() => {
+            if (!cancelled) {
+                console.warn('[AdminExerciseStats] Failsafe timeout')
+                setLoading(false)
+            }
+        }, 8000)
+        return () => { cancelled = true; clearTimeout(failsafe) }
     }, [userId])
 
     if (loading) return (
@@ -1559,6 +1583,7 @@ export default function AdminClientDetailPage() {
 
     useEffect(() => {
         if (!isAdminUser || !userId) return
+        let cancelled = false
         const load = async () => {
             try {
                 const [profile, quest, progs, nutQ, nutAccess] = await Promise.allSettled([
@@ -1568,6 +1593,7 @@ export default function AdminClientDetailPage() {
                     getNutritionQuestionnaireByUserId(userId),
                     userHasNutritionAccess(userId),
                 ])
+                if (cancelled) return
                 setClientProfile(profile.status === 'fulfilled' ? profile.value : null)
                 setQuestionnaire(quest.status === 'fulfilled' ? quest.value : null)
                 setPrograms(progs.status === 'fulfilled' ? progs.value : [])
@@ -1580,9 +1606,11 @@ export default function AdminClientDetailPage() {
                     const { plans: nutPlansData } = await adminFetch<{ plans: any[] }>(
                         `/api/admin/clients/${userId}/nutrition-plans`,
                     )
-                    const nutPlans = nutPlansData || []
-                    setNutritionPlans(nutPlans)
-                    if (nutPlans.length > 0) setNutritionPlanNumber(nutPlans[0].plan_number + 1)
+                    if (!cancelled) {
+                        const nutPlans = nutPlansData || []
+                        setNutritionPlans(nutPlans)
+                        if (nutPlans.length > 0) setNutritionPlanNumber(nutPlans[0].plan_number + 1)
+                    }
                 } catch {}
 
                 // Загружаем платёж клиента для отображения подписки
@@ -1591,15 +1619,22 @@ export default function AdminClientDetailPage() {
                     const { payment: paymentData } = await adminFetch<{ payment: any }>(
                         `/api/admin/clients/${userId}/payment`,
                     )
-                    setClientPayment(paymentData)
+                    if (!cancelled) setClientPayment(paymentData)
                 } catch {}
             } catch (e) {
                 console.error('Error loading client data:', e)
             } finally {
-                setIsLoading(false)
+                if (!cancelled) setIsLoading(false)
             }
         }
         load()
+        const failsafe = setTimeout(() => {
+            if (!cancelled) {
+                console.warn('[AdminClientDetail] Failsafe timeout — forcing isLoading=false')
+                setIsLoading(false)
+            }
+        }, 8000)
+        return () => { cancelled = true; clearTimeout(failsafe) }
     }, [isAdminUser, userId])
 
     const handleArchiveToggle = async () => {
@@ -1636,6 +1671,13 @@ export default function AdminClientDetailPage() {
             // и было утечкой ключа в клиентский бандл.
             const { createClient } = await import('@/lib/supabase/client')
             const supabase = createClient()
+            // getUser() форсирует рефRESH токена — без этого getSession()
+            // отдаёт просроченный JWT из localStorage и API возвращает 401.
+            const { error: authErr } = await supabase.auth.getUser()
+            if (authErr) {
+                setUploadError('Сессия истекла. Перезайдите в админку.')
+                return
+            }
             const { data: { session } } = await supabase.auth.getSession()
             if (!session?.access_token) {
                 setUploadError('Нет токена сессии. Перезайдите в админку.')

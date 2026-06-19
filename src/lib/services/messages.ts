@@ -10,6 +10,8 @@ const TRAINER_ID = '2c87d862-8f21-4ca0-ac69-eafe5a343ee1'
 
 async function authHeaders(): Promise<HeadersInit> {
     const supabase = createClient()
+    const { error: authErr } = await supabase.auth.getUser()
+    if (authErr) return {}
     const { data: { session } } = await supabase.auth.getSession()
     if (!session?.access_token) return {}
     return { Authorization: `Bearer ${session.access_token}` }

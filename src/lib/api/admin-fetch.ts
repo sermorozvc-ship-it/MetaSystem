@@ -8,6 +8,11 @@ import { createClient } from '@/lib/supabase/client'
 
 async function getAccessToken(): Promise<string> {
     const supabase = createClient()
+    // getUser() валидирует токен на сервере Supabase и автоматически
+    // обновляет его, если access_token протух. Без этого getSession()
+    // возвращает просроченный токен из localStorage, и API возвращает 401.
+    const { error: authError } = await supabase.auth.getUser()
+    if (authError) throw new Error('Сессия истекла. Перезайдите в админку.')
     const { data: { session } } = await supabase.auth.getSession()
     if (!session?.access_token) throw new Error('Нет токена сессии. Перезайдите в админку.')
     return session.access_token

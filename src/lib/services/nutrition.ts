@@ -241,6 +241,8 @@ export async function upsertNutritionQuestionnaire(
   answers: NutritionAnswers
 ): Promise<NutritionQuestionnaire> {
   const supabase = createClient()
+  const { error: authErr } = await supabase.auth.getUser()
+  if (authErr) throw new Error('Сессия истекла. Перезайдите.')
   const { data: { session } } = await supabase.auth.getSession()
   const token = session?.access_token
   if (!token) throw new Error('Не удалось определить пользователя. Перезайдите.')
