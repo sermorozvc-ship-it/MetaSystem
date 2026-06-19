@@ -22,6 +22,14 @@ const USER_CACHE_TTL = 10000  // 10 секунд — быстрая инвали
  */
 const lockQueues = new Map<string, Promise<any>>()
 
+// Время жизни lock. Если lock «висит» дольше этого — значит fn() завис навсегда
+// (сеть умерла, таб заморожен). Принудительно снимаем, чтобы не блокировать
+// следующие операции (upsert и т.д.).
+const LOCK_MAX_HOLD_MS = 5_000
+
+// Отслеживаем время захвата lock для каждого имени.
+const lockAcquiredAt = new Map<string, number>()
+
 async function inTabLock<R>(
     name: string,
     acquireTimeout: number,
@@ -29,22 +37,30 @@ async function inTabLock<R>(
 ): Promise<R> {
     const startTime = Date.now()
 
-    // Ждём предыдущую операцию с тем же именем (если есть)
+    // Ждём предыдущую операцию с тем же именем (если есть).
+    // Если предыдущий lock «протух» (держится дольше LOCK_MAX_HOLD_MS) —
+    // не ждём его, а принудительно снимаем и идём дальше.
     const prev = lockQueues.get(name)
     if (prev) {
-        try {
-            // Ждём завершения предыдущей операции, но не больше acquireTimeout
-            await Promise.race([
-                prev,
-                new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error(`Lock acquire timeout: ${name}`)), 
-                        Math.max(acquireTimeout - (Date.now() - startTime), 0))
-                )
-            ])
-        } catch (e: any) {
-            // Если предыдущая операция упала или таймаут — продолжаем
-            if (e?.message?.includes('Lock acquire timeout')) {
-                console.warn(`[inTabLock] Timeout waiting for lock "${name}", proceeding anyway`)
+        const prevAcquiredAt = lockAcquiredAt.get(name) ?? 0
+        const heldFor = Date.now() - prevAcquiredAt
+        if (heldFor > LOCK_MAX_HOLD_MS) {
+            console.warn(`[inTabLock] Stale lock "${name}" held for ${heldFor}ms — force-releasing`)
+            lockQueues.delete(name)
+            lockAcquiredAt.delete(name)
+        } else {
+            try {
+                await Promise.race([
+                    prev,
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error(`Lock acquire timeout: ${name}`)),
+                            Math.max(acquireTimeout - (Date.now() - startTime), 0))
+                    )
+                ])
+            } catch (e: any) {
+                if (e?.message?.includes('Lock acquire timeout')) {
+                    console.warn(`[inTabLock] Timeout waiting for lock "${name}", proceeding anyway`)
+                }
             }
         }
     }
@@ -53,14 +69,15 @@ async function inTabLock<R>(
     let resolveCurrent: () => void
     const currentPromise = new Promise<void>(r => resolveCurrent = r)
     lockQueues.set(name, currentPromise)
+    lockAcquiredAt.set(name, Date.now())
 
     try {
         return await fn()
     } finally {
         resolveCurrent!()
-        // Чистим очередь если это последняя операция
         if (lockQueues.get(name) === currentPromise) {
             lockQueues.delete(name)
+            lockAcquiredAt.delete(name)
         }
     }
 }
@@ -146,17 +163,27 @@ export async function safeGetUser(): Promise<User | null> {
                 cachedUser = user
                 userCacheTimestamp = Date.now()
             } else {
-                // Не сбрасываем кеш если timeout — возвращаем старое значение
-                if (cachedUser) {
-                    console.log('[safeGetUser] getUser returned null but cache exists, keeping cache')
+                // Различаем auth error (сессия истекла) и timeout (сеть недоступна).
+                // При auth error — сбрасываем кеш, чтобы вызывающий код получил null
+                // и мог показать сообщение «сессия истекла» вместо вечных ошибок 401.
+                // При timeout — сохраняем кеш (сеть временно недоступна, сессия может
+                // быть валидной).
+                if (result?.error) {
+                    console.warn('[safeGetUser] auth error, clearing cache:', result.error?.message ?? result.error)
+                    cachedUser = null
+                    userCacheTimestamp = 0
+                } else if (cachedUser) {
+                    console.log('[safeGetUser] getUser returned null (timeout) but cache exists, keeping cache')
                     return cachedUser
+                } else {
+                    cachedUser = null
                 }
-                cachedUser = null
             }
             return user
         } catch (err: any) {
             console.warn('[safeGetUser] Exception:', err.message)
-            // При ошибке возвращаем кешированного пользователя (если есть)
+            // При сетевой ошибке (promise rejected) — возвращаем кеш, сеть может
+            // быть временно недоступна.
             return cachedUser
         } finally {
             getUserPromise = null

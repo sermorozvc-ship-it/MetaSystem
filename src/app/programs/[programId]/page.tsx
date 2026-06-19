@@ -1933,6 +1933,21 @@ export default function ProgramDetailPage() {
         }
     }, [lockIsFree])
 
+    // ─── Failsafe: сброс isSaving если он «застрял» дольше 30с ────────────
+    // На десктопе (нет sleep экрана) watchdog срабатывает только при focus/
+    // visibilitychange/online. Если пользователь открыл страницу и ушёл,
+    // а потом вернулся — isSaving мог «застрять» если handleCompleteDay
+    // подвис. Этот таймер гарантирует сброс через 30с в любом случае.
+    useEffect(() => {
+        if (!isSaving) return
+        const timer = setTimeout(() => {
+            console.warn('[program] failsafe: isSaving was true for 30s, force-resetting')
+            setIsSaving(false)
+            inFlightRef.current = false
+        }, 30_000)
+        return () => clearTimeout(timer)
+    }, [isSaving])
+
     // Группируем per-set статусы по exerciseId — чтобы каждый ExerciseCard
     // получал только свой кусочек и не ре-рендерился из-за статусов соседей.
     const setStatusesByExercise = useMemo(() => {
