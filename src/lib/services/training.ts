@@ -1,7 +1,7 @@
 // MetaSystem v2 — Training Service
 // Сервис для работы с тренировочными программами
 
-import { createClient, safeGetUser } from '@/lib/supabase/client'
+import { createClient, safeGetUser, directSupabaseFetch } from '@/lib/supabase/client'
 import { notifyProgramUploaded } from './notifications'
 import { withTimeout } from '@/lib/utils/with-timeout'
 
@@ -401,41 +401,37 @@ export async function upsertTrainingEntry(
     workout_duration_seconds?: number
   }
 ): Promise<TrainingEntry> {
-  const supabase = createClient()
-
-  // safeGetUser имеет таймаут 4с + 10с кеш. Голый supabase.auth.getUser()
-  // здесь раньше мог «висеть» на флапающей сети ДО запуска upsert —
-  // тогда withTimeout ниже не срабатывал, finally в вызывающем коде не
-  // выполнялся, inFlightRef залипал в true и кнопки «Сохранить»/«Завершить»
-  // переставали работать до hard reload. Используем safeGetUser.
   const user = await safeGetUser()
   if (!user) throw new Error('Not authenticated')
 
-  const { data, error } = await withTimeout<{ data: TrainingEntry | null; error: any }>(
-    supabase
-      .from('training_entries')
-      .upsert(
-        {
-          program_id: programId,
-          user_id: user.id,
-          day_number: dayNumber,
-          entry_data: entryData,
-          ...metadata,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'program_id,day_number' }
-      )
-      .select()
-      .single(),
-    'upsertTrainingEntry',
-  )
-
-  if (error) {
-    console.error('Error upserting entry:', error)
-    throw error
+  const payload = {
+    program_id: programId,
+    user_id: user.id,
+    day_number: dayNumber,
+    entry_data: entryData,
+    ...metadata,
+    updated_at: new Date().toISOString(),
   }
 
-  return data as TrainingEntry
+  try {
+    const result = await directSupabaseFetch<TrainingEntry[]>(
+      'training_entries',
+      {
+        method: 'POST',
+        body: payload,
+        params: 'onConflict=program_id,day_number',
+        prefer: 'return=representation,resolution=merge-duplicates',
+      },
+      10_000,
+    )
+
+    const row = Array.isArray(result) ? result[0] : result
+    if (!row) throw new Error('Upsert returned no data')
+    return row
+  } catch (e: any) {
+    console.error('Error upserting entry:', e)
+    throw e
+  }
 }
 
 /**
@@ -445,26 +441,23 @@ export async function completeTrainingDay(
   programId: string,
   dayNumber: number
 ): Promise<void> {
-  const supabase = createClient()
-
-  // safeGetUser — таймаут 4с + кеш. См. комментарий в upsertTrainingEntry:
-  // голый getUser мог подвесить весь flow «Завершить» до hard reload.
   const user = await safeGetUser()
   if (!user) throw new Error('Not authenticated')
 
-  const { error } = await withTimeout<{ error: any }>(
-    supabase
-      .from('training_entries')
-      .update({ completed_at: new Date().toISOString() })
-      .eq('program_id', programId)
-      .eq('day_number', dayNumber)
-      .eq('user_id', user.id),
-    'completeTrainingDay',
-  )
-
-  if (error) {
-    console.error('Error completing training day:', error)
-    throw error
+  try {
+    await directSupabaseFetch(
+      'training_entries',
+      {
+        method: 'PATCH',
+        body: { completed_at: new Date().toISOString() },
+        params: `program_id=eq.${programId}&day_number=eq.${dayNumber}&user_id=eq.${user.id}`,
+        prefer: 'return=minimal',
+      },
+      10_000,
+    )
+  } catch (e: any) {
+    console.error('Error completing training day:', e)
+    throw e
   }
 }
 

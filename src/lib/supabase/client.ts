@@ -208,3 +208,86 @@ export function clearUserCache() {
     cachedUser = null
     userCacheTimestamp = 0
 }
+
+// ─── Direct fetch: обход Supabase-клиента ───────────────────────────────
+// Проблема: supabase.from().upsert() ВНУТРЕННЕ вызывает getSession() →
+// inTabLock → если сессия «протухла» → клиент пытается обновить токен →
+// сеть мёртвая → висит навсегда (12с таймаут, POST никогда не уходит).
+//
+// Решение: читаем access_token из localStorage и делаем прямой fetch к
+// Supabase REST API. Без lock'ов, без auth-refresh, без зависаний.
+
+function getStoredAccessToken(): string | null {
+    try {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+        if (!supabaseUrl || typeof window === 'undefined') return null
+        const hostname = new URL(supabaseUrl).hostname
+        const key = `sb-${hostname}-auth-token`
+        const raw = localStorage.getItem(key)
+        if (!raw) return null
+        const session = JSON.parse(raw)
+        return session?.access_token ?? null
+    } catch {
+        return null
+    }
+}
+
+function getSupabaseRestUrl(): string {
+    return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1`
+}
+
+function getSupabaseAnonKey(): string {
+    return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
+}
+
+/**
+ * Прямой fetch к Supabase REST API с access_token из localStorage.
+ * Не использует Supabase-клиент → не висит на auth-lock / token refresh.
+ */
+export async function directSupabaseFetch<T>(
+    table: string,
+    options: {
+        method: 'POST' | 'PATCH' | 'GET'
+        body?: any
+        params?: string
+        prefer?: string
+    },
+    timeoutMs: number = 10_000,
+): Promise<T> {
+    const token = getStoredAccessToken()
+    if (!token) throw new Error('Not authenticated (no access token in storage)')
+
+    const url = options.params
+        ? `${getSupabaseRestUrl()}/${table}?${options.params}`
+        : `${getSupabaseRestUrl()}/${table}`
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+    try {
+        const res = await fetch(url, {
+            method: options.method,
+            signal: controller.signal,
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'apikey': getSupabaseAnonKey(),
+                'Content-Type': 'application/json',
+                'Prefer': options.prefer ?? 'return=representation',
+            },
+            body: options.body ? JSON.stringify(options.body) : undefined,
+        })
+
+        if (!res.ok) {
+            const text = await res.text().catch(() => '')
+            throw new Error(`Supabase REST ${options.method} ${table} failed (${res.status}): ${text}`)
+        }
+
+        const contentType = res.headers.get('content-type') ?? ''
+        if (contentType.includes('application/json')) {
+            return await res.json()
+        }
+        return undefined as T
+    } finally {
+        clearTimeout(timer)
+    }
+}
