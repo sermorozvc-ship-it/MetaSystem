@@ -219,15 +219,38 @@ export function clearUserCache() {
 
 function getStoredAccessToken(): string | null {
     try {
+        if (typeof window === 'undefined') return null
+
+        // Ищем ключ динамически — Supabase может хранить токен под разными
+        // именами в зависимости от версии клиента (@supabase/supabase-js,
+        // @supabase/ssr, разные storageKey). Сканируем localStorage на предмет
+        // любого ключа, похожего на Supabase auth-token.
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i)
+            if (!k) continue
+            if (k.includes('auth-token') || k.includes('auth_token')) {
+                const raw = localStorage.getItem(k)
+                if (!raw) continue
+                const session = JSON.parse(raw)
+                if (session?.access_token) return session.access_token
+            }
+        }
+
+        // Fallback: пробуем стандартный ключ sb-{projectRef}-auth-token
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-        if (!supabaseUrl || typeof window === 'undefined') return null
-        const hostname = new URL(supabaseUrl).hostname
-        const projectRef = hostname.split('.')[0]
-        const key = `sb-${projectRef}-auth-token`
-        const raw = localStorage.getItem(key)
-        if (!raw) return null
-        const session = JSON.parse(raw)
-        return session?.access_token ?? null
+        if (supabaseUrl) {
+            const hostname = new URL(supabaseUrl).hostname
+            const projectRef = hostname.split('.')[0]
+            const key = `sb-${projectRef}-auth-token`
+            const raw = localStorage.getItem(key)
+            if (raw) {
+                const session = JSON.parse(raw)
+                if (session?.access_token) return session.access_token
+            }
+        }
+
+        console.warn('[getStoredAccessToken] No access token found in localStorage')
+        return null
     } catch {
         return null
     }
