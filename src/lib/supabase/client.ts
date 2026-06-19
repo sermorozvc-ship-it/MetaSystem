@@ -217,22 +217,25 @@ export function clearUserCache() {
 // Решение: читаем access_token из localStorage и делаем прямой fetch к
 // Supabase REST API. Без lock'ов, без auth-refresh, без зависаний.
 
-function getStoredAccessToken(): string | null {
+async function getStoredAccessToken(): Promise<string | null> {
     try {
         if (typeof window === 'undefined') return null
 
-        // Ищем ключ динамически — Supabase может хранить токен под разными
-        // именами в зависимости от версии клиента (@supabase/supabase-js,
-        // @supabase/ssr, разные storageKey). Сканируем localStorage на предмет
-        // любого ключа, похожего на Supabase auth-token.
+        // Основной способ: SDK сам знает где хранит сессию (localStorage, cookies и т.д.)
+        // getSession() не делает сетевых запросов — безопасно, не вызывает deadlock.
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) return session.access_token
+
+        // Fallback: ручной поиск в localStorage (если SDK не может прочитать сессию)
         for (let i = 0; i < localStorage.length; i++) {
             const k = localStorage.key(i)
             if (!k) continue
             if (k.includes('auth-token') || k.includes('auth_token')) {
                 const raw = localStorage.getItem(k)
                 if (!raw) continue
-                const session = JSON.parse(raw)
-                if (session?.access_token) return session.access_token
+                const parsed = JSON.parse(raw)
+                if (parsed?.access_token) return parsed.access_token
             }
         }
 
@@ -244,12 +247,12 @@ function getStoredAccessToken(): string | null {
             const key = `sb-${projectRef}-auth-token`
             const raw = localStorage.getItem(key)
             if (raw) {
-                const session = JSON.parse(raw)
-                if (session?.access_token) return session.access_token
+                const parsed = JSON.parse(raw)
+                if (parsed?.access_token) return parsed.access_token
             }
         }
 
-        console.warn('[getStoredAccessToken] No access token found in localStorage')
+        console.warn('[getStoredAccessToken] No access token found')
         return null
     } catch {
         return null
@@ -278,7 +281,7 @@ export async function directSupabaseFetch<T>(
     },
     timeoutMs: number = 10_000,
 ): Promise<T> {
-    const token = getStoredAccessToken()
+    const token = await getStoredAccessToken()
     if (!token) throw new Error('Not authenticated (no access token in storage)')
 
     const url = options.params
