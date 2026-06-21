@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import {
     Dumbbell, TrendingUp, Calendar, MessageCircle,
     ChevronRight, Loader2, Zap, Apple, RefreshCw,
-    AlertTriangle, CheckCircle2, Plus, Flame
+    AlertTriangle, CheckCircle2, Plus, Flame, X
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { getCurrentProgram, type TrainingProgram } from '@/lib/services/training'
@@ -39,6 +39,12 @@ export default function DashboardPage() {
     const [questionnairePending, setQuestionnairePending] = useState(false)
     const [subInfo, setSubInfo] = useState<SubscriptionInfo | null>(null)
     const [renewedBanner, setRenewedBanner] = useState(false)
+    const [nutritionBannerDismissed, setNutritionBannerDismissed] = useState(false)
+
+    useEffect(() => {
+        const dismissed = localStorage.getItem('nutritionBannerDismissed')
+        if (dismissed) setNutritionBannerDismissed(true)
+    }, [])
 
     useEffect(() => {
         if (!authLoading && !user) {
@@ -255,22 +261,34 @@ export default function DashboardPage() {
                 )}
 
                 {/* Баннер: докупить питание */}
-                {subInfo && !subInfo.isExpired && !subInfo.hasNutrition && subInfo.status === 'active' && !nutritionPending && (
-                    <button
-                        onClick={() => router.push('/add-nutrition')}
-                        className="w-full mb-6 rounded-2xl border border-border bg-bg-elevated/50 p-5 flex items-center gap-4 text-left hover:border-accent/40 transition-colors"
-                    >
-                        <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center">
-                            <Plus className="w-6 h-6 text-accent" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-white font-semibold mb-1">Добавить план питания</p>
-                            <p className="text-text-secondary text-sm">
-                                Подключите индивидуальный план питания к вашей подписке — всего 3 000 ₽
-                            </p>
-                        </div>
-                        <ChevronRight className="w-5 h-5 text-text-muted flex-shrink-0" />
-                    </button>
+                {subInfo && !subInfo.isExpired && !subInfo.hasNutrition && subInfo.status === 'active' && !nutritionPending && !nutritionBannerDismissed && (
+                    <div className="relative w-full mb-6 rounded-2xl border border-border bg-bg-elevated/50 p-5 flex items-center gap-4 text-left">
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                setNutritionBannerDismissed(true)
+                                localStorage.setItem('nutritionBannerDismissed', '1')
+                            }}
+                            className="absolute top-3 right-3 p-1 rounded-full hover:bg-white/10 transition-colors"
+                        >
+                            <X className="w-4 h-4 text-text-muted" />
+                        </button>
+                        <button
+                            onClick={() => router.push('/add-nutrition')}
+                            className="flex items-center gap-4 flex-1 min-w-0 text-left"
+                        >
+                            <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center">
+                                <Plus className="w-6 h-6 text-accent" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-white font-semibold mb-1">Добавить план питания</p>
+                                <p className="text-text-secondary text-sm">
+                                    Подключите индивидуальный план питания к вашей подписке — всего 3 000 ₽
+                                </p>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-text-muted flex-shrink-0" />
+                        </button>
+                    </div>
                 )}
 
                 {/* Streak (если есть программы) */}
