@@ -497,7 +497,12 @@ function ClientActivityView({ userId }: { userId: string }) {
         try {
             const { createClient } = await import('@/lib/supabase/client')
             const supabase = createClient()
-            const { data: { user } } = await supabase.auth.getUser()
+            const { data: { user } } = await Promise.race([
+                supabase.auth.getUser(),
+                new Promise<{ data: { user: null } }>((resolve) =>
+                    setTimeout(() => resolve({ data: { user: null } }), 5_000)
+                ),
+            ])
 
             // Upsert чекина
             const { data, error } = await supabase
@@ -1673,7 +1678,12 @@ export default function AdminClientDetailPage() {
             const supabase = createClient()
             // getUser() форсирует рефRESH токена — без этого getSession()
             // отдаёт просроченный JWT из localStorage и API возвращает 401.
-            const { error: authErr } = await supabase.auth.getUser()
+            const { error: authErr } = await Promise.race([
+                supabase.auth.getUser(),
+                new Promise<{ error: { message: string } }>((resolve) =>
+                    setTimeout(() => resolve({ error: { message: 'Auth timeout' } }), 5_000)
+                ),
+            ])
             if (authErr) {
                 setUploadError('Сессия истекла. Перезайдите в админку.')
                 return

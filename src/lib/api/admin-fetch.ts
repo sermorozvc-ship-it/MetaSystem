@@ -11,7 +11,16 @@ async function getAccessToken(): Promise<string> {
     // getUser() валидирует токен на сервере Supabase и автоматически
     // обновляет его, если access_token протух. Без этого getSession()
     // возвращает просроченный токен из localStorage, и API возвращает 401.
-    const { error: authError } = await supabase.auth.getUser()
+    //
+    // Таймаут 5с: если Supabase auth-сервер не отвечает (протухшая сессия,
+    // сеть), getUser() зависает навсегда — кнопка «Добавить клиента»
+    // залипает с первым кликом. С таймаутом — сразу показываем ошибку.
+    const { error: authError } = await Promise.race([
+        supabase.auth.getUser(),
+        new Promise<{ error: { message: string } }>((resolve) =>
+            setTimeout(() => resolve({ error: { message: 'Auth timeout' } }), 5_000)
+        ),
+    ])
     if (authError) throw new Error('Сессия истекла. Перезайдите в админку.')
     const { data: { session } } = await supabase.auth.getSession()
     if (!session?.access_token) throw new Error('Нет токена сессии. Перезайдите в админку.')
