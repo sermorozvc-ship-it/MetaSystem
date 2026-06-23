@@ -202,11 +202,76 @@ export function setCachedUser(user: User | null) {
 }
 
 /**
- * Очистка кеша (при логауте)
+ * Очистка кеша (при логуте)
  */
 export function clearUserCache() {
     cachedUser = null
     userCacheTimestamp = 0
+}
+
+/**
+ * Быстрая проверка валидности сессии (без сетевых запросов).
+ * Декодирует JWT из localStorage и проверяет exp.
+ * Возвращает true если токен ещё жив (с запасом 60с).
+ */
+export async function isSessionValid(): Promise<boolean> {
+    try {
+        if (typeof window === 'undefined') return false
+        const supabase = createClient()
+        // getSession() — синхронное чтение из storage, без сети
+        const { data: { session } } = await getSessionSync(supabase)
+        if (!session?.access_token) return false
+        // Декодируем JWT payload (base64url)
+        const parts = session.access_token.split('.')
+        if (parts.length !== 3) return false
+        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+        // Проверяем exp с запасом 60 секунд
+        const nowSec = Math.floor(Date.now() / 1000)
+        return payload.exp > nowSec + 60
+    } catch {
+        return false
+    }
+}
+
+/**
+ * Попытка обновить сессию. Возвращает true если обновление прошло успешно.
+ * Используется перед критическими операциями (Завершить тренировку).
+ */
+export async function tryRefreshSession(): Promise<boolean> {
+    try {
+        if (typeof window === 'undefined') return false
+        const supabase = createClient()
+        const { data, error } = await Promise.race([
+            supabase.auth.getSession(),
+            new Promise<{ data: { session: null }; error: null }>((resolve) =>
+                setTimeout(() => resolve({ data: { session: null }, error: null }), 3_000)
+            ),
+        ])
+        if (data?.session?.access_token) {
+            // Токен есть — проверяем не протух ли
+            const parts = data.session.access_token.split('.')
+            if (parts.length === 3) {
+                const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+                const nowSec = Math.floor(Date.now() / 1000)
+                if (payload.exp > nowSec + 60) return true
+            }
+        }
+        // Токена нет или он протух — пробуем refresh
+        const { data: refreshData } = await Promise.race([
+            supabase.auth.refreshSession(),
+            new Promise<{ data: { session: null } }>((resolve) =>
+                setTimeout(() => resolve({ data: { session: null } }), 5_000)
+            ),
+        ])
+        return !!refreshData?.session?.access_token
+    } catch {
+        return false
+    }
+}
+
+// Синхронное чтение сессии (обёртка для типизации)
+async function getSessionSync(supabase: SupabaseClient) {
+    return supabase.auth.getSession()
 }
 
 // ─── Direct fetch: обход Supabase-клиента ───────────────────────────────
@@ -222,9 +287,18 @@ async function getStoredAccessToken(): Promise<string | null> {
         if (typeof window === 'undefined') return null
 
         // Основной способ: SDK сам знает где хранит сессию (localStorage, cookies и т.д.)
-        // getSession() не делает сетевых запросов — безопасно, не вызывает deadlock.
+        // getSession() обычно не делает сетевых запросов, но если SDK запускает
+        // internal token refresh — может зависнуть. Ставим таймаут 3с, чтобы
+        // directSupabaseFetch не повис навсегда.
         const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
+        const sessionResult = await Promise.race([
+            supabase.auth.getSession(),
+            new Promise<null>((resolve) => setTimeout(() => {
+                console.warn('[getStoredAccessToken] getSession() timeout after 3s')
+                resolve(null)
+            }, 3_000)),
+        ])
+        const session = sessionResult?.data?.session
         if (session?.access_token) return session.access_token
 
         // Fallback: ручной поиск в localStorage (если SDK не может прочитать сессию)

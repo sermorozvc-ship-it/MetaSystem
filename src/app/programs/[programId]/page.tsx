@@ -21,6 +21,7 @@ import { getMySubscriptionInfo } from '@/lib/services/renewal'
 import { parseMdToJson } from '@/lib/utils/md-parser'
 import { parseCheckinQuestions } from '@/lib/utils/checkin-questions'
 import { getWeeklyCheckin, upsertWeeklyCheckin, markWeeklyCheckinCompleted } from '@/lib/services/weekly-checkin'
+import { tryRefreshSession } from '@/lib/supabase/client'
 
 // ─── Типы данных клиента ─────────────────────────────────────────────────────
 
@@ -964,6 +965,11 @@ export default function ProgramDetailPage() {
     //  3. UI всегда видит реальный статус (saveStatus), а не залипший isSaving.
     const inFlightRef = useRef(false)
     const pendingRef = useRef(false)
+    // Поколение лока. Каждый раз, когда новая операция захватывает лок,
+    // счётчик увеличивается. finally-блоки старых операций проверяют
+    // поколение и НЕ сбрасывают inFlightRef, если лок уже захвачен
+    // новой операцией (handleCompleteDay после force-release).
+    const lockGenerationRef = useRef(0)
     // Когда был захвачен inFlightRef. Нужно для защиты от «вечного» лока:
     // если по какой-то причине finally не отработал (например вкладку
     // усыпили прямо во время запроса и таймер withTimeout не сработал),
@@ -997,6 +1003,10 @@ export default function ProgramDetailPage() {
     // Таймер отложенного ретрая после ошибки автосейва (1 ретрай через 3с, без рекурсии).
     // Очищается при ручном save / при размонтировании / при следующем вводе.
     const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    // Счётчик последовательных ошибок автосейва. Сбрасывается при успехе.
+    // Если превышен — автосейв-ретрай останавливается, чтобы не держать
+    // inFlightRef вечно (иначе кнопка «Завершить» залипает).
+    const consecutiveSaveErrorsRef = useRef(0)
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
     const [saveError, setSaveError] = useState<string | null>(null)
 
@@ -1524,6 +1534,7 @@ export default function ProgramDetailPage() {
         }
         inFlightRef.current = true
         inFlightSinceRef.current = Date.now()
+        const myGeneration = lockGenerationRef.current
         // Захватили лок — отменяем отложенный ретрай (он сейчас не нужен,
         // мы и так начали новый сейв).
         if (retryTimerRef.current) {
@@ -1596,6 +1607,8 @@ export default function ProgramDetailPage() {
 
             // Запоминаем, что теперь на сервере — наш только что записанный снимок.
             lastServerEntryRef.current = merged
+            // Сброс счётчика ошибок — сейв прошёл.
+            consecutiveSaveErrorsRef.current = 0
 
             lastSavedAtRef.current = Date.now()
             // Серверная запись подтверждена — локальный бэкап больше не нужен,
@@ -1681,20 +1694,35 @@ export default function ProgramDetailPage() {
             // есть и сервер по-прежнему «знаком» (lastServerEntryRef !== null).
             // Если и эта попытка упадёт — стопаем, дальше юзер жмёт вручную
             // (кнопка на конкретном подходе / «Завершить»).
+            //
+            // Ограничение: после MAX_AUTOSAVE_RETRIES последовательных ошибок
+            // ретрай прекращается полностью, чтобы не держать inFlightRef
+            // бесконечно (иначе кнопка «Завершить» залипает на долго).
+            consecutiveSaveErrorsRef.current++
             pendingRef.current = false
             if (retryTimerRef.current) {
                 clearTimeout(retryTimerRef.current)
                 retryTimerRef.current = null
             }
-            if (silent && userChangedRef.current && lastServerEntryRef.current !== null) {
+            const MAX_AUTOSAVE_RETRIES = 3
+            if (silent && userChangedRef.current && lastServerEntryRef.current !== null
+                && consecutiveSaveErrorsRef.current <= MAX_AUTOSAVE_RETRIES) {
+                console.warn(`[program] autosave retry ${consecutiveSaveErrorsRef.current}/${MAX_AUTOSAVE_RETRIES} in 3s`)
                 retryTimerRef.current = setTimeout(() => {
                     retryTimerRef.current = null
                     saveEntryRef.current?.(true)
                 }, 3000)
+            } else if (consecutiveSaveErrorsRef.current > MAX_AUTOSAVE_RETRIES) {
+                console.warn(`[program] autosave stopped after ${MAX_AUTOSAVE_RETRIES} consecutive errors — user will save manually`)
             }
             return false
         } finally {
-            inFlightRef.current = false
+            // КРИТИЧНО: Если лок захвачен другой операцией (handleCompleteDay
+            // после force-release), НЕ сбрасываем inFlightRef — иначе «угоним»
+            // лок у приоритетной операции и кнопка снова залипнет.
+            if (lockGenerationRef.current === myGeneration) {
+                inFlightRef.current = false
+            }
             if (!silent) setIsSaving(false)
             // Если за время УСПЕШНОГО сохранения накопились новые правки —
             // запускаем ещё один проход, но ТОЛЬКО если статус не error
@@ -1737,6 +1765,10 @@ export default function ProgramDetailPage() {
         // данные не пропадут после reload.
         writeLocalDraft(currentDay.dayNumber)
         setSaveStatus(prev => prev === 'saved' ? 'idle' : prev)
+
+        // Пользователь сделал новую правку — сбрасываем счётчик ошибок,
+        // чтобы автосейв попробовал сохранить свежие данные.
+        consecutiveSaveErrorsRef.current = 0
 
         if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
         debounceTimerRef.current = setTimeout(() => {
@@ -1933,20 +1965,59 @@ export default function ProgramDetailPage() {
         }
     }, [lockIsFree])
 
-    // ─── Failsafe: сброс isSaving если он «застрял» дольше 30с ────────────
+    // ─── Failsafe: сброс isSaving если он «застрял» дольше 45с ────────────
     // На десктопе (нет sleep экрана) watchdog срабатывает только при focus/
     // visibilitychange/online. Если пользователь открыл страницу и ушёл,
     // а потом вернулся — isSaving мог «застрять» если handleCompleteDay
-    // подвис. Этот таймер гарантирует сброс через 30с в любом случае.
+    // подвис. Этот таймер гарантирует сброс через 45с в любом случае.
+    // 45с — с запасом покрывает worst-case: 2 × (3с getStoredAccessToken
+    // timeout + 10с fetch timeout) + 12с markWeeklyCheckin ≈ 38с.
     useEffect(() => {
         if (!isSaving) return
         const timer = setTimeout(() => {
-            console.warn('[program] failsafe: isSaving was true for 30s, force-resetting')
+            console.warn('[program] failsafe: isSaving was true for 45s, force-resetting')
             setIsSaving(false)
             inFlightRef.current = false
-        }, 30_000)
+        }, 45_000)
         return () => clearTimeout(timer)
     }, [isSaving])
+
+    // ─── Debug: доступ к состоянию лока из консоли браузера ─────────────────
+    // В dev-режиме можно в консоли писать:
+    //   __debugLock.status()   — показать текущее состояние лока
+    //   __debugLock.hold()     — захватить лок (эмуляция залипшего автосейва)
+    //   __debugLock.release()  — освободить лок
+    //   __debugLock.check()    — проверить кнопку «Завершить» (lockIsFree)
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        ;(window as any).__debugLock = {
+            status: () => {
+                console.log({
+                    inFlight: inFlightRef.current,
+                    isSaving,
+                    generation: lockGenerationRef.current,
+                    heldFor: inFlightRef.current ? `${Date.now() - inFlightSinceRef.current}ms` : 'n/a',
+                    lockIsFree: lockIsFree(),
+                    saveStatus,
+                    consecutiveErrors: consecutiveSaveErrorsRef.current,
+                })
+            },
+            hold: () => {
+                inFlightRef.current = true
+                inFlightSinceRef.current = Date.now()
+                lockGenerationRef.current++
+                console.log('[debug] Lock force-acquired. Now __debugLock.status() and try clicking Завершить')
+            },
+            release: () => {
+                inFlightRef.current = false
+                console.log('[debug] Lock released')
+            },
+            check: () => {
+                console.log('lockIsFree():', lockIsFree())
+            },
+        }
+        return () => { delete (window as any).__debugLock }
+    }, [isSaving, lockIsFree, saveStatus])
 
     // Группируем per-set статусы по exerciseId — чтобы каждый ExerciseCard
     // получал только свой кусочек и не ре-рендерился из-за статусов соседей.
@@ -2028,30 +2099,46 @@ export default function ProgramDetailPage() {
         if (!program) return
         const currentDay = program.program_data.days[currentDayIndex]
         if (!currentDay) return
-        // Защита от двойного клика и от гонки с автосейвом.
-        // lockIsFree() снимает протухший лок — иначе кнопка «Завершить»
-        // могла залипнуть навсегда после подвисшего автосейва.
+
+        // «Завершить» — приоритетная кнопка. Должна работать ВСЕГДА,
+        // даже если автосейв держит лок (retry-цикл при ошибке сети/сессии).
+        // Принудительно снимаем лок и отменяем все автосейв-таймеры.
         if (!lockIsFree()) {
-            setSaveMessage('Идёт сохранение, подожди секунду…')
-            setTimeout(() => setSaveMessage(''), 2000)
-            return
+            console.warn('[program] handleCompleteDay: force-releasing lock held by autosave')
         }
         inFlightRef.current = true
         inFlightSinceRef.current = Date.now()
-        // Если есть «висящий» дебаунс — отменяем, чтобы не записать дважды
+        lockGenerationRef.current++
+        const myGeneration = lockGenerationRef.current
         if (debounceTimerRef.current) {
             clearTimeout(debounceTimerRef.current)
             debounceTimerRef.current = null
         }
-        // Отложенный ретрай тоже отменяем — мы делаем финальный запрос сами.
         if (retryTimerRef.current) {
             clearTimeout(retryTimerRef.current)
             retryTimerRef.current = null
         }
+        pendingRef.current = false
+
+        // Предварительная проверка сессии: если JWT протух, не шлём
+        // запросы на сервер (которые уйдут в таймаут по 10-12с каждый),
+        // а сразу покажем понятную ошибку с инструкцией.
         setIsSaving(true)
         setSaveStatus('saving')
         setSaveError(null)
         setSaveMessage('')
+        try {
+            const sessionOk = await tryRefreshSession()
+            if (!sessionOk) {
+                console.warn('[program] handleCompleteDay: session expired, cannot save')
+                setSaveStatus('error')
+                setSaveError('Сессия истекла. Обнови страницу (F5) и попробуй снова.')
+                setSaveMessage('⚠ Сессия истекла — обнови страницу')
+                return
+            }
+        } catch {
+            // Не блокируем — попробуем сохранить как есть
+        }
         const finalDuration = workoutStartTime !== null
             ? Math.floor((Date.now() - workoutStartTime) / 1000)
             : elapsedSeconds || undefined
@@ -2087,8 +2174,10 @@ export default function ProgramDetailPage() {
             setSaveError(e?.message || 'Ошибка завершения')
             setSaveMessage('Ошибка — попробуй ещё раз')
         } finally {
-            setIsSaving(false)
-            inFlightRef.current = false
+            if (lockGenerationRef.current === myGeneration) {
+                setIsSaving(false)
+                inFlightRef.current = false
+            }
         }
     }
 
@@ -2097,12 +2186,12 @@ export default function ProgramDetailPage() {
         const currentDay = program.program_data.days[currentDayIndex]
         if (!currentDay) return
         if (!lockIsFree()) {
-            setSaveMessage('Идёт сохранение, подожди секунду…')
-            setTimeout(() => setSaveMessage(''), 2000)
-            return
+            console.warn('[program] handleSaveCompleted: force-releasing lock held by autosave')
         }
         inFlightRef.current = true
         inFlightSinceRef.current = Date.now()
+        lockGenerationRef.current++
+        const myGeneration = lockGenerationRef.current
         if (debounceTimerRef.current) {
             clearTimeout(debounceTimerRef.current)
             debounceTimerRef.current = null
@@ -2111,10 +2200,20 @@ export default function ProgramDetailPage() {
             clearTimeout(retryTimerRef.current)
             retryTimerRef.current = null
         }
+        pendingRef.current = false
         setIsSaving(true)
         setSaveStatus('saving')
         setSaveError(null)
         setSaveMessage('')
+        try {
+            const sessionOk = await tryRefreshSession()
+            if (!sessionOk) {
+                setSaveStatus('error')
+                setSaveError('Сессия истекла. Обнови страницу (F5) и попробуй снова.')
+                setSaveMessage('⚠ Сессия истекла — обнови страницу')
+                return
+            }
+        } catch { /* noop — попробуем как есть */ }
         try {
             const snap = buildEntrySnapshot()
             await upsertTrainingEntry(program.id, currentDay.dayNumber, snap.entryData, {
@@ -2131,8 +2230,10 @@ export default function ProgramDetailPage() {
             setSaveError(e?.message || 'Ошибка сохранения')
             setSaveMessage('Ошибка сохранения — попробуй ещё раз')
         } finally {
-            setIsSaving(false)
-            inFlightRef.current = false
+            if (lockGenerationRef.current === myGeneration) {
+                setIsSaving(false)
+                inFlightRef.current = false
+            }
         }
     }
 
