@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react'
 import { User, Session } from '@supabase/supabase-js'
-import { createClient, clearUserCache, setCachedUser } from '@/lib/supabase/client'
+import { createClient, clearUserCache, setCachedUser, isSessionValid } from '@/lib/supabase/client'
 
 interface AuthContextType {
     user: User | null
@@ -160,15 +160,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 console.warn('[Auth] visibility refresh failed:', err)
             })
         }
+
+        const keepSessionAlive = async () => {
+            if (!isMounted || !hasResolved.current || isLoggingOut.current) return
+            try {
+                const stillValid = await isSessionValid()
+                if (stillValid) return
+
+                console.info('[Auth] heartbeat: session is stale, refreshing')
+                const { data, error } = await supabase.auth.refreshSession()
+                if (error) {
+                    console.warn('[Auth] heartbeat refresh failed:', error.message)
+                    return
+                }
+                if (!isMounted || isLoggingOut.current) return
+                if (data.session?.user) {
+                    globalSession = data.session
+                    globalUser = data.session.user
+                    setSession(data.session)
+                    setUser(data.session.user)
+                    setCachedUser(data.session.user)
+                    console.info('[Auth] heartbeat: session refreshed')
+                }
+            } catch (err) {
+                console.warn('[Auth] heartbeat failed:', err)
+            }
+        }
         if (typeof document !== 'undefined') {
             document.addEventListener('visibilitychange', handleVisible)
             window.addEventListener('focus', handleVisible)
         }
 
+        const heartbeat = setInterval(() => {
+            void keepSessionAlive()
+        }, 60_000)
+
         return () => {
             isMounted = false
             subscription.unsubscribe()
             clearTimeout(timeout)
+            clearInterval(heartbeat)
             if (typeof document !== 'undefined') {
                 document.removeEventListener('visibilitychange', handleVisible)
                 window.removeEventListener('focus', handleVisible)
