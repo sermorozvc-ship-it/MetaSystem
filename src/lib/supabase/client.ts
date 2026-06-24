@@ -496,8 +496,20 @@ export async function getAccessTokenWithRecovery(): Promise<{
             return { token: null, status: 'missing' }
         }
 
+        // ПРИОРИТЕТ: localStorage → синхронно и мгновенно.
+        // Чтение из storage не зависит от inTabLock и не висит на auth-refresh.
+        // Это критично для handleCompleteDay / directSupabaseFetch, когда
+        // autosave держит inTabLock и.getSession() таймаутится на 3с × N вызовов.
+        const storedToken = readStoredTokenFromLocalStorage()
+        if (storedToken && isJwtFresh(storedToken)) {
+            pushAuthDebugEvent('token_fresh_from_storage')
+            return { token: storedToken, status: 'fresh' }
+        }
+
         const supabase = createClient()
 
+        // localStorage не помог (нет токена или протух) — идём через Supabase клиент.
+        // getSession → inTabLock, может таймаутиться если autosave держит lock.
         const session = await getSessionWithTimeout(supabase, 3_000)
         if (session?.access_token) {
             if (isJwtFresh(session.access_token)) {
@@ -513,6 +525,7 @@ export async function getAccessTokenWithRecovery(): Promise<{
                 return { token: refreshed.access_token, status: 'refreshed' }
             }
 
+            // Refresh не помог — повторно пробуем localStorage (мог обновиться)
             const recoveredToken = readStoredTokenFromLocalStorage()
             if (recoveredToken && isJwtFresh(recoveredToken, 15)) {
                 console.warn('[auth] recovered token from localStorage after refresh failure')
@@ -524,27 +537,8 @@ export async function getAccessTokenWithRecovery(): Promise<{
             return { token: null, status: 'expired' }
         }
 
-        const storedToken = readStoredTokenFromLocalStorage()
-        if (storedToken) {
-            if (isJwtFresh(storedToken, 15)) {
-                console.warn('[auth] using token recovered directly from localStorage')
-                pushAuthDebugEvent('token_fresh_from_storage')
-                return { token: storedToken, status: 'fresh' }
-            }
-
-            console.warn('[auth] stale token in localStorage, trying refresh')
-            pushAuthDebugEvent('token_stale_in_storage')
-            const refreshed = await refreshSessionWithTimeout(supabase, 5_000)
-            if (refreshed?.access_token && isJwtFresh(refreshed.access_token, 15)) {
-                pushAuthDebugEvent('token_refreshed_after_stale_storage')
-                return { token: refreshed.access_token, status: 'refreshed' }
-            }
-
-            pushAuthDebugEvent('token_refresh_failed_after_stale_storage')
-            return { token: null, status: 'refresh_failed' }
-        }
-
-        console.warn('[auth] no access token in storage/session, trying refresh')
+        // Пробуем refresh напрямую (localStorage и session не дали результат)
+        console.warn('[auth] no fresh token anywhere, trying refresh')
         pushAuthDebugEvent('token_missing_before_refresh')
         const refreshed = await refreshSessionWithTimeout(supabase, 5_000)
         if (refreshed?.access_token && isJwtFresh(refreshed.access_token, 15)) {
