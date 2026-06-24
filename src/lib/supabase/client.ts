@@ -1,4 +1,4 @@
-import { createBrowserClient } from '@supabase/ssr'
+import { createClient as createSupabaseBrowserClient } from '@supabase/supabase-js'
 import type { Session, SupabaseClient, User } from '@supabase/supabase-js'
 
 let client: SupabaseClient | undefined
@@ -173,11 +173,15 @@ async function inTabLock<R>(
 }
 
 /**
- * Создаёт Supabase клиент для браузера через @supabase/ssr.
+ * Создаёт браузерный Supabase client.
  * Singleton — один инстанс на всё приложение.
- * 
- * Использует кастомную lock-функцию вместо navigator.locks
- * для предотвращения deadlock И race condition одновременно.
+ *
+ * Используем обычный `@supabase/supabase-js` browser client вместо
+ * `@supabase/ssr createBrowserClient`: для долгоживущих client-side страниц
+ * (часовая тренировка) нам критична предсказуемая persistSession-логика с
+ * явным localStorage adapter, а не SSR-абстракция.
+ *
+ * Кастомный lock сохраняем, чтобы не вернуть старые race/deadlock проблемы.
  */
 export function createClient(): SupabaseClient {
     if (client) return client
@@ -193,7 +197,7 @@ export function createClient(): SupabaseClient {
         return createSupabaseClient('https://mock.supabase.co', 'mock-key', { auth: { persistSession: false } })
     }
 
-    client = createBrowserClient(supabaseUrl, supabaseKey, {
+    client = createSupabaseBrowserClient(supabaseUrl, supabaseKey, {
         auth: {
             persistSession: true,
             autoRefreshToken: true,
