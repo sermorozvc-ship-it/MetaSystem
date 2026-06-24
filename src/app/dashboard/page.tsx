@@ -309,7 +309,7 @@ export default function DashboardPage() {
                 )}
 
                 {/* Quick Stats */}
-                <div className="grid md:grid-cols-3 gap-4 mb-8">
+                <div className="grid md:grid-cols-2 gap-4 mb-8">
                     {/* Карточка подписки с прогресс-баром */}
                     <div className="glass-card p-6">
                         <div className="flex items-center gap-3 mb-3">
@@ -348,20 +348,6 @@ export default function DashboardPage() {
                                 </p>
                             </>
                         )}
-                    </div>
-
-                    <div className="glass-card p-6">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="w-10 h-10 rounded-xl bg-info/20 flex items-center justify-center">
-                                <Dumbbell className="w-5 h-5 text-info" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-text-muted">Программа</p>
-                                <p className="text-xl font-display font-bold text-white">
-                                    {currentProgram ? `Неделя ${currentProgram.week_number}` : 'Нет'}
-                                </p>
-                            </div>
-                        </div>
                     </div>
                 </div>
 
