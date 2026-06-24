@@ -2,6 +2,59 @@ import { createBrowserClient } from '@supabase/ssr'
 import type { Session, SupabaseClient, User } from '@supabase/supabase-js'
 
 let client: SupabaseClient | undefined
+let authStorageKey: string | null = null
+
+function getAuthStorageKey(): string {
+    if (authStorageKey) return authStorageKey
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    if (!supabaseUrl) return 'sb-local-auth-token'
+    try {
+        const hostname = new URL(supabaseUrl).hostname
+        const projectRef = hostname.split('.')[0]
+        authStorageKey = `sb-${projectRef}-auth-token`
+        return authStorageKey
+    } catch {
+        return 'sb-local-auth-token'
+    }
+}
+
+const browserStorage = {
+    getItem(key: string) {
+        if (typeof window === 'undefined') return null
+        try {
+            const value = window.localStorage.getItem(key)
+            if (!value && key === getAuthStorageKey()) {
+                pushAuthDebugEvent('storage_get_miss', { key })
+            }
+            return value
+        } catch (e) {
+            pushAuthDebugEvent('storage_get_error', { key, message: e instanceof Error ? e.message : String(e) })
+            return null
+        }
+    },
+    setItem(key: string, value: string) {
+        if (typeof window === 'undefined') return
+        try {
+            window.localStorage.setItem(key, value)
+            if (key === getAuthStorageKey()) {
+                pushAuthDebugEvent('storage_set', { key, size: value.length })
+            }
+        } catch (e) {
+            pushAuthDebugEvent('storage_set_error', { key, message: e instanceof Error ? e.message : String(e) })
+        }
+    },
+    removeItem(key: string) {
+        if (typeof window === 'undefined') return
+        try {
+            window.localStorage.removeItem(key)
+            if (key === getAuthStorageKey()) {
+                pushAuthDebugEvent('storage_remove', { key })
+            }
+        } catch (e) {
+            pushAuthDebugEvent('storage_remove_error', { key, message: e instanceof Error ? e.message : String(e) })
+        }
+    },
+}
 
 function pushAuthDebugEvent(type: string, details?: Record<string, any>) {
     try {
@@ -142,10 +195,41 @@ export function createClient(): SupabaseClient {
 
     client = createBrowserClient(supabaseUrl, supabaseKey, {
         auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: true,
+            storageKey: getAuthStorageKey(),
+            storage: browserStorage as any,
             // Кастомная lock-функция: сериализует внутри вкладки, не блокирует между
             lock: inTabLock,
         }
     })
+
+    if (typeof window !== 'undefined') {
+        pushAuthDebugEvent('client_created', {
+            storageKey: getAuthStorageKey(),
+            hasStoredSession: !!window.localStorage.getItem(getAuthStorageKey()),
+        })
+
+        client.auth.onAuthStateChange((event, session) => {
+            pushAuthDebugEvent('auth_state_change', {
+                event,
+                hasSession: !!session,
+                hasAccessToken: !!session?.access_token,
+                userId: session?.user?.id ?? null,
+            })
+        })
+
+        window.addEventListener('storage', (e) => {
+            if (e.key === getAuthStorageKey()) {
+                pushAuthDebugEvent('storage_event', {
+                    key: e.key,
+                    hasOldValue: !!e.oldValue,
+                    hasNewValue: !!e.newValue,
+                })
+            }
+        })
+    }
     return client
 }
 
@@ -178,11 +262,15 @@ export async function safeGetUser(): Promise<User | null> {
 
     // 1. Кеш есть и актуален — мгновенный ответ (без сети!)
     if (cachedUser && (now - userCacheTimestamp) < USER_CACHE_TTL) {
+        pushAuthDebugEvent('safe_get_user_cache_hit', { ageMs: now - userCacheTimestamp })
         return cachedUser
     }
 
     // 2. Запрос уже идёт — ждём его, не создаём дубликат
-    if (getUserPromise) return getUserPromise
+    if (getUserPromise) {
+        pushAuthDebugEvent('safe_get_user_join_inflight')
+        return getUserPromise
+    }
 
     getUserPromise = (async () => {
         const supabase = createClient()
@@ -199,28 +287,26 @@ export async function safeGetUser(): Promise<User | null> {
             if (user) {
                 cachedUser = user
                 userCacheTimestamp = Date.now()
+                pushAuthDebugEvent('safe_get_user_ok', { userId: user.id })
             } else {
-                // Различаем auth error (сессия истекла) и timeout (сеть недоступна).
-                // При auth error — сбрасываем кеш, чтобы вызывающий код получил null
-                // и мог показать сообщение «сессия истекла» вместо вечных ошибок 401.
-                // При timeout — сохраняем кеш (сеть временно недоступна, сессия может
-                // быть валидной).
                 if (result?.error) {
                     console.warn('[safeGetUser] auth error, clearing cache:', result.error?.message ?? result.error)
+                    pushAuthDebugEvent('safe_get_user_auth_error', { message: result.error?.message ?? String(result.error) })
                     cachedUser = null
                     userCacheTimestamp = 0
                 } else if (cachedUser) {
                     console.log('[safeGetUser] getUser returned null (timeout) but cache exists, keeping cache')
+                    pushAuthDebugEvent('safe_get_user_timeout_keep_cache')
                     return cachedUser
                 } else {
+                    pushAuthDebugEvent('safe_get_user_null_no_cache')
                     cachedUser = null
                 }
             }
             return user
         } catch (err: any) {
             console.warn('[safeGetUser] Exception:', err.message)
-            // При сетевой ошибке (promise rejected) — возвращаем кеш, сеть может
-            // быть временно недоступна.
+            pushAuthDebugEvent('safe_get_user_exception', { message: err?.message ?? String(err) })
             return cachedUser
         } finally {
             getUserPromise = null

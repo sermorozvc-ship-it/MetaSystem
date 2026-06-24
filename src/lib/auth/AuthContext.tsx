@@ -81,6 +81,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                 console.log(`[Auth] Event: ${event}`, !!newSession?.user)
 
+                try {
+                    if (typeof window !== 'undefined') {
+                        const stateKey = '__authDebug'
+                        const current = Array.isArray((window as any)[stateKey]?.events) ? (window as any)[stateKey].events : []
+                        ;(window as any)[stateKey] = {
+                            ...(window as any)[stateKey],
+                            events: [...current, {
+                                ts: new Date().toISOString(),
+                                type: 'auth_context_event',
+                                details: {
+                                    event,
+                                    hasSession: !!newSession,
+                                    hasUser: !!newSession?.user,
+                                    userId: newSession?.user?.id ?? null,
+                                },
+                            }].slice(-200),
+                        }
+                    }
+                } catch { /* noop */ }
+
                 if (newSession?.user) {
                     globalSession = newSession
                     globalUser = newSession.user
