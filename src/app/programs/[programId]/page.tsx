@@ -52,6 +52,15 @@ interface DayMeta {
     supersets?: Superset[]
 }
 
+interface TrainingDebugEvent {
+    ts: string
+    type: string
+    details?: Record<string, any>
+}
+
+const TRAINING_DEBUG_KEY_PREFIX = 'training_debug_'
+const TRAINING_DEBUG_MAX_EVENTS = 250
+
 // ─── Метки подходов ───────────────────────────────────────────────────────────
 
 const SET_LABELS: { value: SetLabel; label: string; color: string; bg: string; inputColor: string }[] = [
@@ -982,14 +991,50 @@ export default function ProgramDetailPage() {
     // вкладки / оборванная сеть при смене VPN), и лок надо принудительно снять.
     // Раньше было 20с — лишние 8с «вечного спиннера» после пробуждения вкладки.
     const STALE_LOCK_MS = 15_000
+    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+    const [saveError, setSaveError] = useState<string | null>(null)
+    const debugEventsRef = useRef<TrainingDebugEvent[]>([])
+    const debugStorageKey = `${TRAINING_DEBUG_KEY_PREFIX}${programId}`
+
+    const pushDebugEvent = useCallback((type: string, details?: Record<string, any>) => {
+        const event: TrainingDebugEvent = {
+            ts: new Date().toISOString(),
+            type,
+            details,
+        }
+        const nextEvents = [...debugEventsRef.current, event].slice(-TRAINING_DEBUG_MAX_EVENTS)
+        debugEventsRef.current = nextEvents
+
+        if (typeof window !== 'undefined') {
+            ;(window as any).__trainingDebug = {
+                events: nextEvents,
+                dump: () => nextEvents,
+                latest: () => nextEvents[nextEvents.length - 1] ?? null,
+                clear: () => {
+                    debugEventsRef.current = []
+                    try { localStorage.removeItem(debugStorageKey) } catch { /* noop */ }
+                },
+            }
+            try {
+                localStorage.setItem(debugStorageKey, JSON.stringify(nextEvents))
+            } catch { /* noop */ }
+        }
+
+        console.info('[training-debug]', type, details ?? {})
+    }, [debugStorageKey])
+
     // true если лок свободен ИЛИ протух — можно стартовать новую операцию.
     const lockIsFree = useCallback(() => {
         if (!inFlightRef.current) return true
         if (Date.now() - inFlightSinceRef.current > STALE_LOCK_MS) {
             console.warn('[program] stale in-flight lock force-released after', STALE_LOCK_MS, 'ms')
+            pushDebugEvent('lock_force_released', {
+                heldForMs: Date.now() - inFlightSinceRef.current,
+                staleThresholdMs: STALE_LOCK_MS,
+            })
             inFlightRef.current = false
             // КРИТИЧНО: снимаем и визуальный спиннер. Раньше тут сбрасывался
-            // только ref — и кнопка оставалась disabled со «Сохраняю...», пока
+            // только ref — и кнопка оставалась disabled со «Сохраняю...", пока
             // пользователь не перезагрузит страницу. На телефоне (экран гаснет
             // между подходами → вкладка заморожена → таймер withTimeout не
             // тикал) это и был тот самый вечный спиннер.
@@ -998,7 +1043,8 @@ export default function ProgramDetailPage() {
             return true
         }
         return false
-    }, [])
+    }, [pushDebugEvent])
+
     const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     // Таймер отложенного ретрая после ошибки автосейва (1 ретрай через 3с, без рекурсии).
     // Очищается при ручном save / при размонтировании / при следующем вводе.
@@ -1007,14 +1053,18 @@ export default function ProgramDetailPage() {
     // Если превышен — автосейв-ретрай останавливается, чтобы не держать
     // inFlightRef вечно (иначе кнопка «Завершить» залипает).
     const consecutiveSaveErrorsRef = useRef(0)
-    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-    const [saveError, setSaveError] = useState<string | null>(null)
 
     const resetSavingState = useCallback((nextStatus: 'idle' | 'error' = 'idle') => {
+        pushDebugEvent('reset_saving_state', {
+            nextStatus,
+            wasSaving: isSaving,
+            prevSaveStatus: saveStatus,
+            inFlight: inFlightRef.current,
+        })
         setIsSaving(false)
         setSaveStatus(prev => prev === 'saving' ? nextStatus : (nextStatus === 'error' ? 'error' : prev))
         inFlightRef.current = false
-    }, [])
+    }, [isSaving, pushDebugEvent, saveStatus])
 
     // ─── Per-set save status ───────────────────────────────────────────────
     // Ключ: `${exerciseId}::${setIdx}`. Хранится только для подходов, по
@@ -1056,6 +1106,78 @@ export default function ProgramDetailPage() {
     // Мгновенный router.replace('/auth') в этот момент выбрасывал со страницы
     // прямо во время тренировки («страница сама закрылась»). Ждём 3с и
     // перепроверяем: если сессия вернулась — остаёмся.
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        try {
+            const raw = localStorage.getItem(debugStorageKey)
+            if (raw) {
+                const restored = JSON.parse(raw)
+                if (Array.isArray(restored)) {
+                    debugEventsRef.current = restored.slice(-TRAINING_DEBUG_MAX_EVENTS)
+                }
+            }
+        } catch { /* noop */ }
+
+        ;(window as any).__trainingDebug = {
+            events: debugEventsRef.current,
+            dump: () => debugEventsRef.current,
+            latest: () => debugEventsRef.current[debugEventsRef.current.length - 1] ?? null,
+            clear: () => {
+                debugEventsRef.current = []
+                try { localStorage.removeItem(debugStorageKey) } catch { /* noop */ }
+            },
+        }
+
+        pushDebugEvent('page_mount', {
+            programId,
+            hasUser: !!user,
+        })
+
+        return () => {
+            pushDebugEvent('page_unmount', {
+                isSaving,
+                saveStatus,
+                hasUser: !!userRef.current,
+            })
+        }
+    }, [debugStorageKey, programId, pushDebugEvent])
+
+    useEffect(() => {
+        pushDebugEvent('auth_state', {
+            authLoading,
+            hasUser: !!user,
+        })
+    }, [authLoading, user, pushDebugEvent])
+
+    useEffect(() => {
+        pushDebugEvent('save_state', {
+            isSaving,
+            saveStatus,
+            saveError,
+            inFlight: inFlightRef.current,
+        })
+    }, [isSaving, saveStatus, saveError, pushDebugEvent])
+
+    useEffect(() => {
+        const onVisible = () => pushDebugEvent('visibility_change', { state: document.visibilityState })
+        const onFocus = () => pushDebugEvent('window_focus')
+        const onBlur = () => pushDebugEvent('window_blur')
+        const onOnline = () => pushDebugEvent('network_online')
+        const onOffline = () => pushDebugEvent('network_offline')
+        document.addEventListener('visibilitychange', onVisible)
+        window.addEventListener('focus', onFocus)
+        window.addEventListener('blur', onBlur)
+        window.addEventListener('online', onOnline)
+        window.addEventListener('offline', onOffline)
+        return () => {
+            document.removeEventListener('visibilitychange', onVisible)
+            window.removeEventListener('focus', onFocus)
+            window.removeEventListener('blur', onBlur)
+            window.removeEventListener('online', onOnline)
+            window.removeEventListener('offline', onOffline)
+        }
+    }, [pushDebugEvent])
+
     useEffect(() => {
         if (authLoading) return
         if (user) return
@@ -2068,6 +2190,14 @@ export default function ProgramDetailPage() {
 
     const handleAuthFailure = useCallback(async (context: 'complete' | 'save-completed') => {
         const { status } = await getAccessTokenWithRecovery()
+        pushDebugEvent('auth_failure', {
+            context,
+            status,
+            isSaving,
+            saveStatus,
+            inFlight: inFlightRef.current,
+            heldForMs: inFlightRef.current ? Date.now() - inFlightSinceRef.current : null,
+        })
         console.warn(`[program] ${context} aborted by auth state: ${status}`)
         setSaveStatus('error')
         setSaveError(
@@ -2077,7 +2207,7 @@ export default function ProgramDetailPage() {
         )
         setSaveMessage('⚠ Проблема с сессией — обнови страницу')
         resetSavingState('error')
-    }, [resetSavingState])
+    }, [isSaving, pushDebugEvent, resetSavingState, saveStatus])
 
     const updateExercise = (exerciseId: string, data: ExerciseClientData) => {
         userChangedRef.current = true
@@ -2119,6 +2249,17 @@ export default function ProgramDetailPage() {
         const currentDay = program.program_data.days[currentDayIndex]
         if (!currentDay) return
 
+        pushDebugEvent('complete_click', {
+            dayNumber: currentDay.dayNumber,
+            currentDayIndex,
+            isSaving,
+            saveStatus,
+            inFlight: inFlightRef.current,
+            hasPendingChanges: userChangedRef.current,
+            elapsedSeconds,
+            workoutStartTime,
+        })
+
         // «Завершить» — приоритетная кнопка. Должна работать ВСЕГДА,
         // даже если автосейв держит лок (retry-цикл при ошибке сети/сессии).
         // Принудительно снимаем лок и отменяем все автосейв-таймеры.
@@ -2148,11 +2289,13 @@ export default function ProgramDetailPage() {
         setSaveMessage('')
         try {
             const sessionOk = await tryRefreshSession()
+            pushDebugEvent('complete_refresh_result', { sessionOk })
             if (!sessionOk) {
                 await handleAuthFailure('complete')
                 return
             }
-        } catch {
+        } catch (e: any) {
+            pushDebugEvent('complete_refresh_exception', { message: e?.message || String(e) })
             const { token } = await getAccessTokenWithRecovery()
             if (!token) {
                 await handleAuthFailure('complete')
@@ -2164,11 +2307,18 @@ export default function ProgramDetailPage() {
             : elapsedSeconds || undefined
         try {
             const snap = buildEntrySnapshot()
+            pushDebugEvent('complete_save_start', {
+                dayNumber: currentDay.dayNumber,
+                exerciseCount: Object.keys(snap.entryData || {}).length,
+                finalDuration,
+            })
             await upsertTrainingEntry(program.id, currentDay.dayNumber, snap.entryData, {
                 ...snap.metadata,
                 workout_duration_seconds: finalDuration,
             })
+            pushDebugEvent('complete_upsert_ok', { dayNumber: currentDay.dayNumber })
             await completeTrainingDay(program.id, currentDay.dayNumber)
+            pushDebugEvent('complete_mark_done_ok', { dayNumber: currentDay.dayNumber })
 
             // Если это последний день недели — автоматически фиксируем чек-ин клиента,
             // чтобы тренер видел финализированные ответы в дневнике.
@@ -2204,6 +2354,14 @@ export default function ProgramDetailPage() {
         if (!program) return
         const currentDay = program.program_data.days[currentDayIndex]
         if (!currentDay) return
+        pushDebugEvent('save_completed_click', {
+            dayNumber: currentDay.dayNumber,
+            currentDayIndex,
+            isSaving,
+            saveStatus,
+            inFlight: inFlightRef.current,
+            savedDuration,
+        })
         if (!lockIsFree()) {
             console.warn('[program] handleSaveCompleted: force-releasing lock held by autosave')
         }
@@ -2226,11 +2384,13 @@ export default function ProgramDetailPage() {
         setSaveMessage('')
         try {
             const sessionOk = await tryRefreshSession()
+            pushDebugEvent('save_completed_refresh_result', { sessionOk })
             if (!sessionOk) {
                 await handleAuthFailure('save-completed')
                 return
             }
-        } catch {
+        } catch (e: any) {
+            pushDebugEvent('save_completed_refresh_exception', { message: e?.message || String(e) })
             const { token } = await getAccessTokenWithRecovery()
             if (!token) {
                 await handleAuthFailure('save-completed')
@@ -2239,16 +2399,23 @@ export default function ProgramDetailPage() {
         }
         try {
             const snap = buildEntrySnapshot()
+            pushDebugEvent('save_completed_start', {
+                dayNumber: currentDay.dayNumber,
+                exerciseCount: Object.keys(snap.entryData || {}).length,
+                savedDuration,
+            })
             await upsertTrainingEntry(program.id, currentDay.dayNumber, snap.entryData, {
                 ...snap.metadata,
                 workout_duration_seconds: savedDuration ?? undefined,
             })
+            pushDebugEvent('save_completed_upsert_ok', { dayNumber: currentDay.dayNumber })
             setSaveStatus('saved')
             setSaveMessage('✓ Правки сохранены')
             setTimeout(() => setSaveMessage(''), 2000)
             setTimeout(() => setSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 1500)
         } catch (e: any) {
             console.error('Error saving completed entry:', e)
+            pushDebugEvent('save_completed_error', { message: e?.message || String(e) })
             setSaveStatus('error')
             setSaveError(e?.message || 'Ошибка сохранения')
             setSaveMessage('Ошибка сохранения — попробуй ещё раз')

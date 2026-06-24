@@ -3,6 +3,43 @@ import type { Session, SupabaseClient, User } from '@supabase/supabase-js'
 
 let client: SupabaseClient | undefined
 
+function pushAuthDebugEvent(type: string, details?: Record<string, any>) {
+    try {
+        if (typeof window === 'undefined') return
+        const stateKey = '__authDebug'
+        const storageKey = 'auth_debug_events'
+        let prev: any[] = []
+        try {
+            const raw = localStorage.getItem(storageKey)
+            if (raw) {
+                const parsed = JSON.parse(raw)
+                if (Array.isArray(parsed)) prev = parsed
+            }
+        } catch { /* noop */ }
+
+        const event = {
+            ts: new Date().toISOString(),
+            type,
+            details,
+        }
+        const next = [...prev, event].slice(-200)
+        ;(window as any)[stateKey] = {
+            events: next,
+            dump: () => next,
+            latest: () => next[next.length - 1] ?? null,
+            clear: () => {
+                try { localStorage.removeItem(storageKey) } catch { /* noop */ }
+                ;(window as any)[stateKey].events = []
+            },
+        }
+        try {
+            localStorage.setItem(storageKey, JSON.stringify(next))
+        } catch { /* noop */ }
+    } catch {
+        // noop
+    }
+}
+
 // Кеш для пользователя — заполняется из AuthContext через setCachedUser()
 let cachedUser: User | null = null
 let userCacheTimestamp = 0
@@ -374,21 +411,26 @@ export async function getAccessTokenWithRecovery(): Promise<{
         const session = await getSessionWithTimeout(supabase, 3_000)
         if (session?.access_token) {
             if (isJwtFresh(session.access_token)) {
+                pushAuthDebugEvent('token_fresh_from_session')
                 return { token: session.access_token, status: 'fresh' }
             }
 
             console.warn('[auth] access token expired in session, trying refresh')
+            pushAuthDebugEvent('token_expired_in_session')
             const refreshed = await refreshSessionWithTimeout(supabase, 5_000)
             if (refreshed?.access_token && isJwtFresh(refreshed.access_token, 15)) {
+                pushAuthDebugEvent('token_refreshed_after_session_expired')
                 return { token: refreshed.access_token, status: 'refreshed' }
             }
 
             const recoveredToken = readStoredTokenFromLocalStorage()
             if (recoveredToken && isJwtFresh(recoveredToken, 15)) {
                 console.warn('[auth] recovered token from localStorage after refresh failure')
+                pushAuthDebugEvent('token_recovered_from_storage_after_refresh_failure')
                 return { token: recoveredToken, status: 'refreshed' }
             }
 
+            pushAuthDebugEvent('token_expired_no_recovery')
             return { token: null, status: 'expired' }
         }
 
@@ -396,27 +438,35 @@ export async function getAccessTokenWithRecovery(): Promise<{
         if (storedToken) {
             if (isJwtFresh(storedToken, 15)) {
                 console.warn('[auth] using token recovered directly from localStorage')
+                pushAuthDebugEvent('token_fresh_from_storage')
                 return { token: storedToken, status: 'fresh' }
             }
 
             console.warn('[auth] stale token in localStorage, trying refresh')
+            pushAuthDebugEvent('token_stale_in_storage')
             const refreshed = await refreshSessionWithTimeout(supabase, 5_000)
             if (refreshed?.access_token && isJwtFresh(refreshed.access_token, 15)) {
+                pushAuthDebugEvent('token_refreshed_after_stale_storage')
                 return { token: refreshed.access_token, status: 'refreshed' }
             }
 
+            pushAuthDebugEvent('token_refresh_failed_after_stale_storage')
             return { token: null, status: 'refresh_failed' }
         }
 
         console.warn('[auth] no access token in storage/session, trying refresh')
+        pushAuthDebugEvent('token_missing_before_refresh')
         const refreshed = await refreshSessionWithTimeout(supabase, 5_000)
         if (refreshed?.access_token && isJwtFresh(refreshed.access_token, 15)) {
+            pushAuthDebugEvent('token_refreshed_after_missing')
             return { token: refreshed.access_token, status: 'refreshed' }
         }
 
+        pushAuthDebugEvent('token_missing_no_recovery')
         return { token: null, status: 'missing' }
     } catch (e) {
         console.warn('[auth] getAccessTokenWithRecovery failed:', e)
+        pushAuthDebugEvent('token_recovery_exception', { message: e instanceof Error ? e.message : String(e) })
         return { token: null, status: 'refresh_failed' }
     }
 }

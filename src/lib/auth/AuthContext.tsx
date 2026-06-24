@@ -171,6 +171,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 const { data, error } = await supabase.auth.refreshSession()
                 if (error) {
                     console.warn('[Auth] heartbeat refresh failed:', error.message)
+                    try {
+                        if (typeof window !== 'undefined') {
+                            const stateKey = '__authDebug'
+                            const current = Array.isArray((window as any)[stateKey]?.events) ? (window as any)[stateKey].events : []
+                            ;(window as any)[stateKey] = {
+                                ...(window as any)[stateKey],
+                                events: [...current, {
+                                    ts: new Date().toISOString(),
+                                    type: 'heartbeat_refresh_failed',
+                                    details: { message: error.message },
+                                }].slice(-200),
+                            }
+                        }
+                    } catch { /* noop */ }
                     return
                 }
                 if (!isMounted || isLoggingOut.current) return
@@ -180,6 +194,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     setSession(data.session)
                     setUser(data.session.user)
                     setCachedUser(data.session.user)
+                    try {
+                        if (typeof window !== 'undefined') {
+                            const stateKey = '__authDebug'
+                            const current = Array.isArray((window as any)[stateKey]?.events) ? (window as any)[stateKey].events : []
+                            ;(window as any)[stateKey] = {
+                                ...(window as any)[stateKey],
+                                events: [...current, {
+                                    ts: new Date().toISOString(),
+                                    type: 'heartbeat_refresh_ok',
+                                    details: { userId: data.session.user.id },
+                                }].slice(-200),
+                            }
+                        }
+                    } catch { /* noop */ }
                     console.info('[Auth] heartbeat: session refreshed')
                 }
             } catch (err) {
