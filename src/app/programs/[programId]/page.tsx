@@ -21,7 +21,7 @@ import { getMySubscriptionInfo } from '@/lib/services/renewal'
 import { parseMdToJson } from '@/lib/utils/md-parser'
 import { parseCheckinQuestions } from '@/lib/utils/checkin-questions'
 import { getWeeklyCheckin, upsertWeeklyCheckin, markWeeklyCheckinCompleted } from '@/lib/services/weekly-checkin'
-import { tryRefreshSession, getAccessTokenWithRecovery } from '@/lib/supabase/client'
+import { getAccessTokenWithRecovery } from '@/lib/supabase/client'
 
 // ─── Типы данных клиента ─────────────────────────────────────────────────────
 
@@ -2300,23 +2300,21 @@ export default function ProgramDetailPage() {
             }
             pendingRef.current = false
 
-            // Предварительная проверка сессии: если JWT протух, не шлём
-            // запросы на сервер (которые уйдут в таймаут по 10-12с каждый),
-            // а сразу покажем понятную ошибку с инструкцией.
+            // Предварительная проверка сессии: читаем токен напрямую из
+            // localStorage (getAccessTokenWithRecovery) ВМЕСТО tryRefreshSession.
+            // Причина: tryRefreshSession идёт через supabase.auth.getSession(),
+            // который использует inTabLock. Если автосейв держит inTabLock
+            // (safeGetUser → getUser), getSession висит на таймауте 3с и
+            // возвращает false — хотя токен в localStorage свежий и валидный.
+            // getAccessTokenWithRecovery читает токен из storage напрямую,
+            // без inTabLock, и корректно определяет его валидность.
             setIsSaving(true)
             setSaveStatus('saving')
             setSaveError(null)
             setSaveMessage('')
-            try {
-                const sessionOk = await tryRefreshSession()
-                pushDebugEvent('complete_refresh_result', { sessionOk })
-                if (!sessionOk) {
-                    await handleAuthFailure('complete')
-                    return
-                }
-            } catch (e: any) {
-                pushDebugEvent('complete_refresh_exception', { message: e?.message || String(e) })
-                const { token } = await getAccessTokenWithRecovery()
+            {
+                const { token, status } = await getAccessTokenWithRecovery()
+                pushDebugEvent('complete_token_check', { status, hasToken: !!token })
                 if (!token) {
                     await handleAuthFailure('complete')
                     return
@@ -2405,16 +2403,9 @@ export default function ProgramDetailPage() {
         setSaveStatus('saving')
         setSaveError(null)
         setSaveMessage('')
-        try {
-            const sessionOk = await tryRefreshSession()
-            pushDebugEvent('save_completed_refresh_result', { sessionOk })
-            if (!sessionOk) {
-                await handleAuthFailure('save-completed')
-                return
-            }
-        } catch (e: any) {
-            pushDebugEvent('save_completed_refresh_exception', { message: e?.message || String(e) })
-            const { token } = await getAccessTokenWithRecovery()
+        {
+            const { token, status } = await getAccessTokenWithRecovery()
+            pushDebugEvent('save_completed_token_check', { status, hasToken: !!token })
             if (!token) {
                 await handleAuthFailure('save-completed')
                 return
