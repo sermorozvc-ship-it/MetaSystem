@@ -21,7 +21,7 @@ import { getMySubscriptionInfo } from '@/lib/services/renewal'
 import { parseMdToJson } from '@/lib/utils/md-parser'
 import { parseCheckinQuestions } from '@/lib/utils/checkin-questions'
 import { getWeeklyCheckin, upsertWeeklyCheckin, markWeeklyCheckinCompleted } from '@/lib/services/weekly-checkin'
-import { tryRefreshSession } from '@/lib/supabase/client'
+import { tryRefreshSession, getAccessTokenWithRecovery } from '@/lib/supabase/client'
 
 // ─── Типы данных клиента ─────────────────────────────────────────────────────
 
@@ -1009,6 +1009,12 @@ export default function ProgramDetailPage() {
     const consecutiveSaveErrorsRef = useRef(0)
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
     const [saveError, setSaveError] = useState<string | null>(null)
+
+    const resetSavingState = useCallback((nextStatus: 'idle' | 'error' = 'idle') => {
+        setIsSaving(false)
+        setSaveStatus(prev => prev === 'saving' ? nextStatus : (nextStatus === 'error' ? 'error' : prev))
+        inFlightRef.current = false
+    }, [])
 
     // ─── Per-set save status ───────────────────────────────────────────────
     // Ключ: `${exerciseId}::${setIdx}`. Хранится только для подходов, по
@@ -2060,6 +2066,19 @@ export default function ProgramDetailPage() {
         saveEntryRef.current?.(false)
     }, [])
 
+    const handleAuthFailure = useCallback(async (context: 'complete' | 'save-completed') => {
+        const { status } = await getAccessTokenWithRecovery()
+        console.warn(`[program] ${context} aborted by auth state: ${status}`)
+        setSaveStatus('error')
+        setSaveError(
+            status === 'missing' || status === 'expired' || status === 'refresh_failed'
+                ? 'Сессия истекла или потерялась. Обнови страницу и попробуй снова.'
+                : 'Не удалось подтвердить сессию. Обнови страницу и попробуй снова.'
+        )
+        setSaveMessage('⚠ Проблема с сессией — обнови страницу')
+        resetSavingState('error')
+    }, [resetSavingState])
+
     const updateExercise = (exerciseId: string, data: ExerciseClientData) => {
         userChangedRef.current = true
         if (!completedDays.has(program?.program_data.days[currentDayIndex]?.dayNumber ?? -1)) {
@@ -2130,14 +2149,15 @@ export default function ProgramDetailPage() {
         try {
             const sessionOk = await tryRefreshSession()
             if (!sessionOk) {
-                console.warn('[program] handleCompleteDay: session expired, cannot save')
-                setSaveStatus('error')
-                setSaveError('Сессия истекла. Обнови страницу (F5) и попробуй снова.')
-                setSaveMessage('⚠ Сессия истекла — обнови страницу')
+                await handleAuthFailure('complete')
                 return
             }
         } catch {
-            // Не блокируем — попробуем сохранить как есть
+            const { token } = await getAccessTokenWithRecovery()
+            if (!token) {
+                await handleAuthFailure('complete')
+                return
+            }
         }
         const finalDuration = workoutStartTime !== null
             ? Math.floor((Date.now() - workoutStartTime) / 1000)
@@ -2175,8 +2195,7 @@ export default function ProgramDetailPage() {
             setSaveMessage('Ошибка — попробуй ещё раз')
         } finally {
             if (lockGenerationRef.current === myGeneration) {
-                setIsSaving(false)
-                inFlightRef.current = false
+                resetSavingState()
             }
         }
     }
@@ -2208,12 +2227,16 @@ export default function ProgramDetailPage() {
         try {
             const sessionOk = await tryRefreshSession()
             if (!sessionOk) {
-                setSaveStatus('error')
-                setSaveError('Сессия истекла. Обнови страницу (F5) и попробуй снова.')
-                setSaveMessage('⚠ Сессия истекла — обнови страницу')
+                await handleAuthFailure('save-completed')
                 return
             }
-        } catch { /* noop — попробуем как есть */ }
+        } catch {
+            const { token } = await getAccessTokenWithRecovery()
+            if (!token) {
+                await handleAuthFailure('save-completed')
+                return
+            }
+        }
         try {
             const snap = buildEntrySnapshot()
             await upsertTrainingEntry(program.id, currentDay.dayNumber, snap.entryData, {
@@ -2231,8 +2254,7 @@ export default function ProgramDetailPage() {
             setSaveMessage('Ошибка сохранения — попробуй ещё раз')
         } finally {
             if (lockGenerationRef.current === myGeneration) {
-                setIsSaving(false)
-                inFlightRef.current = false
+                resetSavingState()
             }
         }
     }

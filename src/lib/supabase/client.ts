@@ -1,5 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr'
-import type { SupabaseClient, User } from '@supabase/supabase-js'
+import type { Session, SupabaseClient, User } from '@supabase/supabase-js'
 
 let client: SupabaseClient | undefined
 
@@ -283,54 +283,8 @@ async function getSessionSync(supabase: SupabaseClient) {
 // Supabase REST API. Без lock'ов, без auth-refresh, без зависаний.
 
 async function getStoredAccessToken(): Promise<string | null> {
-    try {
-        if (typeof window === 'undefined') return null
-
-        // Основной способ: SDK сам знает где хранит сессию (localStorage, cookies и т.д.)
-        // getSession() обычно не делает сетевых запросов, но если SDK запускает
-        // internal token refresh — может зависнуть. Ставим таймаут 3с, чтобы
-        // directSupabaseFetch не повис навсегда.
-        const supabase = createClient()
-        const sessionResult = await Promise.race([
-            supabase.auth.getSession(),
-            new Promise<null>((resolve) => setTimeout(() => {
-                console.warn('[getStoredAccessToken] getSession() timeout after 3s')
-                resolve(null)
-            }, 3_000)),
-        ])
-        const session = sessionResult?.data?.session
-        if (session?.access_token) return session.access_token
-
-        // Fallback: ручной поиск в localStorage (если SDK не может прочитать сессию)
-        for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i)
-            if (!k) continue
-            if (k.includes('auth-token') || k.includes('auth_token')) {
-                const raw = localStorage.getItem(k)
-                if (!raw) continue
-                const parsed = JSON.parse(raw)
-                if (parsed?.access_token) return parsed.access_token
-            }
-        }
-
-        // Fallback: пробуем стандартный ключ sb-{projectRef}-auth-token
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-        if (supabaseUrl) {
-            const hostname = new URL(supabaseUrl).hostname
-            const projectRef = hostname.split('.')[0]
-            const key = `sb-${projectRef}-auth-token`
-            const raw = localStorage.getItem(key)
-            if (raw) {
-                const parsed = JSON.parse(raw)
-                if (parsed?.access_token) return parsed.access_token
-            }
-        }
-
-        console.warn('[getStoredAccessToken] No access token found')
-        return null
-    } catch {
-        return null
-    }
+    const { token } = await getAccessTokenWithRecovery()
+    return token
 }
 
 function getSupabaseRestUrl(): string {
@@ -339,6 +293,132 @@ function getSupabaseRestUrl(): string {
 
 function getSupabaseAnonKey(): string {
     return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
+}
+
+function isJwtFresh(accessToken: string, skewSeconds: number = 60): boolean {
+    try {
+        const parts = accessToken.split('.')
+        if (parts.length !== 3) return false
+        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+        const nowSec = Math.floor(Date.now() / 1000)
+        return payload.exp > nowSec + skewSeconds
+    } catch {
+        return false
+    }
+}
+
+function readStoredTokenFromLocalStorage(): string | null {
+    if (typeof window === 'undefined') return null
+
+    for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i)
+        if (!k) continue
+        if (k.includes('auth-token') || k.includes('auth_token')) {
+            const raw = localStorage.getItem(k)
+            if (!raw) continue
+            const parsed = JSON.parse(raw)
+            if (parsed?.access_token) return parsed.access_token
+        }
+    }
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    if (supabaseUrl) {
+        const hostname = new URL(supabaseUrl).hostname
+        const projectRef = hostname.split('.')[0]
+        const key = `sb-${projectRef}-auth-token`
+        const raw = localStorage.getItem(key)
+        if (raw) {
+            const parsed = JSON.parse(raw)
+            if (parsed?.access_token) return parsed.access_token
+        }
+    }
+
+    return null
+}
+
+async function getSessionWithTimeout(
+    supabase: SupabaseClient,
+    timeoutMs: number,
+): Promise<Session | null> {
+    const result = await Promise.race([
+        supabase.auth.getSession(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ])
+    return result?.data?.session ?? null
+}
+
+async function refreshSessionWithTimeout(
+    supabase: SupabaseClient,
+    timeoutMs: number,
+): Promise<Session | null> {
+    const result = await Promise.race([
+        supabase.auth.refreshSession(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ])
+    return result?.data?.session ?? null
+}
+
+export type AccessTokenStatus = 'fresh' | 'refreshed' | 'expired' | 'missing' | 'refresh_failed'
+
+export async function getAccessTokenWithRecovery(): Promise<{
+    token: string | null
+    status: AccessTokenStatus
+}> {
+    try {
+        if (typeof window === 'undefined') {
+            return { token: null, status: 'missing' }
+        }
+
+        const supabase = createClient()
+
+        const session = await getSessionWithTimeout(supabase, 3_000)
+        if (session?.access_token) {
+            if (isJwtFresh(session.access_token)) {
+                return { token: session.access_token, status: 'fresh' }
+            }
+
+            console.warn('[auth] access token expired in session, trying refresh')
+            const refreshed = await refreshSessionWithTimeout(supabase, 5_000)
+            if (refreshed?.access_token && isJwtFresh(refreshed.access_token, 15)) {
+                return { token: refreshed.access_token, status: 'refreshed' }
+            }
+
+            const recoveredToken = readStoredTokenFromLocalStorage()
+            if (recoveredToken && isJwtFresh(recoveredToken, 15)) {
+                console.warn('[auth] recovered token from localStorage after refresh failure')
+                return { token: recoveredToken, status: 'refreshed' }
+            }
+
+            return { token: null, status: 'expired' }
+        }
+
+        const storedToken = readStoredTokenFromLocalStorage()
+        if (storedToken) {
+            if (isJwtFresh(storedToken, 15)) {
+                console.warn('[auth] using token recovered directly from localStorage')
+                return { token: storedToken, status: 'fresh' }
+            }
+
+            console.warn('[auth] stale token in localStorage, trying refresh')
+            const refreshed = await refreshSessionWithTimeout(supabase, 5_000)
+            if (refreshed?.access_token && isJwtFresh(refreshed.access_token, 15)) {
+                return { token: refreshed.access_token, status: 'refreshed' }
+            }
+
+            return { token: null, status: 'refresh_failed' }
+        }
+
+        console.warn('[auth] no access token in storage/session, trying refresh')
+        const refreshed = await refreshSessionWithTimeout(supabase, 5_000)
+        if (refreshed?.access_token && isJwtFresh(refreshed.access_token, 15)) {
+            return { token: refreshed.access_token, status: 'refreshed' }
+        }
+
+        return { token: null, status: 'missing' }
+    } catch (e) {
+        console.warn('[auth] getAccessTokenWithRecovery failed:', e)
+        return { token: null, status: 'refresh_failed' }
+    }
 }
 
 /**
@@ -355,8 +435,14 @@ export async function directSupabaseFetch<T>(
     },
     timeoutMs: number = 10_000,
 ): Promise<T> {
-    const token = await getStoredAccessToken()
-    if (!token) throw new Error('Not authenticated (no access token in storage)')
+    const { token, status } = await getAccessTokenWithRecovery()
+    if (!token) {
+        throw new Error(`Not authenticated (${status})`)
+    }
+
+    if (status === 'refreshed') {
+        console.info(`[auth] directSupabaseFetch recovered session for ${options.method} ${table}`)
+    }
 
     const urlObj = new URL(`${getSupabaseRestUrl()}/${table}`)
     if (options.params) {
