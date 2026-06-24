@@ -8,7 +8,7 @@ import {
     AlertTriangle, CheckCircle2, Plus, Flame, X
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { getCurrentProgram, type TrainingProgram } from '@/lib/services/training'
+import { getMyPrograms, type TrainingProgram } from '@/lib/services/training'
 import { getLatestMetric, type ClientMetric } from '@/lib/services/metrics'
 import {
     isNutritionQuestionnaireRequired,
@@ -69,14 +69,20 @@ export default function DashboardPage() {
 
         const loadDashboardData = async () => {
             try {
-                const [program, metric, qDone, needsNutrition, nutritionDone, subInfoData] = await Promise.all([
-                    getCurrentProgram(),
+                const [allPrograms, metric, qDone, needsNutrition, nutritionDone, subInfoData] = await Promise.all([
+                    getMyPrograms(),
                     getLatestMetric(),
                     isQuestionnaireCompleted(),
                     isNutritionQuestionnaireRequired(),
                     isNutritionQuestionnaireCompleted(),
                     getMySubscriptionInfo(),
                 ])
+
+                // Определяем текущую программу по ДАТАМ, а не по getCurrentProgram()
+                // (getCurrentProgram фильтрует по status='active' и может вернуть будущую неделю)
+                const today = new Date().toISOString().split('T')[0]
+                const dateMatch = allPrograms.find(p => p.start_date <= today && p.end_date >= today)
+                const program = dateMatch ?? (allPrograms.length > 0 ? allPrograms[0] : null)
 
                 setCurrentProgram(program)
                 setLatestMetric(metric)
