@@ -7,7 +7,7 @@ import {
     ChevronRight, Dumbbell, TrendingUp
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { getMyPrograms, getCurrentProgram, type TrainingProgram } from '@/lib/services/training'
+import { getMyPrograms, type TrainingProgram } from '@/lib/services/training'
 import { getProgramEntries } from '@/lib/services/training'
 
 export default function ProgramsPage() {
@@ -38,16 +38,21 @@ export default function ProgramsPage() {
 
         const loadPrograms = async () => {
             try {
-                const [allPrograms, current] = await Promise.all([
-                    getMyPrograms(),
-                    getCurrentProgram(),
-                ])
+                const allPrograms = await getMyPrograms()
                 if (cancelled) return
 
                 // Не затираем уже загруженные программы пустым ответом —
                 // это может быть таймаут/RLS-флап. Лучше показать прежний
                 // список, чем мигнуть пустотой.
                 setPrograms(prev => (allPrograms.length === 0 && prev.length > 0 ? prev : allPrograms))
+
+                // Определяем текущую программу по ДАТАМ, а не по полю status в БД.
+                // getCurrentProgram() фильтрует по status='active', но тренер может
+                // не обновить статус вовремя — тогда fallback берёт последнюю по
+                // week_number (будущую). Дата今天 — единственный надёжный критерий.
+                const today = new Date().toISOString().split('T')[0]
+                const dateMatch = allPrograms.find(p => p.start_date <= today && p.end_date >= today)
+                const current = dateMatch ?? (allPrograms.length > 0 ? allPrograms[0] : null)
                 setCurrentProgram(prev => (current === null && prev ? prev : current))
 
                 // Загружаем статистику заполнения для каждой программы
