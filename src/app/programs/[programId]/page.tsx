@@ -985,6 +985,10 @@ export default function ProgramDetailPage() {
     // лок старше STALE_LOCK_MS считается протухшим и принудительно снимается.
     // Иначе кнопки «Сохранить»/«Завершить» залипали бы до hard reload.
     const inFlightSinceRef = useRef<number>(0)
+    // Защита от двойного вызова handleCompleteDay. Если failsafe (60с) сбросил
+    // isSaving/inFlightRef пока handleCompleteDay ещё работает в фоне —
+    // повторный клик не запустит второй upsert параллельно.
+    const completeInProgressRef = useRef(false)
     // 15с = чуть больше сетевого таймаута withTimeout (12с). Логика: если
     // upsert честно отрабатывает, его finally снимет лок задолго до 15с. Если
     // же лок «висит» дольше 15с — значит finally не отработал (заморозка
@@ -1040,6 +1044,9 @@ export default function ProgramDetailPage() {
             // тикал) это и был тот самый вечный спиннер.
             setIsSaving(false)
             setSaveStatus(prev => prev === 'saving' ? 'idle' : prev)
+            // Если handleCompleteDay был запущен, но «замёрз» дольше STALE_LOCK_MS —
+            // снимаем флаг, чтобы пользователь мог повторить попытку.
+            completeInProgressRef.current = false
             return true
         }
         return false
@@ -1846,18 +1853,20 @@ export default function ProgramDetailPage() {
             return false
         } finally {
             // КРИТИЧНО: Если лок захвачен другой операцией (handleCompleteDay
-            // после force-release), НЕ сбрасываем inFlightRef — иначе «угоним»
-            // лок у приоритетной операции и кнопка снова залипнет.
+            // после force-release), НЕ сбрасываем inFlightRef, isSaving
+            // и pendingRef — иначе «угоним» лок у приоритетной операции,
+            // кнопка станет enabled во время handleCompleteDay, и пользователь
+            // сможет кликнуть «Завершить» повторно → двойной upsert.
             if (lockGenerationRef.current === myGeneration) {
                 inFlightRef.current = false
-            }
-            if (!silent) setIsSaving(false)
-            // Если за время УСПЕШНОГО сохранения накопились новые правки —
-            // запускаем ещё один проход, но ТОЛЬКО если статус не error
-            // (на error pendingRef уже сброшен выше, чтобы не зациклиться).
-            if (pendingRef.current) {
-                pendingRef.current = false
-                setTimeout(() => { saveEntryRef.current?.(true) }, 50)
+                if (!silent) setIsSaving(false)
+                // Если за время УСПЕШНОГО сохранения накопились новые правки —
+                // запускаем ещё один проход, но ТОЛЬКО если статус не error
+                // (на error pendingRef уже сброшен выше, чтобы не зациклиться).
+                if (pendingRef.current) {
+                    pendingRef.current = false
+                    setTimeout(() => { saveEntryRef.current?.(true) }, 50)
+                }
             }
         }
     }, [program, currentDayIndex, user, buildEntrySnapshot, backupKey, reconcileWithServer, lockIsFree])
@@ -2093,20 +2102,22 @@ export default function ProgramDetailPage() {
         }
     }, [lockIsFree])
 
-    // ─── Failsafe: сброс isSaving если он «застрял» дольше 45с ────────────
+    // ─── Failsafe: сброс isSaving если он «застрял» дольше 60с ────────────
     // На десктопе (нет sleep экрана) watchdog срабатывает только при focus/
     // visibilitychange/online. Если пользователь открыл страницу и ушёл,
     // а потом вернулся — isSaving мог «застрять» если handleCompleteDay
-    // подвис. Этот таймер гарантирует сброс через 45с в любом случае.
-    // 45с — с запасом покрывает worst-case: 2 × (3с getStoredAccessToken
-    // timeout + 10с fetch timeout) + 12с markWeeklyCheckin ≈ 38с.
+    // подвис. Этот таймер гарантирует сброс через 60с в любом случае.
+    // 60с — покрывает worst-case: tryRefreshSession (8с) + upsertTrainingEntry
+    // (safeGetUser 4с + getAccessToken 8с + fetch 10с) + completeTrainingDay
+    // (safeGetUser 4с + getAccessToken 8с + fetch 10с) ≈ 52с + запас.
     useEffect(() => {
         if (!isSaving) return
         const timer = setTimeout(() => {
-            console.warn('[program] failsafe: isSaving was true for 45s, force-resetting')
+            console.warn('[program] failsafe: isSaving was true for 60s, force-resetting')
             setIsSaving(false)
             inFlightRef.current = false
-        }, 45_000)
+            completeInProgressRef.current = false
+        }, 60_000)
         return () => clearTimeout(timer)
     }, [isSaving])
 
@@ -2249,104 +2260,116 @@ export default function ProgramDetailPage() {
         const currentDay = program.program_data.days[currentDayIndex]
         if (!currentDay) return
 
-        pushDebugEvent('complete_click', {
-            dayNumber: currentDay.dayNumber,
-            currentDayIndex,
-            isSaving,
-            saveStatus,
-            inFlight: inFlightRef.current,
-            hasPendingChanges: userChangedRef.current,
-            elapsedSeconds,
-            workoutStartTime,
-        })
+        // Защита от двойного вызова: если предыдущий handleCompleteDay
+        // ещё работает (failsafe сбросил isSaving/inFlightRef) — выходим.
+        if (completeInProgressRef.current) {
+            console.warn('[program] handleCompleteDay: already in progress, ignoring duplicate click')
+            return
+        }
+        completeInProgressRef.current = true
 
-        // «Завершить» — приоритетная кнопка. Должна работать ВСЕГДА,
-        // даже если автосейв держит лок (retry-цикл при ошибке сети/сессии).
-        // Принудительно снимаем лок и отменяем все автосейв-таймеры.
-        if (!lockIsFree()) {
-            console.warn('[program] handleCompleteDay: force-releasing lock held by autosave')
-        }
-        inFlightRef.current = true
-        inFlightSinceRef.current = Date.now()
-        lockGenerationRef.current++
-        const myGeneration = lockGenerationRef.current
-        if (debounceTimerRef.current) {
-            clearTimeout(debounceTimerRef.current)
-            debounceTimerRef.current = null
-        }
-        if (retryTimerRef.current) {
-            clearTimeout(retryTimerRef.current)
-            retryTimerRef.current = null
-        }
-        pendingRef.current = false
-
-        // Предварительная проверка сессии: если JWT протух, не шлём
-        // запросы на сервер (которые уйдут в таймаут по 10-12с каждый),
-        // а сразу покажем понятную ошибку с инструкцией.
-        setIsSaving(true)
-        setSaveStatus('saving')
-        setSaveError(null)
-        setSaveMessage('')
         try {
-            const sessionOk = await tryRefreshSession()
-            pushDebugEvent('complete_refresh_result', { sessionOk })
-            if (!sessionOk) {
-                await handleAuthFailure('complete')
-                return
-            }
-        } catch (e: any) {
-            pushDebugEvent('complete_refresh_exception', { message: e?.message || String(e) })
-            const { token } = await getAccessTokenWithRecovery()
-            if (!token) {
-                await handleAuthFailure('complete')
-                return
-            }
-        }
-        const finalDuration = workoutStartTime !== null
-            ? Math.floor((Date.now() - workoutStartTime) / 1000)
-            : elapsedSeconds || undefined
-        try {
-            const snap = buildEntrySnapshot()
-            pushDebugEvent('complete_save_start', {
+            pushDebugEvent('complete_click', {
                 dayNumber: currentDay.dayNumber,
-                exerciseCount: Object.keys(snap.entryData || {}).length,
-                finalDuration,
+                currentDayIndex,
+                isSaving,
+                saveStatus,
+                inFlight: inFlightRef.current,
+                hasPendingChanges: userChangedRef.current,
+                elapsedSeconds,
+                workoutStartTime,
             })
-            await upsertTrainingEntry(program.id, currentDay.dayNumber, snap.entryData, {
-                ...snap.metadata,
-                workout_duration_seconds: finalDuration,
-            })
-            pushDebugEvent('complete_upsert_ok', { dayNumber: currentDay.dayNumber })
-            await completeTrainingDay(program.id, currentDay.dayNumber)
-            pushDebugEvent('complete_mark_done_ok', { dayNumber: currentDay.dayNumber })
 
-            // Если это последний день недели — автоматически фиксируем чек-ин клиента,
-            // чтобы тренер видел финализированные ответы в дневнике.
-            if (currentDayIndex === program.program_data.days.length - 1) {
-                await markWeeklyCheckinCompleted(program.id)
+            // «Завершить» — приоритетная кнопка. Должна работать ВСЕГДА,
+            // даже если автосейв держит лок (retry-цикл при ошибке сети/сессии).
+            // Принудительно снимаем лок и отменяем все автосейв-таймеры.
+            if (!lockIsFree()) {
+                console.warn('[program] handleCompleteDay: force-releasing lock held by autosave')
             }
+            inFlightRef.current = true
+            inFlightSinceRef.current = Date.now()
+            lockGenerationRef.current++
+            const myGeneration = lockGenerationRef.current
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current)
+                debounceTimerRef.current = null
+            }
+            if (retryTimerRef.current) {
+                clearTimeout(retryTimerRef.current)
+                retryTimerRef.current = null
+            }
+            pendingRef.current = false
 
-            setCompletedDays(prev => new Set([...prev, currentDay.dayNumber]))
-            setSavedDuration(finalDuration ?? null)
-            setWorkoutStartTime(null)
-            setStoppedDuration(null)
-            // Очищаем сохранённое время старта и локальный черновик —
-            // день закрыт, данные на сервере подтверждены.
-            localStorage.removeItem(`workout_start_${program.id}_${currentDay.dayNumber}`)
-            try { localStorage.removeItem(backupKey(currentDay.dayNumber)) } catch { /* noop */ }
-            setSaveStatus('saved')
-            setSaveMessage('✓ Тренировка завершена!')
-            setTimeout(() => setSaveMessage(''), 3000)
-            setTimeout(() => setSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 1500)
-        } catch (e: any) {
-            console.error('Error completing:', e)
-            setSaveStatus('error')
-            setSaveError(e?.message || 'Ошибка завершения')
-            setSaveMessage('Ошибка — попробуй ещё раз')
+            // Предварительная проверка сессии: если JWT протух, не шлём
+            // запросы на сервер (которые уйдут в таймаут по 10-12с каждый),
+            // а сразу покажем понятную ошибку с инструкцией.
+            setIsSaving(true)
+            setSaveStatus('saving')
+            setSaveError(null)
+            setSaveMessage('')
+            try {
+                const sessionOk = await tryRefreshSession()
+                pushDebugEvent('complete_refresh_result', { sessionOk })
+                if (!sessionOk) {
+                    await handleAuthFailure('complete')
+                    return
+                }
+            } catch (e: any) {
+                pushDebugEvent('complete_refresh_exception', { message: e?.message || String(e) })
+                const { token } = await getAccessTokenWithRecovery()
+                if (!token) {
+                    await handleAuthFailure('complete')
+                    return
+                }
+            }
+            const finalDuration = workoutStartTime !== null
+                ? Math.floor((Date.now() - workoutStartTime) / 1000)
+                : elapsedSeconds || undefined
+            try {
+                const snap = buildEntrySnapshot()
+                pushDebugEvent('complete_save_start', {
+                    dayNumber: currentDay.dayNumber,
+                    exerciseCount: Object.keys(snap.entryData || {}).length,
+                    finalDuration,
+                })
+                await upsertTrainingEntry(program.id, currentDay.dayNumber, snap.entryData, {
+                    ...snap.metadata,
+                    workout_duration_seconds: finalDuration,
+                })
+                pushDebugEvent('complete_upsert_ok', { dayNumber: currentDay.dayNumber })
+                await completeTrainingDay(program.id, currentDay.dayNumber)
+                pushDebugEvent('complete_mark_done_ok', { dayNumber: currentDay.dayNumber })
+
+                // Если это последний день недели — автоматически фиксируем чек-ин клиента,
+                // чтобы тренер видел финализированные ответы в дневнике.
+                if (currentDayIndex === program.program_data.days.length - 1) {
+                    await markWeeklyCheckinCompleted(program.id)
+                }
+
+                setCompletedDays(prev => new Set([...prev, currentDay.dayNumber]))
+                setSavedDuration(finalDuration ?? null)
+                setWorkoutStartTime(null)
+                setStoppedDuration(null)
+                // Очищаем сохранённое время старта и локальный черновик —
+                // день закрыт, данные на сервере подтверждены.
+                localStorage.removeItem(`workout_start_${program.id}_${currentDay.dayNumber}`)
+                try { localStorage.removeItem(backupKey(currentDay.dayNumber)) } catch { /* noop */ }
+                setSaveStatus('saved')
+                setSaveMessage('✓ Тренировка завершена!')
+                setTimeout(() => setSaveMessage(''), 3000)
+                setTimeout(() => setSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 1500)
+            } catch (e: any) {
+                console.error('Error completing:', e)
+                setSaveStatus('error')
+                setSaveError(e?.message || 'Ошибка завершения')
+                setSaveMessage('Ошибка — попробуй ещё раз')
+            } finally {
+                if (lockGenerationRef.current === myGeneration) {
+                    resetSavingState()
+                }
+            }
         } finally {
-            if (lockGenerationRef.current === myGeneration) {
-                resetSavingState()
-            }
+            completeInProgressRef.current = false
         }
     }
 
