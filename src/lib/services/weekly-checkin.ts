@@ -3,9 +3,13 @@
 // Хранит ответы клиента на вопросы чек-ина в конце недели.
 // Используется в UI программы (форма с инпутами) и при экспорте дневника
 // (формирует блок "Чек-ин клиента" в markdown).
+//
+// Все операции используют directSupabaseFetch (прямой REST) вместо
+// Supabase-клиента, чтобы не блокироваться inTabLock при обновлении
+// токена. Это предотвращает deadlock: autosave чек-ина держит lock →
+// handleCompleteDay не может получить токен → "Not authenticated".
 
-import { createClient } from '@/lib/supabase/client'
-import { withTimeout } from '@/lib/utils/with-timeout'
+import { directSupabaseFetch } from '@/lib/supabase/client'
 
 export interface WeeklyCheckin {
     id: string
@@ -21,24 +25,22 @@ export interface WeeklyCheckin {
  * Получить чек-ин клиента для указанной программы (или null если ещё нет).
  */
 export async function getWeeklyCheckin(programId: string): Promise<WeeklyCheckin | null> {
-    const supabase = createClient()
     try {
-        const { data, error } = await withTimeout<{ data: WeeklyCheckin | null; error: any }>(
-            supabase
-                .from('weekly_checkins')
-                .select('*')
-                .eq('program_id', programId)
-                .maybeSingle(),
-            'getWeeklyCheckin',
+        const result = await directSupabaseFetch<WeeklyCheckin[]>(
+            'weekly_checkins',
+            {
+                method: 'GET',
+                params: `program_id=eq.${programId}&select=*&limit=1`,
+            },
+            10_000,
         )
 
-        if (error) {
-            console.error('[weekly-checkin] getWeeklyCheckin error:', error)
+        if (!result || !Array.isArray(result) || result.length === 0) {
             return null
         }
-        return data as WeeklyCheckin | null
+        return result[0] as WeeklyCheckin
     } catch (e) {
-        console.error('[weekly-checkin] getWeeklyCheckin (timeout/network):', e)
+        console.error('[weekly-checkin] getWeeklyCheckin (network):', e)
         return null
     }
 }
@@ -53,7 +55,6 @@ export async function upsertWeeklyCheckin(params: {
     answers: Record<string, string>
     completed?: boolean
 }): Promise<WeeklyCheckin | null> {
-    const supabase = createClient()
     const payload: Record<string, unknown> = {
         program_id: params.programId,
         user_id: params.userId,
@@ -61,20 +62,20 @@ export async function upsertWeeklyCheckin(params: {
     }
     if (params.completed) payload.completed_at = new Date().toISOString()
 
-    const { data, error } = await withTimeout<{ data: WeeklyCheckin | null; error: any }>(
-        supabase
-            .from('weekly_checkins')
-            .upsert(payload, { onConflict: 'program_id' })
-            .select()
-            .single(),
-        'upsertWeeklyCheckin',
+    const result = await directSupabaseFetch<WeeklyCheckin[]>(
+        'weekly_checkins',
+        {
+            method: 'POST',
+            body: payload,
+            params: 'on_conflict=program_id',
+            prefer: 'return=representation,resolution=merge-duplicates',
+        },
+        10_000,
     )
 
-    if (error) {
-        console.error('[weekly-checkin] upsertWeeklyCheckin error:', error)
-        throw new Error(error.message)
-    }
-    return data as WeeklyCheckin
+    const row = Array.isArray(result) ? result[0] : result
+    if (!row) throw new Error('upsertWeeklyCheckin: no data returned')
+    return row as WeeklyCheckin
 }
 
 /**
@@ -84,22 +85,19 @@ export async function upsertWeeklyCheckin(params: {
  * чек-ин не перезаписывая текущие ответы клиента.
  */
 export async function markWeeklyCheckinCompleted(programId: string): Promise<void> {
-    const supabase = createClient()
     try {
-        const { error } = await withTimeout<{ error: any }>(
-            supabase
-                .from('weekly_checkins')
-                .update({ completed_at: new Date().toISOString() })
-                .eq('program_id', programId)
-                .is('completed_at', null),
-            'markWeeklyCheckinCompleted',
+        await directSupabaseFetch(
+            'weekly_checkins',
+            {
+                method: 'PATCH',
+                body: { completed_at: new Date().toISOString() },
+                params: `program_id=eq.${programId}&completed_at=is.null`,
+                prefer: 'return=minimal',
+            },
+            10_000,
         )
-        if (error) {
-            console.error('[weekly-checkin] markWeeklyCheckinCompleted error:', error)
-            // Не бросаем — не критично для основного flow
-        }
     } catch (e) {
-        console.error('[weekly-checkin] markWeeklyCheckinCompleted (timeout/network):', e)
+        console.error('[weekly-checkin] markWeeklyCheckinCompleted (network):', e)
         // Не бросаем — не критично для основного flow
     }
 }
