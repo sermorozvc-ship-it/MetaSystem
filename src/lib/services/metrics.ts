@@ -120,7 +120,7 @@ export async function getClientMetrics(userId: string): Promise<ClientMetric[]> 
 export async function getMetricByDate(date: string): Promise<ClientMetric | null> {
   const supabase = createClient()
   
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) throw new Error('Not authenticated')
 
   const { data, error } = await supabase
@@ -175,7 +175,7 @@ export async function getLatestMetric(): Promise<ClientMetric | null> {
 export async function upsertMetric(formData: MetricFormData): Promise<ClientMetric> {
   const supabase = createClient()
   
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) throw new Error('Not authenticated')
 
   // Убираем undefined поля
@@ -227,7 +227,7 @@ export async function uploadProgressPhoto(
 ): Promise<string> {
   const supabase = createClient()
   
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) throw new Error('Not authenticated')
 
   const fileExt = file.name.split('.').pop()
@@ -301,7 +301,7 @@ export async function getMetricsInRange(
 ): Promise<ClientMetric[]> {
   const supabase = createClient()
   
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) throw new Error('Not authenticated')
 
   const { data, error } = await supabase

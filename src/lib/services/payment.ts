@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/client'
+import { createClient, safeGetUser } from '@/lib/supabase/client'
 import { withTimeout } from '@/lib/utils/with-timeout'
 import { PLAN_PRICES, NUTRITION_ADDON_PRICE } from '@/lib/payments/pricing'
 
@@ -35,7 +35,7 @@ export interface Payment {
 export async function getUserPayment(): Promise<Payment | null> {
     const supabase = createClient()
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await safeGetUser()
     if (!user) return null
 
     try {
@@ -144,7 +144,7 @@ export async function createPaymentRequest(
 ): Promise<{ payment: Payment | null; error: string | null }> {
     const supabase = createClient()
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await safeGetUser()
     if (!user) return { payment: null, error: 'Пользователь не авторизован' }
 
     // Проверяем, нет ли уже активной оплаты
@@ -218,7 +218,7 @@ export async function createTestPayment(
 ): Promise<{ payment: Payment | null; error: string | null }> {
     const supabase = createClient()
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await safeGetUser()
     if (!user) return { payment: null, error: 'Пользователь не авторизован' }
 
     // Удаляем ВСЕ старые платежи пользователя

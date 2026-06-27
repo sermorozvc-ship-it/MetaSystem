@@ -16,7 +16,7 @@
  *     'getTrainingEntries',
  *   )
  */
-export const DEFAULT_SUPABASE_TIMEOUT_MS = 12_000
+export const DEFAULT_SUPABASE_TIMEOUT_MS = 6_000
 
 export function withTimeout<T>(
     promise: PromiseLike<T>,

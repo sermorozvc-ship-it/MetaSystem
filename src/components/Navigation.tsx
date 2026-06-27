@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter, usePathname } from 'next/navigation'
+import { useState, useEffect } from 'react'
 import { Home, Dumbbell, TrendingUp, MessageCircle, LogOut, Apple, BarChart3, Library, Calendar } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { isAdminUser } from '@/lib/auth/isAdminUser'
@@ -12,6 +13,14 @@ export default function Navigation() {
   const { user, signOut } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
+  const [ready, setReady] = useState(false)
+
+  // Откладываем тяжёлые подписки (Realtime, polling) на 1.5с после mount,
+  // чтобы не блокировать загрузку основного контента страницы.
+  useEffect(() => {
+    const t = setTimeout(() => setReady(true), 1500)
+    return () => clearTimeout(t)
+  }, [])
 
   const noNavPaths = ['/', '/auth', '/payment', '/questionnaire', '/onboarding', '/get-started']
   if (!user || noNavPaths.some(p => pathname === p || pathname.startsWith(p + '/'))) {
@@ -50,6 +59,7 @@ export default function Navigation() {
       pathname={pathname}
       isAdmin={isAdmin}
       userId={user.id}
+      ready={ready}
       onNavigate={(href) => router.push(href)}
       onSignOut={handleSignOut}
     />
@@ -62,6 +72,7 @@ function NavigationInner({
   pathname,
   isAdmin,
   userId,
+  ready,
   onNavigate,
   onSignOut,
 }: {
@@ -69,10 +80,13 @@ function NavigationInner({
   pathname: string
   isAdmin: boolean
   userId: string
+  ready: boolean
   onNavigate: (href: string) => void
   onSignOut: () => void
 }) {
-  const unreadCount = useUnreadMessages(userId, isAdmin)
+  // Запускаем подписки на непрочитанные сообщения ТОЛЬКО после ready,
+  // чтобы не блокировать загрузку основного контента страницы.
+  const unreadCount = useUnreadMessages(ready ? userId : undefined, isAdmin)
   const isOnMessages = pathname === '/messages' || pathname.startsWith('/messages/')
 
   return (

@@ -19,10 +19,18 @@ export default function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [ready, setReady] = useState(false)
+
+  // Откладываем загрузку уведомлений на 2с после mount,
+  // чтобы не блокировать загрузку основного контента страницы.
+  useEffect(() => {
+    const t = setTimeout(() => setReady(true), 2000)
+    return () => clearTimeout(t)
+  }, [])
 
   // Загрузка непрочитанных уведомлений
   useEffect(() => {
-    if (!user) return
+    if (!user || !ready) return
 
     const loadNotifications = async () => {
       const data = await getUnreadNotifications()
@@ -39,7 +47,7 @@ export default function NotificationBell() {
     return () => {
       unsubscribe()
     }
-  }, [user])
+  }, [user, ready])
 
   const handleNotificationClick = async (notification: Notification) => {
     // Оптимистично убираем из UI сразу

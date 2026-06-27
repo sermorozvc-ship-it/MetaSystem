@@ -1,7 +1,7 @@
 // MetaSystem v2 — Renewal Service
 // Сервис продления тарифов и докупки питания
 
-import { createClient } from '@/lib/supabase/client'
+import { createClient, safeGetUser } from '@/lib/supabase/client'
 import { withTimeout } from '@/lib/utils/with-timeout'
 import {
   PLAN_PRICES,
@@ -52,7 +52,7 @@ export interface SubscriptionInfo {
 export async function getMySubscriptionInfo(): Promise<SubscriptionInfo> {
   const supabase = createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) {
     return {
       status: 'inactive',
@@ -133,7 +133,7 @@ export async function createRenewalRequest(
 ): Promise<{ paymentId: string | null; amount: number; error: string | null }> {
   const supabase = createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) return { paymentId: null, amount: 0, error: 'Пользователь не авторизован' }
 
   // Получаем текущую подписку для снапшота
@@ -224,7 +224,7 @@ export async function createNutritionUpgradeRequest(): Promise<{
 }> {
   const supabase = createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) return { paymentId: null, amount: 0, error: 'Пользователь не авторизован' }
 
   // Проверяем что подписка активна
@@ -404,7 +404,7 @@ export async function confirmRenewal(
 export async function getMyRenewalHistory(): Promise<SubscriptionRenewal[]> {
   const supabase = createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) return []
 
   const { data, error } = await supabase
@@ -442,7 +442,7 @@ export async function createTestRenewal(
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) return { success: false, error: 'Не авторизован' }
 
   const { paymentId, error } = await createRenewalRequest(planType, includesNutrition, 'renewal')

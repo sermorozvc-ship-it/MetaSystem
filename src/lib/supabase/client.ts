@@ -96,7 +96,7 @@ function pushAuthDebugEvent(type: string, details?: Record<string, any>) {
 // Кеш для пользователя — заполняется из AuthContext через setCachedUser()
 let cachedUser: User | null = null
 let userCacheTimestamp = 0
-const USER_CACHE_TTL = 10000  // 10 секунд — быстрая инвалидация при смене аккаунта
+const USER_CACHE_TTL = 60_000  // 60 секунд — пользователь редко меняется, кеш должен жить дольше
 
 /**
  * Внутри-табовый мьютекс для Supabase Auth.

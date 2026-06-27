@@ -125,7 +125,7 @@ export interface TrainingEntry {
 export async function getMyPrograms(): Promise<TrainingProgram[]> {
   const supabase = createClient()
   
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) throw new Error('Not authenticated')
 
   try {
@@ -184,7 +184,7 @@ export async function getProgramById(programId: string): Promise<TrainingProgram
 export async function getProgramByWeek(weekNumber: number): Promise<TrainingProgram | null> {
   const supabase = createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) throw new Error('Not authenticated')
 
   try {
@@ -217,7 +217,7 @@ export async function getProgramByWeek(weekNumber: number): Promise<TrainingProg
 export async function getCurrentProgram(): Promise<TrainingProgram | null> {
   const supabase = createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) {
     console.warn('[Training] getCurrentProgram: not authenticated')
     return null
@@ -527,7 +527,7 @@ export async function getAllMyTrainingData(): Promise<{
 }> {
   const supabase = createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await safeGetUser()
   if (!user) throw new Error('Not authenticated')
 
   const [programsRes, entriesRes] = await Promise.all([
