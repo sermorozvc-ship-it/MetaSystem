@@ -911,6 +911,31 @@ export async function refundPayment(paymentId: string): Promise<{ success: boole
     return { success: true }
 }
 
+// Delete a payment
+export async function deletePayment(paymentId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+        const { adminFetch } = await import('@/lib/api/admin-fetch')
+        await adminFetch(`/api/admin/payments/${paymentId}`, { method: 'DELETE' })
+        return { success: true }
+    } catch (e: any) {
+        return { success: false, error: e?.message || 'Ошибка удаления' }
+    }
+}
+
+// Update payment (amount, date)
+export async function updatePayment(paymentId: string, data: { amount?: number; created_at?: string }): Promise<{ success: boolean; error?: string }> {
+    try {
+        const { adminFetch } = await import('@/lib/api/admin-fetch')
+        await adminFetch(`/api/admin/payments/${paymentId}`, {
+            method: 'PATCH',
+            json: data,
+        })
+        return { success: true }
+    } catch (e: any) {
+        return { success: false, error: e?.message || 'Ошибка обновления' }
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Ручное продление подписки клиента (для админа)
 // ──────────────────────────────────────────────────────────────────────────

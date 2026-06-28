@@ -4,10 +4,10 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
     ArrowLeft, CreditCard, CheckCircle2, Clock, RefreshCw,
-    Loader2, ChevronRight, Search, XCircle
+    Loader2, ChevronRight, Search, XCircle, Pencil, Trash2, X, Check
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { isAdmin, getAllPayments, confirmPayment, refundPayment, getPaymentsByMonth, type AdminPayment, type MonthlyPaymentStat } from '@/lib/services/admin'
+import { isAdmin, getAllPayments, confirmPayment, refundPayment, deletePayment, updatePayment, getPaymentsByMonth, type AdminPayment, type MonthlyPaymentStat } from '@/lib/services/admin'
 import PaymentsChart from '@/components/admin/PaymentsChart'
 
 const PLAN_LABELS: Record<string, string> = {
@@ -33,6 +33,13 @@ export default function AdminPaymentsPage() {
     const [search, setSearch] = useState('')
     const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'confirmed' | 'refunded'>('all')
     const [actionLoading, setActionLoading] = useState<string | null>(null)
+
+    // Edit payment modal state
+    const [editingPayment, setEditingPayment] = useState<AdminPayment | null>(null)
+    const [editAmount, setEditAmount] = useState('')
+    const [editDate, setEditDate] = useState('')
+    const [isSavingEdit, setIsSavingEdit] = useState(false)
+    const [editError, setEditError] = useState('')
 
     useEffect(() => {
         if (authLoading) return
@@ -96,6 +103,58 @@ export default function AdminPaymentsPage() {
             alert('Ошибка: ' + error)
         }
         setActionLoading(null)
+    }
+
+    const handleDelete = async (paymentId: string) => {
+        if (!confirm('Удалить платёж? Это действие нельзя отменить.')) return
+        setActionLoading(paymentId)
+        const { success, error } = await deletePayment(paymentId)
+        if (success) {
+            setPayments(prev => prev.filter(p => p.id !== paymentId))
+        } else {
+            alert('Ошибка: ' + error)
+        }
+        setActionLoading(null)
+    }
+
+    const openEditModal = (payment: AdminPayment) => {
+        setEditingPayment(payment)
+        setEditAmount(String(payment.amount))
+        const d = new Date(payment.created_at)
+        setEditDate(d.toISOString().slice(0, 16))
+        setEditError('')
+    }
+
+    const handleSaveEdit = async () => {
+        if (!editingPayment) return
+        setEditError('')
+        const amount = parseFloat(editAmount)
+        if (isNaN(amount) || amount < 0) {
+            setEditError('Введите корректную сумму')
+            return
+        }
+        setIsSavingEdit(true)
+        try {
+            const isoDate = new Date(editDate).toISOString()
+            const { success, error } = await updatePayment(editingPayment.id, {
+                amount,
+                created_at: isoDate,
+            })
+            if (success) {
+                setPayments(prev => prev.map(p =>
+                    p.id === editingPayment.id
+                        ? { ...p, amount, created_at: isoDate }
+                        : p
+                ))
+                setEditingPayment(null)
+            } else {
+                setEditError(error ?? 'Ошибка')
+            }
+        } catch (e: any) {
+            setEditError(e.message || 'Ошибка')
+        } finally {
+            setIsSavingEdit(false)
+        }
     }
 
     const filtered = payments.filter(p => {
@@ -235,6 +294,25 @@ export default function AdminPaymentsPage() {
                                                 {payment.amount.toLocaleString('ru-RU')} ₽
                                             </span>
 
+                                            <div className="flex gap-1.5">
+                                                <button
+                                                    onClick={() => openEditModal(payment)}
+                                                    disabled={isProcessing}
+                                                    className="glass-button-secondary flex items-center gap-1 text-xs px-2.5 py-1.5"
+                                                    title="Редактировать"
+                                                >
+                                                    <Pencil className="w-3 h-3" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(payment.id)}
+                                                    disabled={isProcessing}
+                                                    className="glass-button-secondary flex items-center gap-1 text-xs px-2.5 py-1.5 text-danger hover:border-danger/40"
+                                                    title="Удалить"
+                                                >
+                                                    <Trash2 className="w-3 h-3" />
+                                                </button>
+                                            </div>
+
                                             {payment.status === 'pending' && (
                                                 <button
                                                     onClick={() => handleConfirm(payment.id)}
@@ -270,6 +348,71 @@ export default function AdminPaymentsPage() {
                     </div>
                 )}
             </div>
+
+            {/* ── Модальное окно редактирования платежа ── */}
+            {editingPayment && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="glass-card w-full max-w-md p-6 space-y-5">
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-xl font-display font-bold text-white flex items-center gap-2">
+                                <Pencil className="w-5 h-5 text-accent" />
+                                Редактировать платёж
+                            </h2>
+                            <button onClick={() => setEditingPayment(null)} className="text-text-muted hover:text-white">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <p className="text-sm text-text-secondary">
+                            {editingPayment.user?.full_name || 'Без имени'} — {editingPayment.user?.email}
+                        </p>
+
+                        <div>
+                            <label className="block text-sm text-text-secondary mb-1.5">Сумма (₽)</label>
+                            <input
+                                type="number"
+                                value={editAmount}
+                                onChange={e => setEditAmount(e.target.value)}
+                                className="glass-input w-full"
+                                min="0"
+                                step="0.01"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm text-text-secondary mb-1.5">Дата создания</label>
+                            <input
+                                type="datetime-local"
+                                value={editDate}
+                                onChange={e => setEditDate(e.target.value)}
+                                className="glass-input w-full"
+                            />
+                        </div>
+
+                        {editError && (
+                            <div className="p-3 rounded-xl bg-danger/10 border border-danger/30 text-sm text-danger">
+                                {editError}
+                            </div>
+                        )}
+
+                        <div className="flex gap-3">
+                            <button onClick={() => setEditingPayment(null)} className="glass-button-secondary flex-1">
+                                Отмена
+                            </button>
+                            <button
+                                onClick={handleSaveEdit}
+                                disabled={isSavingEdit}
+                                className="glass-button flex-1 flex items-center justify-center gap-2"
+                            >
+                                {isSavingEdit
+                                    ? <><Loader2 className="w-4 h-4 animate-spin" />Сохранение...</>
+                                    : <><Check className="w-4 h-4" />Сохранить</>
+                                }
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
