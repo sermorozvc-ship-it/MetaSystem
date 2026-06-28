@@ -41,6 +41,9 @@ export default function AdminPaymentsPage() {
     const [isSavingEdit, setIsSavingEdit] = useState(false)
     const [editError, setEditError] = useState('')
 
+    // Delete confirmation state
+    const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null)
+
     useEffect(() => {
         if (authLoading) return
         if (!user) { router.replace('/auth'); return }
@@ -106,7 +109,6 @@ export default function AdminPaymentsPage() {
     }
 
     const handleDelete = async (paymentId: string) => {
-        if (!confirm('Удалить платёж? Это действие нельзя отменить.')) return
         setActionLoading(paymentId)
         const { success, error } = await deletePayment(paymentId)
         if (success) {
@@ -115,6 +117,7 @@ export default function AdminPaymentsPage() {
             alert('Ошибка: ' + error)
         }
         setActionLoading(null)
+        setDeletingPaymentId(null)
     }
 
     const openEditModal = (payment: AdminPayment) => {
@@ -304,7 +307,7 @@ export default function AdminPaymentsPage() {
                                                     <Pencil className="w-3 h-3" />
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDelete(payment.id)}
+                                                    onClick={() => setDeletingPaymentId(payment.id)}
                                                     disabled={isProcessing}
                                                     className="glass-button-secondary flex items-center gap-1 text-xs px-2.5 py-1.5 text-danger hover:border-danger/40"
                                                     title="Удалить"
@@ -413,6 +416,48 @@ export default function AdminPaymentsPage() {
                     </div>
                 </div>
             )}
+
+            {/* ── Модальное окно подтверждения удаления ── */}
+            {deletingPaymentId && (() => {
+                const payment = payments.find(p => p.id === deletingPaymentId)
+                if (!payment) return null
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                        <div className="glass-card w-full max-w-sm p-6 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <h2 className="text-xl font-display font-bold text-white flex items-center gap-2">
+                                    <Trash2 className="w-5 h-5 text-danger" />
+                                    Удалить платёж
+                                </h2>
+                                <button onClick={() => setDeletingPaymentId(null)} className="text-text-muted hover:text-white">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <p className="text-sm text-text-secondary">
+                                Платёж <span className="text-white font-semibold">{payment.amount.toLocaleString('ru-RU')} ₽</span> от{' '}
+                                <span className="text-white">{payment.user?.full_name || payment.user?.email}</span> будет удалён безвозвратно.
+                            </p>
+
+                            <div className="flex gap-3">
+                                <button onClick={() => setDeletingPaymentId(null)} className="glass-button-secondary flex-1">
+                                    Отмена
+                                </button>
+                                <button
+                                    onClick={() => handleDelete(deletingPaymentId)}
+                                    disabled={actionLoading === deletingPaymentId}
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-danger/20 border border-danger/40 text-danger font-semibold text-sm hover:bg-danger/30 transition-colors"
+                                >
+                                    {actionLoading === deletingPaymentId
+                                        ? <><Loader2 className="w-4 h-4 animate-spin" />Удаление...</>
+                                        : <><Trash2 className="w-4 h-4" />Удалить</>
+                                    }
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            })()}
         </div>
     )
 }
