@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
     Users, Shield, Loader2, TrendingUp, Calendar,
@@ -27,9 +27,19 @@ export default function AdminDashboardPage() {
         confirmedPayments: 0,
     })
 
+    const userRef = useRef(user)
+    useEffect(() => { userRef.current = user }, [user])
+
     useEffect(() => {
         if (authLoading) return
-        if (!user) { router.replace('/auth'); return }
+        if (!user) {
+            // Grace period: ждём 3с перед редиректом, чтобы пропустить
+            // кратковременный null от onAuthStateChange при TOKEN_REFRESHED.
+            const t = setTimeout(() => {
+                if (!userRef.current) router.replace('/auth')
+            }, 3000)
+            return () => clearTimeout(t)
+        }
 
         let cancelled = false
 
@@ -78,10 +88,6 @@ export default function AdminDashboardPage() {
         }, 8000)
 
         return () => { cancelled = true; clearTimeout(failsafe) }
-        // Зависим от user?.id (стабильная строка), а НЕ от объекта user:
-        // onAuthStateChange (token refresh / focus) создаёт новый объект user
-        // с тем же id, и зависимость от объекта перезапускала бы эффект,
-        // отменяя текущую загрузку до finally → вечный спиннер при SPA-навигации.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, authLoading])
 

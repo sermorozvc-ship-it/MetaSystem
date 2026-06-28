@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Users, Search, Loader2, ChevronRight, Calendar, CheckCircle2, Archive, ArchiveRestore, Trash2, UserPlus } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
@@ -21,9 +21,17 @@ export default function AdminClientsPage() {
     const [actionLoading, setActionLoading] = useState<string | null>(null)
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
+    const userRef = useRef(user)
+    useEffect(() => { userRef.current = user }, [user])
+
     useEffect(() => {
         if (authLoading) return
-        if (!user) { router.replace('/auth'); return }
+        if (!user) {
+            const t = setTimeout(() => {
+                if (!userRef.current) router.replace('/auth')
+            }, 3000)
+            return () => clearTimeout(t)
+        }
 
         let cancelled = false
 

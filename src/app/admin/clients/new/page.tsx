@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
     ArrowLeft, UserPlus, Loader2, CheckCircle2,
@@ -40,8 +40,16 @@ export default function NewClientPage() {
         setSubscriptionEnd(d.toISOString().split('T')[0])
     }, [subscriptionStart, planMonths])
 
+    const userRef = useRef(user)
+    useEffect(() => { userRef.current = user }, [user])
+
     useEffect(() => {
-        if (!authLoading && !user) router.replace('/auth')
+        if (authLoading) return
+        if (user) return
+        const t = setTimeout(() => {
+            if (!userRef.current) router.replace('/auth')
+        }, 3000)
+        return () => clearTimeout(t)
     }, [user, authLoading, router])
 
     useEffect(() => {

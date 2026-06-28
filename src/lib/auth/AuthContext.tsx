@@ -107,7 +107,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     setSession(newSession)
                     setUser(newSession.user)
                     setCachedUser(newSession.user)
-                } else {
+                } else if (event === 'SIGNED_OUT') {
+                    // Обнуляем user ТОЛЬКО при явном выходе.
+                    // При TOKEN_REFRESHED / INITIAL_SESSION /其他 событиях
+                    // с пустым newSession НЕ трогаем user — иначе
+                    // onAuthStateChange кратковременно ставит null,
+                    // страницы делают guard-редирект на /auth и
+                    // происходит hard reload (~30с цикл).
                     globalSession = null
                     globalUser = null
                     setSession(null)

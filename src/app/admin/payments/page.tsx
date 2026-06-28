@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
     ArrowLeft, CreditCard, CheckCircle2, Clock, RefreshCw,
@@ -45,9 +45,17 @@ export default function AdminPaymentsPage() {
     // Delete confirmation state
     const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null)
 
+    const userRef = useRef(user)
+    useEffect(() => { userRef.current = user }, [user])
+
     useEffect(() => {
         if (authLoading) return
-        if (!user) { router.replace('/auth'); return }
+        if (!user) {
+            const t = setTimeout(() => {
+                if (!userRef.current) router.replace('/auth')
+            }, 3000)
+            return () => clearTimeout(t)
+        }
 
         let cancelled = false
 

@@ -3,7 +3,7 @@
 // Страница управления библиотекой шаблонов программ.
 // Только для админов/тренеров/кураторов.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
     ArrowLeft, Library, Loader2, Plus, Search, Tag, Calendar,
@@ -61,9 +61,17 @@ export default function AdminTemplatesPage() {
     // Превью на десктопе
     const [previewId, setPreviewId] = useState<string | null>(null)
 
+    const userRef = useRef(user)
+    useEffect(() => { userRef.current = user }, [user])
+
     useEffect(() => {
         if (authLoading) return
-        if (!user) { router.replace('/auth'); return }
+        if (!user) {
+            const t = setTimeout(() => {
+                if (!userRef.current) router.replace('/auth')
+            }, 3000)
+            return () => clearTimeout(t)
+        }
 
         let cancelled = false
         const init = async () => {
