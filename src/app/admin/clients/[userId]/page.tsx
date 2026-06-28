@@ -1886,15 +1886,21 @@ export default function AdminClientDetailPage() {
                 </div>
 
                 {/* Блок подписки */}
-                {clientPayment && clientPayment.confirmed_at && clientPayment.plan_months && (() => {
+                {(() => {
+                    const hasPaymentData = clientPayment && clientPayment.confirmed_at && clientPayment.plan_months
+                    const hasProfileDates = clientProfile?.subscription_start_date && clientProfile?.subscription_end_date
+                    if (!hasPaymentData && !hasProfileDates) return null
+
                     const planLabels: Record<string, string> = { '1_month': '1 месяц', '3_months': '3 месяца', '6_months': '6 месяцев' }
-                    const totalDays = clientPayment.plan_months * 30
-                    const subStartDate = clientProfile?.subscription_start_date || clientPayment.confirmed_at?.split('T')[0] || new Date(clientPayment.confirmed_at).toISOString().split('T')[0]
+                    const totalDays = (clientPayment?.plan_months || 1) * 30
+                    const subStartDate = clientProfile?.subscription_start_date || clientPayment?.confirmed_at?.split('T')[0] || new Date().toISOString().split('T')[0]
                     const subEndDate = clientProfile?.subscription_end_date || (() => {
+                        if (!clientPayment?.confirmed_at) return ''
                         const d = new Date(clientPayment.confirmed_at)
                         d.setMonth(d.getMonth() + clientPayment.plan_months)
                         return d.toISOString().split('T')[0]
                     })()
+                    if (!subStartDate || !subEndDate) return null
                     const endDate = new Date(subEndDate)
                     const daysLeft = Math.ceil((endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
                     const daysLeftClamped = Math.max(0, daysLeft)
@@ -1911,8 +1917,8 @@ export default function AdminClientDetailPage() {
                                     <Calendar className="w-4 h-4 text-text-muted flex-shrink-0" />
                                     <div className="min-w-0">
                                         <span className="text-sm text-text-muted">Тариф: </span>
-                                        <span className="text-sm font-semibold text-white">{planLabels[clientPayment.plan_type] || clientPayment.plan_type}</span>
-                                        {clientPayment.includes_nutrition && (
+                                        <span className="text-sm font-semibold text-white">{clientPayment?.plan_type ? (planLabels[clientPayment.plan_type] || clientPayment.plan_type) : '—'}</span>
+                                        {clientPayment?.includes_nutrition && (
                                             <span className="ml-2 text-xs text-accent">+ питание</span>
                                         )}
                                     </div>
@@ -1953,7 +1959,7 @@ export default function AdminClientDetailPage() {
                                     <Pencil className="w-3.5 h-3.5" />
                                     Изменить даты
                                 </button>
-                                {!clientPayment.includes_nutrition && (
+                                {!clientPayment?.includes_nutrition && (
                                     <button
                                         onClick={async () => {
                                             if (!confirm('Подключить план питания клиенту бесплатно?')) return
