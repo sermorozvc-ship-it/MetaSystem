@@ -1566,6 +1566,13 @@ export default function AdminClientDetailPage() {
     const [isRenewing, setIsRenewing] = useState(false)
     const [renewError, setRenewError] = useState('')
 
+    // Edit dates modal state
+    const [showEditDatesModal, setShowEditDatesModal] = useState(false)
+    const [editStartDate, setEditStartDate] = useState('')
+    const [editEndDate, setEditEndDate] = useState('')
+    const [isSavingDates, setIsSavingDates] = useState(false)
+    const [editDatesError, setEditDatesError] = useState('')
+
     useEffect(() => {
         if (!authLoading && !user) {
             router.replace('/auth')
@@ -1882,8 +1889,13 @@ export default function AdminClientDetailPage() {
                 {clientPayment && clientPayment.confirmed_at && clientPayment.plan_months && (() => {
                     const planLabels: Record<string, string> = { '1_month': '1 месяц', '3_months': '3 месяца', '6_months': '6 месяцев' }
                     const totalDays = clientPayment.plan_months * 30
-                    const endDate = new Date(clientPayment.confirmed_at)
-                    endDate.setMonth(endDate.getMonth() + clientPayment.plan_months)
+                    const subStartDate = clientProfile?.subscription_start_date || clientPayment.confirmed_at?.split('T')[0] || new Date(clientPayment.confirmed_at).toISOString().split('T')[0]
+                    const subEndDate = clientProfile?.subscription_end_date || (() => {
+                        const d = new Date(clientPayment.confirmed_at)
+                        d.setMonth(d.getMonth() + clientPayment.plan_months)
+                        return d.toISOString().split('T')[0]
+                    })()
+                    const endDate = new Date(subEndDate)
                     const daysLeft = Math.ceil((endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
                     const daysLeftClamped = Math.max(0, daysLeft)
                     const pct = Math.min(100, Math.max(0, (daysLeftClamped / totalDays) * 100))
@@ -1914,7 +1926,7 @@ export default function AdminClientDetailPage() {
                                 <div className={`h-full ${barColor} rounded-full transition-all`} style={{ width: `${pct}%` }} />
                             </div>
                             <div className="flex justify-between text-xs text-text-muted">
-                                <span>с {new Date(clientPayment.confirmed_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</span>
+                                <span>с {new Date(subStartDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</span>
                                 <span className={isExpiring ? 'text-danger font-semibold' : ''}>
                                     до {endDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
                                 </span>
@@ -1928,6 +1940,18 @@ export default function AdminClientDetailPage() {
                                 >
                                     <RefreshCw className="w-3.5 h-3.5" />
                                     Продлить
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setEditStartDate(subStartDate)
+                                        setEditEndDate(subEndDate)
+                                        setEditDatesError('')
+                                        setShowEditDatesModal(true)
+                                    }}
+                                    className="glass-button-secondary flex items-center gap-1.5 text-xs py-1.5 px-3"
+                                >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                    Изменить даты
                                 </button>
                                 {!clientPayment.includes_nutrition && (
                                     <button
@@ -2978,6 +3002,121 @@ export default function AdminClientDetailPage() {
                                 {isRenewing
                                     ? <><Loader2 className="w-4 h-4 animate-spin" />Продление...</>
                                     : <><Check className="w-4 h-4" />Продлить</>
+                                }
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Модальное окно редактирования дат подписки ── */}
+            {showEditDatesModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="glass-card w-full max-w-md p-6 space-y-5">
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-xl font-display font-bold text-white flex items-center gap-2">
+                                <Calendar className="w-5 h-5 text-accent" />
+                                Изменить даты подписки
+                            </h2>
+                            <button onClick={() => setShowEditDatesModal(false)} className="text-text-muted hover:text-white">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <p className="text-sm text-text-secondary">
+                            Кастомное изменение периода подписки. Можно продлить или сократить на любое количество дней.
+                        </p>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm text-text-secondary mb-1.5 flex items-center gap-1.5">
+                                    <Calendar className="w-3.5 h-3.5" /> Начало
+                                </label>
+                                <input
+                                    type="date"
+                                    value={editStartDate}
+                                    onChange={e => setEditStartDate(e.target.value)}
+                                    className="glass-input w-full"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm text-text-secondary mb-1.5 flex items-center gap-1.5">
+                                    <Calendar className="w-3.5 h-3.5" /> Окончание
+                                </label>
+                                <input
+                                    type="date"
+                                    value={editEndDate}
+                                    onChange={e => setEditEndDate(e.target.value)}
+                                    className="glass-input w-full"
+                                    required
+                                />
+                            </div>
+                        </div>
+
+                        {editStartDate && editEndDate && (
+                            <div className="p-3 rounded-xl bg-accent/5 border border-accent/20 text-sm text-text-secondary">
+                                Период: <span className="text-white font-semibold">
+                                    {new Date(editStartDate).toLocaleDateString('ru-RU')} — {new Date(editEndDate).toLocaleDateString('ru-RU')}
+                                </span>
+                                <span className="text-text-muted ml-2">
+                                    ({Math.max(0, Math.ceil((new Date(editEndDate).getTime() - new Date(editStartDate).getTime()) / (1000 * 60 * 60 * 24)))} дн.)
+                                </span>
+                            </div>
+                        )}
+
+                        {editDatesError && (
+                            <div className="p-3 rounded-xl bg-danger/10 border border-danger/30 text-sm text-danger">
+                                {editDatesError}
+                            </div>
+                        )}
+
+                        <div className="flex gap-3">
+                            <button onClick={() => setShowEditDatesModal(false)} className="glass-button-secondary flex-1">
+                                Отмена
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    setEditDatesError('')
+                                    if (!editStartDate || !editEndDate) {
+                                        setEditDatesError('Укажите обе даты')
+                                        return
+                                    }
+                                    if (new Date(editEndDate) <= new Date(editStartDate)) {
+                                        setEditDatesError('Дата окончания должна быть позже даты начала')
+                                        return
+                                    }
+                                    setIsSavingDates(true)
+                                    try {
+                                        const { updateSubscriptionDates } = await import('@/lib/services/admin')
+                                        const result = await updateSubscriptionDates({
+                                            userId,
+                                            subscriptionStartDate: editStartDate,
+                                            subscriptionEndDate: editEndDate,
+                                        })
+                                        if (result.success) {
+                                            setClientProfile((prev: any) => prev ? {
+                                                ...prev,
+                                                subscription_start_date: editStartDate,
+                                                subscription_end_date: editEndDate,
+                                            } : prev)
+                                            setShowEditDatesModal(false)
+                                            alert(`Даты обновлены: ${new Date(editStartDate).toLocaleDateString('ru-RU')} — ${new Date(editEndDate).toLocaleDateString('ru-RU')}`)
+                                        } else {
+                                            setEditDatesError(result.error ?? 'Ошибка обновления')
+                                        }
+                                    } catch (e: any) {
+                                        setEditDatesError(e.message || 'Ошибка')
+                                    } finally {
+                                        setIsSavingDates(false)
+                                    }
+                                }}
+                                disabled={isSavingDates}
+                                className="glass-button flex-1 flex items-center justify-center gap-2"
+                            >
+                                {isSavingDates
+                                    ? <><Loader2 className="w-4 h-4 animate-spin" />Сохранение...</>
+                                    : <><Check className="w-4 h-4" />Сохранить</>
                                 }
                             </button>
                         </div>

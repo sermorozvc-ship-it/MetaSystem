@@ -876,13 +876,17 @@ export async function confirmPayment(paymentId: string): Promise<{ success: bool
     }
 
     // Обновляем подписку пользователя
-    const subscriptionEndDate = new Date()
+    const subscriptionStartDate = payment.cohort_start
+        ? new Date(payment.cohort_start)
+        : new Date()
+    const subscriptionEndDate = new Date(subscriptionStartDate)
     subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + (payment.plan_months || 1))
 
     await supabase
         .from('profiles')
         .update({
             subscription_status: 'active',
+            subscription_start_date: subscriptionStartDate.toISOString().split('T')[0],
             subscription_end_date: subscriptionEndDate.toISOString().split('T')[0],
             has_nutrition_plan: payment.includes_nutrition || false,
         })
@@ -935,6 +939,30 @@ export async function renewClientSubscription(params: {
         return { success: true, newEndDate }
     } catch (e: any) {
         return { success: false, error: e?.message || 'Ошибка продления' }
+    }
+}
+
+// Update subscription dates manually (admin)
+export async function updateSubscriptionDates(params: {
+    userId: string
+    subscriptionStartDate: string
+    subscriptionEndDate: string
+}): Promise<{ success: boolean; error?: string }> {
+    try {
+        const { adminFetch } = await import('@/lib/api/admin-fetch')
+        await adminFetch<{ ok: true; subscription_start_date: string; subscription_end_date: string }>(
+            `/api/admin/users/${params.userId}/update-dates`,
+            {
+                method: 'POST',
+                json: {
+                    subscription_start_date: params.subscriptionStartDate,
+                    subscription_end_date: params.subscriptionEndDate,
+                },
+            },
+        )
+        return { success: true }
+    } catch (e: any) {
+        return { success: false, error: e?.message || 'Ошибка обновления дат' }
     }
 }
 

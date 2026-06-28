@@ -374,6 +374,7 @@ export async function confirmRenewal(
       .from('profiles')
       .update({
         subscription_status: 'active',
+        subscription_start_date: newStart.toISOString().split('T')[0],
         subscription_end_date: newEnd.toISOString().split('T')[0],
         has_nutrition_plan: payment.includes_nutrition
           ? true

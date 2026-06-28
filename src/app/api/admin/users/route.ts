@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
         role: 'user',
         is_blocked: false,
         subscription_status: 'active',
+        subscription_start_date: subscription_start,
         subscription_end_date: subscription_end,
         has_nutrition_plan: !!includes_nutrition,
         questionnaire_completed: false,

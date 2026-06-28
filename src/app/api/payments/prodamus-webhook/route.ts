@@ -171,13 +171,15 @@ async function handleOrphanPayment(
         includes_nutrition,
     })
 
-    const subscriptionEndDate = new Date()
+    const subscriptionStartDate = new Date()
+    const subscriptionEndDate = new Date(subscriptionStartDate)
     subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + plan_months)
 
     await supabase
         .from('profiles')
         .update({
             subscription_status: 'active',
+            subscription_start_date: subscriptionStartDate.toISOString().split('T')[0],
             subscription_end_date: subscriptionEndDate.toISOString().split('T')[0],
             has_nutrition_plan: includes_nutrition,
         })
@@ -248,13 +250,17 @@ async function handleInitialPayment(
             return
         }
 
-        const subscriptionEndDate = new Date()
+        const subscriptionStartDate = paymentData.cohort_start
+            ? new Date(paymentData.cohort_start)
+            : new Date()
+        const subscriptionEndDate = new Date(subscriptionStartDate)
         subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + (paymentData.plan_months || 1))
 
         const { error: profileErr } = await supabase
             .from('profiles')
             .update({
                 subscription_status: 'active',
+                subscription_start_date: subscriptionStartDate.toISOString().split('T')[0],
                 subscription_end_date: subscriptionEndDate.toISOString().split('T')[0],
                 has_nutrition_plan: paymentData.includes_nutrition || false,
             })
@@ -306,13 +312,15 @@ async function handleInitialPayment(
         return
     }
 
-    const subscriptionEndDate = new Date()
+    const subscriptionStartDate = new Date()
+    const subscriptionEndDate = new Date(subscriptionStartDate)
     subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + plan_months)
 
     const { error: profileErr } = await supabase
         .from('profiles')
         .update({
             subscription_status: 'active',
+            subscription_start_date: subscriptionStartDate.toISOString().split('T')[0],
             subscription_end_date: subscriptionEndDate.toISOString().split('T')[0],
             has_nutrition_plan: includes_nutrition,
         })
@@ -380,6 +388,7 @@ async function handleRenewalPayment(
         .from('profiles')
         .update({
             subscription_status: 'active',
+            subscription_start_date: newStart.toISOString().split('T')[0],
             subscription_end_date: newEnd.toISOString().split('T')[0],
             has_nutrition_plan: payment.includes_nutrition ? true : undefined,
             renewal_pending: false,

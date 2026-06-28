@@ -88,6 +88,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ userId
         .from('profiles')
         .update({
             subscription_status: 'active',
+            subscription_start_date: newStart.toISOString().split('T')[0],
             subscription_end_date: newEndStr,
             has_nutrition_plan: includesNutrition ? true : (profile?.has_nutrition_plan ?? false),
             renewal_pending: false,
