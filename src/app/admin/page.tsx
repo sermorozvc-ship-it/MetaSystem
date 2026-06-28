@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { isAdmin, getAllUsers, getAdminStats, type UserWithProgress } from '@/lib/services/admin'
+import { tryRefreshSession } from '@/lib/supabase/client'
 
 export default function AdminDashboardPage() {
     const { user, isLoading: authLoading } = useAuth()
@@ -34,6 +35,8 @@ export default function AdminDashboardPage() {
 
         const load = async () => {
             try {
+                // При SPA-навигации токен может быть протухшим — обновляем перед запросами
+                await tryRefreshSession()
                 // Проверяем admin и грузим данные за один проход
                 const admin = await isAdmin(user)
                 if (cancelled) return

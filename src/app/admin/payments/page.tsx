@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { isAdmin, getAllPayments, confirmPayment, refundPayment, deletePayment, updatePayment, getPaymentsByMonth, type AdminPayment, type MonthlyPaymentStat } from '@/lib/services/admin'
+import { tryRefreshSession } from '@/lib/supabase/client'
 import PaymentsChart from '@/components/admin/PaymentsChart'
 
 const PLAN_LABELS: Record<string, string> = {
@@ -52,6 +53,7 @@ export default function AdminPaymentsPage() {
 
         const load = async () => {
             try {
+                await tryRefreshSession()
                 const admin = await isAdmin(user)
                 if (cancelled) return
                 if (!admin) { router.replace('/admin'); return }

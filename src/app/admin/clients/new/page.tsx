@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { isAdmin, createClientManually } from '@/lib/services/admin'
+import { tryRefreshSession } from '@/lib/supabase/client'
 
 export default function NewClientPage() {
     const { user, isLoading: authLoading } = useAuth()
@@ -45,10 +46,12 @@ export default function NewClientPage() {
 
     useEffect(() => {
         if (!user) return
-        isAdmin(user).then(admin => {
-            if (!admin) router.replace('/dashboard')
-            else setIsAdminUser(true)
-        })
+        tryRefreshSession().then(() =>
+            isAdmin(user).then(admin => {
+                if (!admin) router.replace('/dashboard')
+                else setIsAdminUser(true)
+            })
+        )
     }, [user, router])
 
     const handleSubmit = async (e: React.FormEvent) => {

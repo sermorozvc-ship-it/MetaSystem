@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { isAdmin, getUserDetails, archiveUser, unarchiveUser } from '@/lib/services/admin'
+import { tryRefreshSession } from '@/lib/supabase/client'
 import { getQuestionnaireByUserId, type ClientQuestionnaire } from '@/lib/services/questionnaire'
 import {
     getNutritionQuestionnaireByUserId,
@@ -1583,6 +1584,7 @@ export default function AdminClientDetailPage() {
         if (!user) return
         const checkAdmin = async () => {
             try {
+                await tryRefreshSession()
                 const admin = await isAdmin(user)
                 if (!admin) { router.replace('/dashboard'); return }
                 setIsAdminUser(true)
