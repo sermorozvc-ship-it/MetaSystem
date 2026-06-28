@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Users, Search, Loader2, ChevronRight, Calendar, CheckCircle2, Archive, ArchiveRestore, Trash2, UserPlus } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { isAdmin, getAllUsers, archiveUser, unarchiveUser, deleteUser, type UserWithProgress } from '@/lib/services/admin'
-import { tryRefreshSession } from '@/lib/supabase/client'
+import { ensureSession } from '@/lib/supabase/client'
 
 type Tab = 'active' | 'archived'
 
@@ -29,7 +29,8 @@ export default function AdminClientsPage() {
 
         const load = async () => {
             try {
-                await tryRefreshSession()
+                const sessionOk = await ensureSession()
+                if (!sessionOk) { router.replace('/auth'); return }
                 const admin = await isAdmin(user)
                 if (cancelled) return
                 if (!admin) { router.replace('/dashboard'); return }

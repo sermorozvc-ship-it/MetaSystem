@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { isAdmin } from '@/lib/services/admin'
-import { tryRefreshSession } from '@/lib/supabase/client'
+import { ensureSession } from '@/lib/supabase/client'
 import {
     listTemplates, createTemplate, updateTemplate, deleteTemplate,
     type ProgramTemplate, type ProgramTemplateInput,
@@ -68,7 +68,8 @@ export default function AdminTemplatesPage() {
         let cancelled = false
         const init = async () => {
             try {
-                await tryRefreshSession()
+                const sessionOk = await ensureSession()
+                if (!sessionOk) { router.replace('/auth'); return }
                 const admin = await isAdmin(user)
                 if (cancelled) return
                 if (!admin) { router.replace('/dashboard'); return }

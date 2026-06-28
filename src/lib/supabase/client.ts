@@ -396,6 +396,49 @@ export async function tryRefreshSession(): Promise<boolean> {
     }
 }
 
+/**
+ * Гарантированно обеспечивает валидную сессию через сетевую проверку.
+ * В отличие от tryRefreshSession (локальная проверка JWT),
+ * вызывает getUser() — реальный запрос к Supabase Auth серверу.
+ * Возвращает true если сессия валидна (или была успешно обновлена).
+ */
+export async function ensureSession(): Promise<boolean> {
+    try {
+        if (typeof window === 'undefined') return false
+        const supabase = createClient()
+
+        // 1. Проверяем токен через сетевой запрос
+        const { data: userData, error: userError } = await Promise.race([
+            supabase.auth.getUser(),
+            new Promise<{ data: { user: null }; error: { message: string } }>((resolve) =>
+                setTimeout(() => resolve({ data: { user: null }, error: { message: 'getUser timeout' } }), 5_000)
+            ),
+        ])
+
+        if (userData?.user) return true
+
+        // 2. Токен невалиден — пробуем обновить
+        console.warn('[ensureSession] getUser failed, attempting refresh:', userError?.message)
+        const { data: refreshData, error: refreshError } = await Promise.race([
+            supabase.auth.refreshSession(),
+            new Promise<{ data: { session: null }; error: { message: string } }>((resolve) =>
+                setTimeout(() => resolve({ data: { session: null }, error: { message: 'refreshSession timeout' } }), 5_000)
+            ),
+        ])
+
+        if (refreshData?.session?.access_token) {
+            console.log('[ensureSession] Session refreshed successfully')
+            return true
+        }
+
+        console.error('[ensureSession] Refresh failed:', refreshError?.message)
+        return false
+    } catch (e) {
+        console.error('[ensureSession] Exception:', e)
+        return false
+    }
+}
+
 // Синхронное чтение сессии (обёртка для типизации)
 async function getSessionSync(supabase: SupabaseClient) {
     return supabase.auth.getSession()
