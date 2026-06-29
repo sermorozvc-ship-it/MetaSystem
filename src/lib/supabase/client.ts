@@ -530,6 +530,75 @@ async function refreshSessionWithTimeout(
 
 export type AccessTokenStatus = 'fresh' | 'refreshed' | 'expired' | 'missing' | 'refresh_failed'
 
+/**
+ * Агрессивное обновление сессии для критических операций (Завершить тренировку).
+ * Отличается от getAccessTokenWithRecovery увеличенными таймаутами и
+ * двойной попыткой refreshSession — на мобиле после долгой тренировки
+ * первый refresh может не успеть (браузер разморозил таймеры / сеть
+ * проснулась), второй — обычно проходит.
+ */
+export async function getAccessTokenForCriticalAction(): Promise<{
+    token: string | null
+    status: AccessTokenStatus
+}> {
+    try {
+        if (typeof window === 'undefined') {
+            return { token: null, status: 'missing' }
+        }
+
+        // 1. localStorage — мгновенно
+        const storedToken = readStoredTokenFromLocalStorage()
+        if (storedToken && isJwtFresh(storedToken)) {
+            pushAuthDebugEvent('critical_token_fresh_from_storage')
+            return { token: storedToken, status: 'fresh' }
+        }
+
+        const supabase = createClient()
+
+        // 2. refreshSession с увеличенным таймаутом (10с)
+        // На мобиле после долгого background первый refresh может не успеть.
+        console.warn('[auth] critical: token stale, trying aggressive refresh')
+        pushAuthDebugEvent('critical_refresh_attempt_1')
+        const refreshed = await refreshSessionWithTimeout(supabase, 10_000)
+        if (refreshed?.access_token && isJwtFresh(refreshed.access_token, 15)) {
+            pushAuthDebugEvent('critical_refresh_ok_1')
+            return { token: refreshed.access_token, status: 'refreshed' }
+        }
+
+        // 3. Перечитываем localStorage — Supabase мог обновить токен в storage
+        // даже если refreshSession вернул null (race condition с другим refresh).
+        const recoveredToken = readStoredTokenFromLocalStorage()
+        if (recoveredToken && isJwtFresh(recoveredToken, 15)) {
+            pushAuthDebugEvent('critical_recovered_from_storage')
+            return { token: recoveredToken, status: 'refreshed' }
+        }
+
+        // 4. Вторая попытка refreshSession (15с) — иногда сеть «просыпается»
+        // на втором таймауте, особенно если браузер только разморозил таб.
+        console.warn('[auth] critical: first refresh failed, retrying with longer timeout')
+        pushAuthDebugEvent('critical_refresh_attempt_2')
+        const refreshed2 = await refreshSessionWithTimeout(supabase, 15_000)
+        if (refreshed2?.access_token && isJwtFresh(refreshed2.access_token, 15)) {
+            pushAuthDebugEvent('critical_refresh_ok_2')
+            return { token: refreshed2.access_token, status: 'refreshed' }
+        }
+
+        // 5. Финальная проверка localStorage
+        const finalToken = readStoredTokenFromLocalStorage()
+        if (finalToken && isJwtFresh(finalToken, 15)) {
+            pushAuthDebugEvent('critical_final_recovered_from_storage')
+            return { token: finalToken, status: 'refreshed' }
+        }
+
+        pushAuthDebugEvent('critical_all_attempts_failed')
+        return { token: null, status: 'refresh_failed' }
+    } catch (e) {
+        console.warn('[auth] getAccessTokenForCriticalAction failed:', e)
+        pushAuthDebugEvent('critical_exception', { message: e instanceof Error ? e.message : String(e) })
+        return { token: null, status: 'refresh_failed' }
+    }
+}
+
 export async function getAccessTokenWithRecovery(): Promise<{
     token: string | null
     status: AccessTokenStatus

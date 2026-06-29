@@ -21,7 +21,7 @@ import { getMySubscriptionInfo } from '@/lib/services/renewal'
 import { parseMdToJson } from '@/lib/utils/md-parser'
 import { parseCheckinQuestions } from '@/lib/utils/checkin-questions'
 import { getWeeklyCheckin, upsertWeeklyCheckin, markWeeklyCheckinCompleted } from '@/lib/services/weekly-checkin'
-import { getAccessTokenWithRecovery } from '@/lib/supabase/client'
+import { getAccessTokenWithRecovery, getAccessTokenForCriticalAction } from '@/lib/supabase/client'
 
 // ─── Типы данных клиента ─────────────────────────────────────────────────────
 
@@ -1101,6 +1101,12 @@ export default function ProgramDetailPage() {
         return `training_draft_${programId}_${dayNumber}`
     }, [programId])
 
+    // Ключ отложенного завершения — сохраняется при ошибке сессии и
+    // автоматически выполняется при следующей загрузке страницы.
+    const pendingCompletionKey = useCallback((dayNumber: number) => {
+        return `pending_completion_${programId}_${dayNumber}`
+    }, [programId])
+
     // Ref на актуального user — нужен внутри отложенной перепроверки гварда,
     // чтобы не словить stale-closure после grace-периода.
     const userRef = useRef(user)
@@ -1420,17 +1426,64 @@ export default function ProgramDetailPage() {
                         setWorkoutStartTime(null)
                         setElapsedSeconds(0)
                     } else {
-                        setSavedDuration(null)
-                        // Восстанавливаем таймер из localStorage если был запущен
-                        const key = `workout_start_${program.id}_${currentDay.dayNumber}`
-                        const saved = localStorage.getItem(key)
-                        if (saved) {
-                            const startTime = parseInt(saved)
-                            setWorkoutStartTime(startTime)
-                            setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000))
+                        // Проверяем отложенное завершение: если пользователь нажал
+                        // «Завершить» когда сессия была мертва, данные были сохранены
+                        // в localStorage. Теперь, после перезагрузки (сессия обновлена
+                        // через middleware), автоматически выполняем сохранение и завершение.
+                        const pendingKey = pendingCompletionKey(currentDay.dayNumber)
+                        const pendingRaw = localStorage.getItem(pendingKey)
+                        if (pendingRaw) {
+                            try {
+                                const pending = JSON.parse(pendingRaw)
+                                pushDebugEvent('pending_completion_found', {
+                                    dayNumber: currentDay.dayNumber,
+                                    age: Date.now() - (pending.savedAt || 0),
+                                })
+                                // Сохраняем данные на сервер
+                                await upsertTrainingEntry(pending.programId, pending.dayNumber, pending.entryData, pending.metadata)
+                                await completeTrainingDay(pending.programId, pending.dayNumber)
+                                // Если это последний день недели — фиксируем чек-ин
+                                if (currentDayIndex === program.program_data.days.length - 1) {
+                                    await markWeeklyCheckinCompleted(pending.programId)
+                                }
+                                // Чистим всё
+                                localStorage.removeItem(pendingKey)
+                                try { localStorage.removeItem(backupKey(currentDay.dayNumber)) } catch { /* noop */ }
+                                setCompletedDays(prev => new Set([...prev, currentDay.dayNumber]))
+                                setSavedDuration(pending.metadata?.workout_duration_seconds ?? null)
+                                setWorkoutStartTime(null)
+                                setElapsedSeconds(0)
+                                setSaveStatus('saved')
+                                setSaveMessage('✓ Тренировка завершена автоматически!')
+                                setTimeout(() => setSaveMessage(''), 4000)
+                                pushDebugEvent('pending_completion_executed', { dayNumber: currentDay.dayNumber })
+                            } catch (pendingErr) {
+                                console.error('[program] pending completion failed:', pendingErr)
+                                pushDebugEvent('pending_completion_failed', {
+                                    dayNumber: currentDay.dayNumber,
+                                    error: pendingErr instanceof Error ? pendingErr.message : String(pendingErr),
+                                })
+                                // Не удаляем ключ — попробуем при следующей загрузке
+                                // Показываем пользователю что данные есть, но сервер недоступен
+                                setSaveStatus('error')
+                                setSaveError('Данные сохранены. Не удалось завершить — сервер недоступен. Попробуй обновить страницу.')
+                            }
                         } else {
-                            setWorkoutStartTime(null)
-                            setElapsedSeconds(0)
+                            setSavedDuration(null)
+                        }
+
+                        if (!pendingRaw) {
+                            // Обычное восстановление таймера (без отложенного завершения)
+                            const key = `workout_start_${program.id}_${currentDay.dayNumber}`
+                            const saved = localStorage.getItem(key)
+                            if (saved) {
+                                const startTime = parseInt(saved)
+                                setWorkoutStartTime(startTime)
+                                setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000))
+                            } else {
+                                setWorkoutStartTime(null)
+                                setElapsedSeconds(0)
+                            }
                         }
                     }
                 } else {
@@ -2300,23 +2353,42 @@ export default function ProgramDetailPage() {
             }
             pendingRef.current = false
 
-            // Предварительная проверка сессии: читаем токен напрямую из
-            // localStorage (getAccessTokenWithRecovery) ВМЕСТО tryRefreshSession.
-            // Причина: tryRefreshSession идёт через supabase.auth.getSession(),
-            // который использует inTabLock. Если автосейв держит inTabLock
-            // (safeGetUser → getUser), getSession висит на таймауте 3с и
-            // возвращает false — хотя токен в localStorage свежий и валидный.
-            // getAccessTokenWithRecovery читает токен из storage напрямую,
-            // без inTabLock, и корректно определяет его валидность.
+            // Предварительная проверка сессии: используем getAccessTokenForCriticalAction
+            // вместо getAccessTokenWithRecovery — он имеет увеличенные таймауты (10-15с)
+            // и двойную попытку refreshSession. Это критично для «Завершить» после
+            // долгой тренировки на мобиле: браузер разморозил таб, сеть просыпается,
+            // и второй refresh通常 проходит.
             setIsSaving(true)
             setSaveStatus('saving')
             setSaveError(null)
             setSaveMessage('')
             {
-                const { token, status } = await getAccessTokenWithRecovery()
+                const { token, status } = await getAccessTokenForCriticalAction()
                 pushDebugEvent('complete_token_check', { status, hasToken: !!token })
                 if (!token) {
-                    await handleAuthFailure('complete')
+                    // Сессия мертва — сохраняем данные локально, чтобы
+                    // завершить тренировку автоматически при следующей загрузке.
+                    try {
+                        const snap = buildEntrySnapshot()
+                        const finalDur = workoutStartTime !== null
+                            ? Math.floor((Date.now() - workoutStartTime) / 1000)
+                            : elapsedSeconds || undefined
+                        localStorage.setItem(pendingCompletionKey(currentDay.dayNumber), JSON.stringify({
+                            programId: program.id,
+                            dayNumber: currentDay.dayNumber,
+                            entryData: { ...snap.entryData, __meta__: snap.entryData.__meta__ },
+                            metadata: { ...snap.metadata, workout_duration_seconds: finalDur },
+                            savedAt: Date.now(),
+                        }))
+                        pushDebugEvent('complete_pending_saved', { dayNumber: currentDay.dayNumber })
+                    } catch (saveErr) {
+                        console.warn('[program] failed to save pending completion:', saveErr)
+                    }
+                    // Показываем дружелюбное сообщение вместо ошибки сессии
+                    setSaveStatus('error')
+                    setSaveError('Данные сохранены. Обнови страницу — тренировка завершится автоматически.')
+                    setSaveMessage('')
+                    resetSavingState('error')
                     return
                 }
             }
@@ -2358,9 +2430,26 @@ export default function ProgramDetailPage() {
                 setTimeout(() => setSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 1500)
             } catch (e: any) {
                 console.error('Error completing:', e)
+                // При ошибке сети/RLS после успешной проверки токена —
+                // тоже сохраняем pending, чтобы не заставлять пользователя
+                // заново заполнять данные.
+                try {
+                    const snap = buildEntrySnapshot()
+                    const finalDur = workoutStartTime !== null
+                        ? Math.floor((Date.now() - workoutStartTime) / 1000)
+                        : elapsedSeconds || undefined
+                    localStorage.setItem(pendingCompletionKey(currentDay.dayNumber), JSON.stringify({
+                        programId: program.id,
+                        dayNumber: currentDay.dayNumber,
+                        entryData: { ...snap.entryData, __meta__: snap.entryData.__meta__ },
+                        metadata: { ...snap.metadata, workout_duration_seconds: finalDur },
+                        savedAt: Date.now(),
+                    }))
+                    pushDebugEvent('complete_pending_saved_on_error', { dayNumber: currentDay.dayNumber, error: e?.message })
+                } catch { /* noop */ }
                 setSaveStatus('error')
-                setSaveError(e?.message || 'Ошибка завершения')
-                setSaveMessage('Ошибка — попробуй ещё раз')
+                setSaveError('Ошибка сети. Данные сохранены — обнови страницу, тренировка завершится автоматически.')
+                setSaveMessage('')
             } finally {
                 if (lockGenerationRef.current === myGeneration) {
                     resetSavingState()
