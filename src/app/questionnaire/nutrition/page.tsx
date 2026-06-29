@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Apple, Target, Activity, Utensils, Ban, Clock,
@@ -38,12 +38,17 @@ export default function NutritionQuestionnairePage() {
   const [checking, setChecking] = useState(true)
   const [formData, setFormData] = useState<NutritionAnswers>({})
 
+  const userRef = useRef(user)
+  useEffect(() => { userRef.current = user }, [user])
+
   // Проверка: авторизация + доступ к анкете
   useEffect(() => {
     if (authLoading) return
     if (!user) {
-      router.replace('/auth')
-      return
+      const t = setTimeout(() => {
+        if (!userRef.current) router.replace('/auth')
+      }, 3000)
+      return () => clearTimeout(t)
     }
     const run = async () => {
       try {

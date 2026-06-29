@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
     Dumbbell, TrendingUp, Calendar, MessageCircle,
@@ -46,9 +46,16 @@ export default function DashboardPage() {
         if (dismissed) setNutritionBannerDismissed(true)
     }, [])
 
+    const userRef = useRef(user)
+    useEffect(() => { userRef.current = user }, [user])
+
     useEffect(() => {
-        if (!authLoading && !user) {
-            router.replace('/auth')
+        if (authLoading) return
+        if (!user) {
+            const t = setTimeout(() => {
+                if (!userRef.current) router.replace('/auth')
+            }, 3000)
+            return () => clearTimeout(t)
         }
     }, [user, authLoading, router])
 

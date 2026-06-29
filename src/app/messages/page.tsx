@@ -315,8 +315,17 @@ export default function MessagesPage() {
     const { user, isLoading: authLoading } = useAuth()
     const router = useRouter()
 
+    const userRef = useRef(user)
+    useEffect(() => { userRef.current = user }, [user])
+
     useEffect(() => {
-        if (!authLoading && !user) router.replace('/auth')
+        if (authLoading) return
+        if (!user) {
+            const t = setTimeout(() => {
+                if (!userRef.current) router.replace('/auth')
+            }, 3000)
+            return () => clearTimeout(t)
+        }
     }, [user, authLoading, router])
 
     if (!authLoading && !user) {

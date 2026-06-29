@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   User, Target, Dumbbell, Heart, Camera, Activity,
@@ -133,9 +133,18 @@ export default function QuestionnairePage() {
   const [photoBack, setPhotoBack] = useState<File | null>(null)
   const [photoUploading, setPhotoUploading] = useState<Record<string, boolean>>({})
 
+  const userRef = useRef(user)
+  useEffect(() => { userRef.current = user }, [user])
+
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_DISABLE_REDIRECTS === 'true') return
-    if (!authLoading && !user) router.replace('/auth')
+    if (authLoading) return
+    if (!user) {
+      const t = setTimeout(() => {
+        if (!userRef.current) router.replace('/auth')
+      }, 3000)
+      return () => clearTimeout(t)
+    }
   }, [user, authLoading, router])
 
   useEffect(() => {

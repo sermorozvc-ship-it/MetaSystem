@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
     TrendingUp, Plus, Calendar, Camera, Loader2, X, Upload,
@@ -42,9 +42,16 @@ export default function MetricsPage() {
         measured_at: new Date().toISOString().split('T')[0],
     })
 
+    const userRef = useRef(user)
+    useEffect(() => { userRef.current = user }, [user])
+
     useEffect(() => {
-        if (!authLoading && !user) {
-            router.replace('/auth')
+        if (authLoading) return
+        if (!user) {
+            const t = setTimeout(() => {
+                if (!userRef.current) router.replace('/auth')
+            }, 3000)
+            return () => clearTimeout(t)
         }
     }, [user, authLoading, router])
 

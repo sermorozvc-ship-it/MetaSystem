@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   RefreshCw, Check, Loader2, Gift, Zap, CreditCard,
@@ -82,9 +82,16 @@ function RenewContent() {
   const [isPending, setIsPending] = useState(false)
   const [error, setError] = useState('')
 
+  const userRef = useRef(user)
+  useEffect(() => { userRef.current = user }, [user])
+
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.replace('/auth')
+    if (authLoading) return
+    if (!user) {
+      const t = setTimeout(() => {
+        if (!userRef.current) router.replace('/auth')
+      }, 3000)
+      return () => clearTimeout(t)
     }
   }, [user, authLoading, router])
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, Flame, Trophy, Calendar as CalendarIcon, ChevronRight, Activity, Dumbbell, X } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
@@ -32,8 +32,17 @@ export default function CalendarPage() {
 
   const [{ year, month }, setYM] = useState(todayParts())
 
+  const userRef = useRef(user)
+  useEffect(() => { userRef.current = user }, [user])
+
   useEffect(() => {
-    if (!authLoading && !user) router.replace('/auth')
+    if (authLoading) return
+    if (!user) {
+      const t = setTimeout(() => {
+        if (!userRef.current) router.replace('/auth')
+      }, 3000)
+      return () => clearTimeout(t)
+    }
   }, [user, authLoading, router])
 
   useEffect(() => {
