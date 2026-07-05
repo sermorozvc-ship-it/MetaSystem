@@ -397,45 +397,59 @@ export async function tryRefreshSession(): Promise<boolean> {
 }
 
 /**
- * Гарантированно обеспечивает валидную сессию через сетевую проверку.
- * В отличие от tryRefreshSession (локальная проверка JWT),
- * вызывает getUser() — реальный запрос к Supabase Auth серверу.
- * Возвращает true если сессия валидна (или была успешно обновлена).
+ * Проверяет, что сессия пригодна для работы (в т.ч. админки).
+ *
+ * Раньше первым шагом всегда шёл сетевой getUser() с таймаутом 5с.
+ * При занятом inTabLock (autosave, heartbeat, параллельные запросы) или
+ * медленной сети getUser() таймаутился → админка редиректила на /auth,
+ * а /auth при живом user снова кидала в /admin (цикл «выбило и перезашло»).
+ *
+ * Теперь: localStorage/recovery → только потом сеть, с fallback на кеш user.
  */
 export async function ensureSession(): Promise<boolean> {
     try {
         if (typeof window === 'undefined') return false
+
+        const { token, status } = await getAccessTokenWithRecovery()
+        if (token && (status === 'fresh' || status === 'refreshed')) {
+            return true
+        }
+
         const supabase = createClient()
 
-        // 1. Проверяем токен через сетевой запрос
         const { data: userData, error: userError } = await Promise.race([
             supabase.auth.getUser(),
             new Promise<{ data: { user: null }; error: { message: string } }>((resolve) =>
-                setTimeout(() => resolve({ data: { user: null }, error: { message: 'getUser timeout' } }), 5_000)
+                setTimeout(() => resolve({ data: { user: null }, error: { message: 'getUser timeout' } }), 8_000)
             ),
         ])
 
         if (userData?.user) return true
 
-        // 2. Токен невалиден — пробуем обновить
-        console.warn('[ensureSession] getUser failed, attempting refresh:', userError?.message)
-        const { data: refreshData, error: refreshError } = await Promise.race([
-            supabase.auth.refreshSession(),
-            new Promise<{ data: { session: null }; error: { message: string } }>((resolve) =>
-                setTimeout(() => resolve({ data: { session: null }, error: { message: 'refreshSession timeout' } }), 5_000)
-            ),
-        ])
+        if (userError?.message && !userError.message.includes('timeout')) {
+            console.warn('[ensureSession] getUser failed, attempting refresh:', userError.message)
+        }
 
-        if (refreshData?.session?.access_token) {
-            console.log('[ensureSession] Session refreshed successfully')
+        const refreshed = await refreshSessionWithTimeout(supabase, 8_000)
+        if (refreshed?.access_token && isJwtFresh(refreshed.access_token, 15)) {
             return true
         }
 
-        console.error('[ensureSession] Refresh failed:', refreshError?.message)
+        const storedToken = readStoredTokenFromLocalStorage()
+        if (cachedUser && storedToken && isJwtFresh(storedToken, 0)) {
+            console.warn('[ensureSession] network check failed, keeping session from cache/storage')
+            return true
+        }
+
+        if (status === 'expired' || status === 'refresh_failed') {
+            return false
+        }
+
         return false
     } catch (e) {
         console.error('[ensureSession] Exception:', e)
-        return false
+        const storedToken = readStoredTokenFromLocalStorage()
+        return !!(cachedUser && storedToken && isJwtFresh(storedToken, 0))
     }
 }
 

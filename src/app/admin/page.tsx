@@ -1,20 +1,18 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
     Users, Shield, Loader2, TrendingUp, Calendar,
     CreditCard, CheckCircle2, Clock, ChevronRight
 } from 'lucide-react'
-import { useAuth } from '@/lib/auth'
-import { isAdmin, getAllUsers, getAdminStats, type UserWithProgress } from '@/lib/services/admin'
-import { ensureSession } from '@/lib/supabase/client'
+import { useAdminGuard } from '@/lib/auth'
+import { getAllUsers, getAdminStats, type UserWithProgress } from '@/lib/services/admin'
 
 export default function AdminDashboardPage() {
-    const { user, isLoading: authLoading } = useAuth()
+    const { user, authLoading, isAdminUser, isReady: authReady } = useAdminGuard()
     const router = useRouter()
 
-    const [isAdminUser, setIsAdminUser] = useState(false)
     const [isLoading, setIsLoading] = useState(true)
     const [clients, setClients] = useState<UserWithProgress[]>([])
     const [stats, setStats] = useState({
@@ -27,38 +25,13 @@ export default function AdminDashboardPage() {
         confirmedPayments: 0,
     })
 
-    const userRef = useRef(user)
-    useEffect(() => { userRef.current = user }, [user])
-
     useEffect(() => {
-        if (authLoading) return
-        if (!user) {
-            // Grace period: ждём 3с перед редиректом, чтобы пропустить
-            // кратковременный null от onAuthStateChange при TOKEN_REFRESHED.
-            const t = setTimeout(() => {
-                if (!userRef.current) router.replace('/auth')
-            }, 3000)
-            return () => clearTimeout(t)
-        }
+        if (authLoading || !authReady || !isAdminUser || !user) return
 
         let cancelled = false
 
         const load = async () => {
             try {
-                // Сетевая проверка сессии — если токен протух на сервере, обновляем
-                const sessionOk = await ensureSession()
-                if (!sessionOk) {
-                    console.warn('[AdminPage] Session invalid, redirecting to auth')
-                    router.replace('/auth')
-                    return
-                }
-                // Проверяем admin и грузим данные за один проход
-                const admin = await isAdmin(user)
-                if (cancelled) return
-                if (!admin) { router.replace('/dashboard'); return }
-
-                setIsAdminUser(true)
-
                 const [usersData, statsData] = await Promise.all([
                     getAllUsers(),
                     getAdminStats(),
@@ -70,31 +43,23 @@ export default function AdminDashboardPage() {
             } catch (e) {
                 console.error('Error loading admin data:', e)
             } finally {
-                // ВСЕГДА снимаем спиннер, даже если isAdmin/загрузка упали или
-                // эффект был отменён до завершения — иначе вечный лоадер.
                 if (!cancelled) setIsLoading(false)
             }
         }
 
         load()
 
-        // Аварийный таймаут: если данные не успели загрузиться за 8с —
-        // снимаем спиннер и показываем страницу с тем что есть, а не висим бесконечно.
         const failsafe = setTimeout(() => {
-            if (!cancelled) {
-                console.warn('[AdminPage] Failsafe timeout — forcing isLoading=false')
-                setIsLoading(false)
-            }
+            if (!cancelled) setIsLoading(false)
         }, 8000)
 
         return () => { cancelled = true; clearTimeout(failsafe) }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, authLoading])
+    }, [user?.id, authLoading, authReady, isAdminUser])
 
     // Спиннер показываем пока идёт первичная загрузка. НЕ гейтим по isAdminUser:
     // failsafe сбрасывает только isLoading, и при подвисшей проверке прав
     // гейт по !isAdminUser держал бы лоадер вечно. Не-админ редиректится выше.
-    if (authLoading || isLoading) {
+    if (authLoading || !authReady || isLoading) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />

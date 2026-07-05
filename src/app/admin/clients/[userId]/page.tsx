@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import {
     ArrowLeft, Dumbbell, TrendingUp, FileText, Plus,
@@ -8,9 +8,8 @@ import {
     Download, CheckCircle2, Clock, Pencil, Archive, ArchiveRestore,
     Apple, Copy, Calendar, RefreshCw, Layers, Save, Flame
 } from 'lucide-react'
-import { useAuth } from '@/lib/auth'
-import { isAdmin, getUserDetails, archiveUser, unarchiveUser } from '@/lib/services/admin'
-import { ensureSession } from '@/lib/supabase/client'
+import { useAdminGuard } from '@/lib/auth'
+import { getUserDetails, archiveUser, unarchiveUser } from '@/lib/services/admin'
 import { getQuestionnaireByUserId, type ClientQuestionnaire } from '@/lib/services/questionnaire'
 import {
     getNutritionQuestionnaireByUserId,
@@ -1514,14 +1513,13 @@ function AdminExerciseStats({ userId }: { userId: string }) {
 
 // ─── Главная страница ────────────────────────────────────────────────────────
 export default function AdminClientDetailPage() {
-    const { user, isLoading: authLoading } = useAuth()
+    const { user, authLoading, isAdminUser, isReady: authReady } = useAdminGuard()
     const router = useRouter()
     const params = useParams()
     const userId = params.userId as string
 
     const [activeTab, setActiveTab] = useState<Tab>('programs')
     const [isLoading, setIsLoading] = useState(true)
-    const [isAdminUser, setIsAdminUser] = useState(false)
 
     const [clientProfile, setClientProfile] = useState<any>(null)
     const [questionnaire, setQuestionnaire] = useState<ClientQuestionnaire | null>(null)
@@ -1574,36 +1572,8 @@ export default function AdminClientDetailPage() {
     const [isSavingDates, setIsSavingDates] = useState(false)
     const [editDatesError, setEditDatesError] = useState('')
 
-    const userRef = useRef(user)
-    useEffect(() => { userRef.current = user }, [user])
-
     useEffect(() => {
-        if (authLoading) return
-        if (user) return
-        const t = setTimeout(() => {
-            if (!userRef.current) router.replace('/auth')
-        }, 3000)
-        return () => clearTimeout(t)
-    }, [user, authLoading, router])
-
-    useEffect(() => {
-        if (!user) return
-        const checkAdmin = async () => {
-            try {
-                const sessionOk = await ensureSession()
-                if (!sessionOk) { router.replace('/auth'); return }
-                const admin = await isAdmin(user)
-                if (!admin) { router.replace('/dashboard'); return }
-                setIsAdminUser(true)
-            } catch {
-                router.replace('/dashboard')
-            }
-        }
-        checkAdmin()
-    }, [user, router])
-
-    useEffect(() => {
-        if (!isAdminUser || !userId) return
+        if (authLoading || !authReady || !isAdminUser || !userId) return
         let cancelled = false
         const load = async () => {
             try {
@@ -1656,7 +1626,7 @@ export default function AdminClientDetailPage() {
             }
         }, 8000)
         return () => { cancelled = true; clearTimeout(failsafe) }
-    }, [isAdminUser, userId])
+    }, [authLoading, authReady, isAdminUser, userId])
 
     const handleArchiveToggle = async () => {
         const isCurrentlyArchived = clientProfile?.is_archived
@@ -1843,7 +1813,7 @@ export default function AdminClientDetailPage() {
         }
     }
 
-    if (authLoading || isLoading || !isAdminUser) {
+    if (authLoading || !authReady || isLoading || !isAdminUser) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />

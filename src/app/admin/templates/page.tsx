@@ -3,15 +3,13 @@
 // Страница управления библиотекой шаблонов программ.
 // Только для админов/тренеров/кураторов.
 
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
     ArrowLeft, Library, Loader2, Plus, Search, Tag, Calendar,
     Pencil, Trash2, X, Check, Save, FileText, Download, Copy,
 } from 'lucide-react'
-import { useAuth } from '@/lib/auth'
-import { isAdmin } from '@/lib/services/admin'
-import { ensureSession } from '@/lib/supabase/client'
+import { useAdminGuard } from '@/lib/auth'
 import {
     listTemplates, createTemplate, updateTemplate, deleteTemplate,
     type ProgramTemplate, type ProgramTemplateInput,
@@ -37,10 +35,9 @@ const EMPTY_EDIT: EditState = {
 }
 
 export default function AdminTemplatesPage() {
-    const { user, isLoading: authLoading } = useAuth()
+    const { user, authLoading, isAdminUser, isReady: authReady } = useAdminGuard()
     const router = useRouter()
 
-    const [isAdminUser, setIsAdminUser] = useState(false)
     const [loading, setLoading] = useState(true)
     const [templates, setTemplates] = useState<ProgramTemplate[]>([])
     const [error, setError] = useState('')
@@ -61,27 +58,12 @@ export default function AdminTemplatesPage() {
     // Превью на десктопе
     const [previewId, setPreviewId] = useState<string | null>(null)
 
-    const userRef = useRef(user)
-    useEffect(() => { userRef.current = user }, [user])
-
     useEffect(() => {
-        if (authLoading) return
-        if (!user) {
-            const t = setTimeout(() => {
-                if (!userRef.current) router.replace('/auth')
-            }, 3000)
-            return () => clearTimeout(t)
-        }
+        if (authLoading || !authReady || !isAdminUser) return
 
         let cancelled = false
         const init = async () => {
             try {
-                const sessionOk = await ensureSession()
-                if (!sessionOk) { router.replace('/auth'); return }
-                const admin = await isAdmin(user)
-                if (cancelled) return
-                if (!admin) { router.replace('/dashboard'); return }
-                setIsAdminUser(true)
                 const data = await listTemplates()
                 if (!cancelled) setTemplates(data)
             } catch (e: unknown) {
@@ -92,20 +74,12 @@ export default function AdminTemplatesPage() {
         }
         init()
 
-        // Аварийный таймаут: если данные не успели загрузиться за 8с —
-        // снимаем спиннер, чтобы пользователь не сидел на лоадере вечно
-        // (см. .kiro/steering/desktop-page-load.md).
         const failsafe = setTimeout(() => {
-            if (!cancelled) {
-                console.warn('[Templates] Failsafe — forcing loading=false')
-                setLoading(false)
-            }
+            if (!cancelled) setLoading(false)
         }, 8000)
 
         return () => { cancelled = true; clearTimeout(failsafe) }
-        // user?.id стабилен — см. коммент в admin/page.tsx про гонку с onAuthStateChange.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, authLoading])
+    }, [user?.id, authLoading, authReady, isAdminUser])
 
     const allTags = useMemo(() => {
         const set = new Set<string>()
@@ -233,7 +207,7 @@ export default function AdminTemplatesPage() {
         }
     }
 
-    if (authLoading || loading) {
+    if (authLoading || !authReady || loading) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />

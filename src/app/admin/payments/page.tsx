@@ -1,14 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
     ArrowLeft, CreditCard, CheckCircle2, Clock, RefreshCw,
     Loader2, ChevronRight, Search, XCircle, Pencil, Trash2, X, Check
 } from 'lucide-react'
-import { useAuth } from '@/lib/auth'
-import { isAdmin, getAllPayments, confirmPayment, refundPayment, deletePayment, updatePayment, getPaymentsByMonth, type AdminPayment, type MonthlyPaymentStat } from '@/lib/services/admin'
-import { ensureSession } from '@/lib/supabase/client'
+import { useAdminGuard } from '@/lib/auth'
+import { getAllPayments, confirmPayment, refundPayment, deletePayment, updatePayment, getPaymentsByMonth, type AdminPayment, type MonthlyPaymentStat } from '@/lib/services/admin'
 import PaymentsChart from '@/components/admin/PaymentsChart'
 
 const PLAN_LABELS: Record<string, string> = {
@@ -24,10 +23,9 @@ const STATUS_CONFIG = {
 }
 
 export default function AdminPaymentsPage() {
-    const { user, isLoading: authLoading } = useAuth()
+    const { user, authLoading, isAdminUser, isReady: authReady } = useAdminGuard()
     const router = useRouter()
 
-    const [isAdminUser, setIsAdminUser] = useState(false)
     const [isLoading, setIsLoading] = useState(true)
     const [payments, setPayments] = useState<AdminPayment[]>([])
     const [monthlyStats, setMonthlyStats] = useState<MonthlyPaymentStat[]>([])
@@ -45,30 +43,13 @@ export default function AdminPaymentsPage() {
     // Delete confirmation state
     const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null)
 
-    const userRef = useRef(user)
-    useEffect(() => { userRef.current = user }, [user])
-
     useEffect(() => {
-        if (authLoading) return
-        if (!user) {
-            const t = setTimeout(() => {
-                if (!userRef.current) router.replace('/auth')
-            }, 3000)
-            return () => clearTimeout(t)
-        }
+        if (authLoading || !authReady || !isAdminUser) return
 
         let cancelled = false
 
         const load = async () => {
             try {
-                const sessionOk = await ensureSession()
-                if (!sessionOk) { router.replace('/auth'); return }
-                const admin = await isAdmin(user)
-                if (cancelled) return
-                if (!admin) { router.replace('/admin'); return }
-
-                setIsAdminUser(true)
-
                 const [paymentsData, statsData] = await Promise.all([
                     getAllPayments(),
                     getPaymentsByMonth(12),
@@ -88,9 +69,7 @@ export default function AdminPaymentsPage() {
             if (!cancelled) setIsLoading(false)
         }, 8000)
         return () => { cancelled = true; clearTimeout(failsafe) }
-        // user?.id стабилен — см. коммент в admin/page.tsx про гонку с onAuthStateChange.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, authLoading])
+    }, [user?.id, authLoading, authReady, isAdminUser])
 
     const handleConfirm = async (paymentId: string) => {
         setActionLoading(paymentId)
@@ -183,7 +162,7 @@ export default function AdminPaymentsPage() {
     const totalConfirmed = payments.filter(p => p.status === 'confirmed').reduce((s, p) => s + p.amount, 0)
     const totalPending = payments.filter(p => p.status === 'pending').length
 
-    if (authLoading || isLoading) {
+    if (authLoading || !authReady || isLoading) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />

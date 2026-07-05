@@ -1,50 +1,31 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Users, Search, Loader2, ChevronRight, Calendar, CheckCircle2, Archive, ArchiveRestore, Trash2, UserPlus } from 'lucide-react'
-import { useAuth } from '@/lib/auth'
-import { isAdmin, getAllUsers, archiveUser, unarchiveUser, deleteUser, type UserWithProgress } from '@/lib/services/admin'
-import { ensureSession } from '@/lib/supabase/client'
+import { useAdminGuard } from '@/lib/auth'
+import { getAllUsers, archiveUser, unarchiveUser, deleteUser, type UserWithProgress } from '@/lib/services/admin'
 
 type Tab = 'active' | 'archived'
 
 export default function AdminClientsPage() {
-    const { user, isLoading: authLoading } = useAuth()
+    const { user, authLoading, isAdminUser, isReady: authReady } = useAdminGuard()
     const router = useRouter()
 
     const [clients, setClients] = useState<UserWithProgress[]>([])
     const [searchQuery, setSearchQuery] = useState('')
     const [isLoading, setIsLoading] = useState(true)
-    const [isAdminUser, setIsAdminUser] = useState(false)
     const [tab, setTab] = useState<Tab>('active')
     const [actionLoading, setActionLoading] = useState<string | null>(null)
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
-    const userRef = useRef(user)
-    useEffect(() => { userRef.current = user }, [user])
-
     useEffect(() => {
-        if (authLoading) return
-        if (!user) {
-            const t = setTimeout(() => {
-                if (!userRef.current) router.replace('/auth')
-            }, 3000)
-            return () => clearTimeout(t)
-        }
+        if (authLoading || !authReady || !isAdminUser) return
 
         let cancelled = false
 
         const load = async () => {
             try {
-                const sessionOk = await ensureSession()
-                if (!sessionOk) { router.replace('/auth'); return }
-                const admin = await isAdmin(user)
-                if (cancelled) return
-                if (!admin) { router.replace('/dashboard'); return }
-
-                setIsAdminUser(true)
-
                 const data = await getAllUsers()
                 if (cancelled) return
                 const clientsOnly = data.filter(u => u.role !== 'admin' && u.role !== 'trainer')
@@ -61,11 +42,7 @@ export default function AdminClientsPage() {
             if (!cancelled) setIsLoading(false)
         }, 8000)
         return () => { cancelled = true; clearTimeout(failsafe) }
-        // user?.id — стабильная строка: onAuthStateChange создаёт новый объект
-        // user, и зависимость от объекта перезапускала бы эффект, отменяя
-        // загрузку до finally → вечный спиннер при SPA-навигации.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, authLoading])
+    }, [user?.id, authLoading, authReady, isAdminUser])
 
     const activeClients = clients.filter(c => !c.is_archived)
     const archivedClients = clients.filter(c => c.is_archived)
@@ -127,7 +104,7 @@ export default function AdminClientsPage() {
         }
     }
 
-    if (authLoading || isLoading) {
+    if (authLoading || !authReady || isLoading) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />

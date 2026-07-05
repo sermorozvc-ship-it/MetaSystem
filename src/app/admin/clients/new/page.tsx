@@ -1,19 +1,17 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
     ArrowLeft, UserPlus, Loader2, CheckCircle2,
     Mail, Lock, User, CreditCard, Calendar, Clock
 } from 'lucide-react'
-import { useAuth } from '@/lib/auth'
-import { isAdmin, createClientManually } from '@/lib/services/admin'
-import { ensureSession } from '@/lib/supabase/client'
+import { useAdminGuard } from '@/lib/auth'
+import { createClientManually } from '@/lib/services/admin'
 
 export default function NewClientPage() {
-    const { user, isLoading: authLoading } = useAuth()
+    const { user, authLoading, isAdminUser, isReady: authReady } = useAdminGuard()
     const router = useRouter()
-    const [isAdminUser, setIsAdminUser] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [success, setSuccess] = useState<{ userId: string; email: string } | null>(null)
     const [error, setError] = useState('')
@@ -40,28 +38,7 @@ export default function NewClientPage() {
         setSubscriptionEnd(d.toISOString().split('T')[0])
     }, [subscriptionStart, planMonths])
 
-    const userRef = useRef(user)
-    useEffect(() => { userRef.current = user }, [user])
 
-    useEffect(() => {
-        if (authLoading) return
-        if (user) return
-        const t = setTimeout(() => {
-            if (!userRef.current) router.replace('/auth')
-        }, 3000)
-        return () => clearTimeout(t)
-    }, [user, authLoading, router])
-
-    useEffect(() => {
-        if (!user) return
-        ensureSession().then(ok => {
-            if (!ok) { router.replace('/auth'); return }
-            isAdmin(user).then(admin => {
-                if (!admin) router.replace('/dashboard')
-                else setIsAdminUser(true)
-            })
-        })
-    }, [user, router])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -92,7 +69,7 @@ export default function NewClientPage() {
         setIsSubmitting(false)
     }
 
-    if (authLoading || !isAdminUser) {
+    if (authLoading || !authReady || !isAdminUser) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />

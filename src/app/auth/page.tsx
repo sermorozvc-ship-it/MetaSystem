@@ -51,7 +51,10 @@ function AuthContent() {
     // (см. desktop-page-load.md). Сами сервисы тоже под withTimeout, но
     // эта внешняя крышка — последняя страховка.
     const getRedirectTarget = async (loggedInUser: { id?: string; email?: string | null; user_metadata?: any }) => {
-        if (isAdminUser(loggedInUser)) return '/admin'
+        if (isAdminUser(loggedInUser)) {
+            if (returnTo && returnTo.startsWith('/admin')) return returnTo
+            return '/admin'
+        }
 
         const FALLBACK = '/dashboard'
 
@@ -120,18 +123,16 @@ function AuthContent() {
         }
     }
 
-    // Если пользователь уже авторизован — редиректим
+    // Если пользователь уже авторизован — редиректим без hard reload
     useEffect(() => {
         if (!authLoading && user && !isRedirecting) {
             setIsRedirecting(true)
             setRedirectMessage('Перенаправляем...')
-            if (isAdminUser(user)) {
-                window.location.href = '/admin'
-            } else {
-                getRedirectTarget(user).then(target => { window.location.href = target })
-            }
+            getRedirectTarget(user).then(target => {
+                router.replace(target)
+            })
         }
-    }, [user, authLoading, isRedirecting])
+    }, [user, authLoading, isRedirecting, router])
 
     // Таймер кулдауна для повторной отправки письма
     useEffect(() => {
@@ -170,7 +171,7 @@ function AuthContent() {
                     const { createClient } = await import('@/lib/supabase/client')
                     const { data: { user: loggedUser } } = await createClient().auth.getUser()
                     const target = loggedUser ? await getRedirectTarget(loggedUser) : returnTo
-                    setTimeout(() => { window.location.href = target }, 800)
+                    setTimeout(() => { router.replace(target) }, 800)
                 }
             } else {
                 if (password.length < 6) {
@@ -198,7 +199,7 @@ function AuthContent() {
                     if (target.includes('/payment')) {
                         target += (target.includes('?') ? '&' : '?') + 'registered=true'
                     }
-                    setTimeout(() => { window.location.href = target }, 1500)
+                    setTimeout(() => { router.replace(target) }, 1500)
                 }
             }
         } catch (err) {
