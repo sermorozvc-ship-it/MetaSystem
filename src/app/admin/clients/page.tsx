@@ -1,52 +1,22 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Users, Search, Loader2, ChevronRight, Calendar, CheckCircle2, Archive, ArchiveRestore, Trash2, UserPlus, RefreshCw } from 'lucide-react'
-import { useAdminGuard } from '@/lib/auth'
-import { getAllUsers, archiveUser, unarchiveUser, deleteUser, type UserWithProgress } from '@/lib/services/admin'
+import { useAdminGuard, useAdminClientsList } from '@/lib/auth'
+import { archiveUser, unarchiveUser, deleteUser, type UserWithProgress } from '@/lib/services/admin'
 
 type Tab = 'active' | 'archived'
 
 export default function AdminClientsPage() {
-    const { user, authLoading, isAdminUser, isReady: authReady } = useAdminGuard()
+    const { user, authLoading } = useAdminGuard()
+    const { clients, setClients, isLoading, loadError, reload } = useAdminClientsList()
     const router = useRouter()
 
-    const [clients, setClients] = useState<UserWithProgress[]>([])
     const [searchQuery, setSearchQuery] = useState('')
-    const [isLoading, setIsLoading] = useState(true)
-    const [loadError, setLoadError] = useState<string | null>(null)
-    const [reloadKey, setReloadKey] = useState(0)
     const [tab, setTab] = useState<Tab>('active')
     const [actionLoading, setActionLoading] = useState<string | null>(null)
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
-
-    useEffect(() => {
-        if (authLoading || !authReady || !isAdminUser) return
-
-        let cancelled = false
-        setIsLoading(true)
-        setLoadError(null)
-
-        const load = async () => {
-            try {
-                const data = await getAllUsers()
-                if (cancelled) return
-                const clientsOnly = data.filter(u => u.role !== 'admin' && u.role !== 'trainer')
-                setClients(clientsOnly)
-            } catch (e: any) {
-                console.error('[AdminClients] load failed:', e)
-                if (!cancelled) {
-                    setLoadError(e?.message || 'Не удалось загрузить клиентов')
-                }
-            } finally {
-                if (!cancelled) setIsLoading(false)
-            }
-        }
-
-        load()
-        return () => { cancelled = true }
-    }, [user?.id, authLoading, authReady, isAdminUser, reloadKey])
 
     const activeClients = clients.filter(c => !c.is_archived)
     const archivedClients = clients.filter(c => c.is_archived)
@@ -82,7 +52,7 @@ export default function AdminClientsPage() {
         setActionLoading(null)
     }
 
-    const handleDelete = async (e: React.MouseEvent, clientId: string, name: string) => {
+    const handleDelete = async (e: React.MouseEvent, clientId: string) => {
         e.stopPropagation()
         if (confirmDelete !== clientId) {
             setConfirmDelete(clientId)
@@ -108,15 +78,10 @@ export default function AdminClientsPage() {
         }
     }
 
-    if (authLoading || !authReady || isLoading) {
-        return (
-            <div className="min-h-screen bg-bg-main flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-accent animate-spin" />
-            </div>
-        )
-    }
+    const waitingForAuth = authLoading && !user
+    const initialDataLoad = isLoading && clients.length === 0 && !loadError
 
-    if (!isAdminUser) {
+    if (waitingForAuth) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />
@@ -127,7 +92,6 @@ export default function AdminClientsPage() {
     return (
         <div className="min-h-screen bg-bg-main p-4 py-12">
             <div className="max-w-6xl mx-auto">
-                {/* Header */}
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-8">
                     <div className="min-w-0">
                         <h1 className="text-2xl sm:text-3xl font-display font-bold text-white mb-1">Клиенты</h1>
@@ -135,7 +99,7 @@ export default function AdminClientsPage() {
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0 self-start sm:self-auto">
                         <button
-                            onClick={() => setReloadKey(k => k + 1)}
+                            onClick={reload}
                             disabled={isLoading}
                             title="Обновить список"
                             className="glass-button-secondary flex items-center gap-2 text-sm px-3 py-2"
@@ -156,7 +120,7 @@ export default function AdminClientsPage() {
                     <div className="mb-6 p-4 rounded-xl bg-danger/10 border border-danger/30 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <p className="text-sm text-danger">{loadError}</p>
                         <button
-                            onClick={() => setReloadKey(k => k + 1)}
+                            onClick={reload}
                             className="glass-button-secondary text-sm px-4 py-2 self-start"
                         >
                             Повторить
@@ -164,7 +128,6 @@ export default function AdminClientsPage() {
                     </div>
                 )}
 
-                {/* Tabs */}
                 <div className="flex gap-2 mb-6">
                     <button
                         onClick={() => setTab('active')}
@@ -194,7 +157,6 @@ export default function AdminClientsPage() {
                     </button>
                 </div>
 
-                {/* Search */}
                 <div className="glass-card p-4 mb-6">
                     <div className="relative">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted" />
@@ -208,15 +170,18 @@ export default function AdminClientsPage() {
                     </div>
                 </div>
 
-                {/* Archive hint */}
                 {tab === 'archived' && archivedClients.length > 0 && (
                     <div className="mb-4 p-4 rounded-xl bg-danger/5 border border-danger/20 text-sm text-text-secondary">
                         ⚠️ Удаление из архива необратимо — все данные клиента будут удалены навсегда.
                     </div>
                 )}
 
-                {/* List */}
-                {displayed.length === 0 ? (
+                {initialDataLoad ? (
+                    <div className="glass-card p-12 flex flex-col items-center justify-center gap-4">
+                        <Loader2 className="w-10 h-10 text-accent animate-spin" />
+                        <p className="text-text-secondary text-sm">Загружаем список клиентов...</p>
+                    </div>
+                ) : displayed.length === 0 ? (
                     <div className="glass-card p-12 text-center">
                         {tab === 'archived'
                             ? <Archive className="w-16 h-16 text-text-muted mx-auto mb-4" />
@@ -245,7 +210,6 @@ export default function AdminClientsPage() {
                                     onClick={() => router.push(`/admin/clients/${client.id}`)}
                                     className={`glass-card p-4 sm:p-6 cursor-pointer hover:border-accent transition-all ${client.is_archived ? 'opacity-70' : ''}`}
                                 >
-                                    {/* Верхняя строка: имя + бейдж + стрелка */}
                                     <div className="flex items-center justify-between gap-2 mb-2">
                                         <div className="flex items-center gap-2 min-w-0 flex-wrap">
                                             <h3 className="text-lg sm:text-xl font-display font-bold text-white truncate">
@@ -264,7 +228,6 @@ export default function AdminClientsPage() {
                                         <ChevronRight className="w-5 h-5 text-text-muted flex-shrink-0" />
                                     </div>
 
-                                    {/* Инфо */}
                                     <p className="text-sm text-text-secondary mb-2">{client.email}</p>
                                     <div className="flex items-center gap-4 text-sm flex-wrap mb-3">
                                         {client.subscription_end_date && (
@@ -286,7 +249,6 @@ export default function AdminClientsPage() {
                                         )}
                                     </div>
 
-                                    {/* Кнопки действий — отдельная строка снизу */}
                                     <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
                                         {tab === 'active' ? (
                                             <button
@@ -316,7 +278,7 @@ export default function AdminClientsPage() {
                                                     <span className="hidden sm:inline">Восстановить</span>
                                                 </button>
                                                 <button
-                                                    onClick={e => handleDelete(e, client.id, client.full_name || 'клиента')}
+                                                    onClick={e => handleDelete(e, client.id)}
                                                     disabled={isProcessing}
                                                     className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border transition-all ${
                                                         isConfirmingDelete

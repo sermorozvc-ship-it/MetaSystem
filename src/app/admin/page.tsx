@@ -7,6 +7,7 @@ import {
     CreditCard, CheckCircle2, Clock, ChevronRight
 } from 'lucide-react'
 import { useAdminGuard } from '@/lib/auth'
+import { setAdminClientsCache } from '@/lib/auth/admin-clients-cache'
 import { getAllUsers, getAdminStats, type UserWithProgress } from '@/lib/services/admin'
 
 export default function AdminDashboardPage() {
@@ -39,6 +40,7 @@ export default function AdminDashboardPage() {
                 if (cancelled) return
                 const clientsOnly = usersData.filter((u) => u.role !== 'admin' && u.role !== 'trainer')
                 setClients(clientsOnly)
+                setAdminClientsCache(clientsOnly)
                 setStats(statsData)
             } catch (e) {
                 console.error('Error loading admin data:', e)

@@ -13,6 +13,7 @@
 // и хендлеры маршрутов просто возвращают этот ответ как есть.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { createClient as createSupabaseAdmin, type SupabaseClient } from '@supabase/supabase-js'
 
 const ALLOWED_ROLES = ['admin', 'trainer', 'curator']
@@ -47,9 +48,31 @@ export type AdminAuthResult =
  * При успехе возвращает userId + готовый service-role клиент.
  * При провале — NextResponse, который маршрут должен сразу вернуть.
  */
-export async function requireAdmin(request: NextRequest): Promise<AdminAuthResult> {
+async function resolveAccessToken(request: NextRequest): Promise<string | null> {
     const authHeader = request.headers.get('authorization') || ''
-    const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+    const bearer = authHeader.replace(/^Bearer\s+/i, '').trim()
+    if (bearer) return bearer
+
+    try {
+        const cookieClient = createServerClient(getServiceUrl(), process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+            cookies: {
+                getAll() {
+                    return request.cookies.getAll()
+                },
+                setAll(_cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
+                    // read-only в API route
+                },
+            },
+        })
+        const { data: { session } } = await cookieClient.auth.getSession()
+        return session?.access_token ?? null
+    } catch {
+        return null
+    }
+}
+
+export async function requireAdmin(request: NextRequest): Promise<AdminAuthResult> {
+    const token = await resolveAccessToken(request)
     if (!token) {
         return { ok: false, response: NextResponse.json({ error: 'Не авторизован' }, { status: 401 }) }
     }

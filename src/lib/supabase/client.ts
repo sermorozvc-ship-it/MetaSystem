@@ -491,6 +491,13 @@ function isJwtFresh(accessToken: string, skewSeconds: number = 60): boolean {
     }
 }
 
+/** Синхронное чтение свежего access_token из localStorage (без inTabLock). */
+export function getStoredAccessTokenSync(): string | null {
+    const token = readStoredTokenFromLocalStorage()
+    if (token && isJwtFresh(token)) return token
+    return null
+}
+
 function readStoredTokenFromLocalStorage(): string | null {
     if (typeof window === 'undefined') return null
 
