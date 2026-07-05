@@ -8,6 +8,8 @@ import { ensureSession } from '@/lib/supabase/client'
 
 const AUTH_GRACE_MS = 5000
 
+let guardAdminCache: { userId: string; isAdmin: boolean } | null = null
+
 /**
  * Общая защита админ-страниц: не редиректим на /auth при кратковременном
  * user=null (TOKEN_REFRESHED) и при таймауте ensureSession, если user
@@ -17,8 +19,12 @@ export function useAdminGuard() {
     const { user, isLoading: authLoading } = useAuth()
     const router = useRouter()
     const pathname = usePathname()
-    const [isAdminUser, setIsAdminUser] = useState(false)
-    const [isReady, setIsReady] = useState(false)
+    const [isAdminUser, setIsAdminUser] = useState(
+        () => !!(user?.id && guardAdminCache?.userId === user.id && guardAdminCache.isAdmin)
+    )
+    const [isReady, setIsReady] = useState(
+        () => !!(user?.id && guardAdminCache?.userId === user.id)
+    )
 
     const userRef = useRef(user)
     useEffect(() => { userRef.current = user }, [user])
@@ -52,6 +58,9 @@ export function useAdminGuard() {
 
                 const admin = await isAdmin(user)
                 if (cancelled) return
+                if (user?.id) {
+                    guardAdminCache = { userId: user.id, isAdmin: admin }
+                }
                 if (!admin) {
                     router.replace('/dashboard')
                     return

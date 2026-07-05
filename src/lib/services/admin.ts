@@ -165,14 +165,11 @@ export async function isAdmin(userParam?: { id?: string; email?: string | null; 
     }
 }
 
-// Get all users with progress stats
-export async function getAllUsers(): Promise<UserWithProgress[]> {
+/** Клиентский fallback: прямой Supabase, если API недоступен */
+async function getAllUsersClientFallback(): Promise<UserWithProgress[]> {
     const supabase = createClient()
-    console.log('[Admin] Fetching all users...')
-
     let profiles: any[] | null = null
 
-    // 1. Попробовать RPC, если не сработает — прямой запрос к profiles
     try {
         const { data, error } = await withTimeout<{ data: any[] | null; error: any }>(
             supabase.rpc('get_all_users_secure'),
@@ -182,86 +179,57 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
         if (!error && data) {
             profiles = data
         } else {
-            console.warn('[Admin] RPC failed, trying direct query:', error?.message)
             const fallback = await withTimeout<{ data: any[] | null; error: any }>(
-                supabase
-                    .from('profiles')
-                    .select('*')
-                    .order('created_at', { ascending: false }),
+                supabase.from('profiles').select('*').order('created_at', { ascending: false }),
                 'getAllUsers:profiles',
                 8_000,
             )
-
-            if (fallback.error) {
-                throw new Error(fallback.error.message)
-            }
+            if (fallback.error) throw new Error(fallback.error.message)
             profiles = fallback.data
         }
     } catch (e: any) {
-        console.error('[Admin] Exception fetching profiles:', e)
-        // Возвращаем пустой массив вместо throw — иначе админка висит на спиннере
-        return []
+        console.error('[Admin] Client fallback failed:', e)
+        throw e
     }
 
-    if (!profiles || profiles.length === 0) {
-        return []
-    }
+    if (!profiles?.length) return []
 
-    // 2. Параллельная загрузка прогресса, отчётов и платежей
-    let allProgress: any[] = []
-    let allReports: any[] = []
-    let allPayments: any[] = []
+    const [progressResult, reportsResult, paymentsResult] = await Promise.all([
+        withTimeout<{ data: any[] | null }>(
+            supabase.from('user_progress').select('user_id, completed').eq('completed', true),
+            'getAllUsers:progress', 6_000,
+        ).catch(() => ({ data: [] })),
+        withTimeout<{ data: any[] | null }>(
+            supabase.from('day_reports').select('user_id, created_at').order('created_at', { ascending: false }),
+            'getAllUsers:reports', 6_000,
+        ).catch(() => ({ data: [] })),
+        withTimeout<{ data: any[] | null }>(
+            supabase.from('payments').select('user_id, status, plan_type, created_at').order('created_at', { ascending: false }),
+            'getAllUsers:payments', 6_000,
+        ).catch(() => ({ data: [] })),
+    ])
 
-    try {
-        const [progressResult, reportsResult, paymentsResult] = await Promise.all([
-            withTimeout<{ data: any[] | null }>(
-                supabase.from('user_progress').select('user_id, completed').eq('completed', true),
-                'getAllUsers:progress', 6_000,
-            ).catch(() => ({ data: [] })),
-            withTimeout<{ data: any[] | null }>(
-                supabase.from('day_reports').select('user_id, created_at').order('created_at', { ascending: false }),
-                'getAllUsers:reports', 6_000,
-            ).catch(() => ({ data: [] })),
-            withTimeout<{ data: any[] | null }>(
-                supabase.from('payments').select('user_id, status, plan_type, created_at').order('created_at', { ascending: false }),
-                'getAllUsers:payments', 6_000,
-            ).catch(() => ({ data: [] })),
-        ])
-
-        allProgress = progressResult.data || []
-        allReports = reportsResult.data || []
-        allPayments = paymentsResult.data || []
-    } catch (e) {
-        console.warn('[Admin] Progress/reports/payments fetch failed:', e)
-    }
-
-    // Aggregate
     const progressMap = new Map<string, number>()
-    allProgress.forEach((p: any) => {
+    ;(progressResult.data || []).forEach((p: any) => {
         progressMap.set(p.user_id, (progressMap.get(p.user_id) || 0) + 1)
     })
 
-    const reportsMap = new Map<string, { count: number, last: string | null }>()
-    allReports.forEach((r: any) => {
+    const reportsMap = new Map<string, { count: number; last: string | null }>()
+    ;(reportsResult.data || []).forEach((r: any) => {
         const stats = reportsMap.get(r.user_id) || { count: 0, last: null }
         if (!stats.last) stats.last = r.created_at
         stats.count++
         reportsMap.set(r.user_id, stats)
     })
 
-    // Берём последний (свежий) платёж каждого пользователя
-    const paymentsMap = new Map<string, { status: string, plan_type: string | null, created_at: string }>()
-    allPayments.forEach((p: any) => {
+    const paymentsMap = new Map<string, { status: string; plan_type: string | null; created_at: string }>()
+    ;(paymentsResult.data || []).forEach((p: any) => {
         if (!paymentsMap.has(p.user_id)) {
-            paymentsMap.set(p.user_id, {
-                status: p.status,
-                plan_type: p.plan_type,
-                created_at: p.created_at
-            })
+            paymentsMap.set(p.user_id, { status: p.status, plan_type: p.plan_type, created_at: p.created_at })
         }
     })
 
-    const usersWithProgress = profiles.map((profile: any) => {
+    return profiles.map((profile: any) => {
         const reportStats = reportsMap.get(profile.id)
         const paymentInfo = paymentsMap.get(profile.id)
         return {
@@ -271,12 +239,40 @@ export async function getAllUsers(): Promise<UserWithProgress[]> {
             last_activity: reportStats?.last || profile.created_at,
             payment_status: paymentInfo?.status || 'none',
             payment_created_at: paymentInfo?.created_at || null,
-            plan_type: paymentInfo?.plan_type || null
+            plan_type: paymentInfo?.plan_type || null,
         }
     })
+}
 
-    console.log(`[Admin] Fetched ${usersWithProgress.length} users`)
-    return usersWithProgress
+// Get all users with progress stats (серверный API + retry, fallback на клиент)
+export async function getAllUsers(): Promise<UserWithProgress[]> {
+    const { adminFetch } = await import('@/lib/api/admin-fetch')
+    const delays = [0, 500, 1500]
+
+    for (let attempt = 0; attempt < delays.length; attempt++) {
+        if (delays[attempt] > 0) {
+            await new Promise((r) => setTimeout(r, delays[attempt]))
+        }
+        try {
+            const { users } = await adminFetch<{ users: UserWithProgress[] }>('/api/admin/users')
+            console.log(`[Admin] Fetched ${users?.length ?? 0} users via API (attempt ${attempt + 1})`)
+            return users ?? []
+        } catch (e) {
+            console.warn(`[Admin] getAllUsers API attempt ${attempt + 1} failed:`, e)
+            if (attempt === delays.length - 1) {
+                try {
+                    const users = await getAllUsersClientFallback()
+                    console.log(`[Admin] Fetched ${users.length} users via client fallback`)
+                    return users
+                } catch (fallbackErr) {
+                    console.error('[Admin] All getAllUsers paths failed:', fallbackErr)
+                    throw fallbackErr
+                }
+            }
+        }
+    }
+
+    return []
 }
 
 // Get single user details

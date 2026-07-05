@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Users, Search, Loader2, ChevronRight, Calendar, CheckCircle2, Archive, ArchiveRestore, Trash2, UserPlus } from 'lucide-react'
+import { Users, Search, Loader2, ChevronRight, Calendar, CheckCircle2, Archive, ArchiveRestore, Trash2, UserPlus, RefreshCw } from 'lucide-react'
 import { useAdminGuard } from '@/lib/auth'
 import { getAllUsers, archiveUser, unarchiveUser, deleteUser, type UserWithProgress } from '@/lib/services/admin'
 
@@ -15,6 +15,8 @@ export default function AdminClientsPage() {
     const [clients, setClients] = useState<UserWithProgress[]>([])
     const [searchQuery, setSearchQuery] = useState('')
     const [isLoading, setIsLoading] = useState(true)
+    const [loadError, setLoadError] = useState<string | null>(null)
+    const [reloadKey, setReloadKey] = useState(0)
     const [tab, setTab] = useState<Tab>('active')
     const [actionLoading, setActionLoading] = useState<string | null>(null)
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
@@ -23,6 +25,8 @@ export default function AdminClientsPage() {
         if (authLoading || !authReady || !isAdminUser) return
 
         let cancelled = false
+        setIsLoading(true)
+        setLoadError(null)
 
         const load = async () => {
             try {
@@ -30,19 +34,19 @@ export default function AdminClientsPage() {
                 if (cancelled) return
                 const clientsOnly = data.filter(u => u.role !== 'admin' && u.role !== 'trainer')
                 setClients(clientsOnly)
-            } catch (e) {
-                console.error(e)
+            } catch (e: any) {
+                console.error('[AdminClients] load failed:', e)
+                if (!cancelled) {
+                    setLoadError(e?.message || 'Не удалось загрузить клиентов')
+                }
             } finally {
                 if (!cancelled) setIsLoading(false)
             }
         }
 
         load()
-        const failsafe = setTimeout(() => {
-            if (!cancelled) setIsLoading(false)
-        }, 8000)
-        return () => { cancelled = true; clearTimeout(failsafe) }
-    }, [user?.id, authLoading, authReady, isAdminUser])
+        return () => { cancelled = true }
+    }, [user?.id, authLoading, authReady, isAdminUser, reloadKey])
 
     const activeClients = clients.filter(c => !c.is_archived)
     const archivedClients = clients.filter(c => c.is_archived)
@@ -129,14 +133,36 @@ export default function AdminClientsPage() {
                         <h1 className="text-2xl sm:text-3xl font-display font-bold text-white mb-1">Клиенты</h1>
                         <p className="text-sm text-text-secondary">Управление клиентами и программами</p>
                     </div>
-                    <button
-                        onClick={() => router.push('/admin/clients/new')}
-                        className="glass-button flex items-center gap-2 flex-shrink-0 text-sm self-start sm:self-auto"
-                    >
-                        <UserPlus className="w-4 h-4" />
-                        <span>Добавить клиента</span>
-                    </button>
+                    <div className="flex items-center gap-2 flex-shrink-0 self-start sm:self-auto">
+                        <button
+                            onClick={() => setReloadKey(k => k + 1)}
+                            disabled={isLoading}
+                            title="Обновить список"
+                            className="glass-button-secondary flex items-center gap-2 text-sm px-3 py-2"
+                        >
+                            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                        </button>
+                        <button
+                            onClick={() => router.push('/admin/clients/new')}
+                            className="glass-button flex items-center gap-2 text-sm"
+                        >
+                            <UserPlus className="w-4 h-4" />
+                            <span>Добавить клиента</span>
+                        </button>
+                    </div>
                 </div>
+
+                {loadError && (
+                    <div className="mb-6 p-4 rounded-xl bg-danger/10 border border-danger/30 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <p className="text-sm text-danger">{loadError}</p>
+                        <button
+                            onClick={() => setReloadKey(k => k + 1)}
+                            className="glass-button-secondary text-sm px-4 py-2 self-start"
+                        >
+                            Повторить
+                        </button>
+                    </div>
+                )}
 
                 {/* Tabs */}
                 <div className="flex gap-2 mb-6">
