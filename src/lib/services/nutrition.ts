@@ -2,7 +2,7 @@
 // Анкета по питанию — доступ есть только у клиентов, купивших план питания
 // (includes_nutrition = true в последнем подтверждённом платеже)
 
-import { createClient, safeGetUser } from '@/lib/supabase/client'
+import { createClient, safeGetUser, getAccessTokenWithRecovery } from '@/lib/supabase/client'
 import { withTimeout } from '@/lib/utils/with-timeout'
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -240,12 +240,13 @@ export async function getNutritionQuestionnaireByUserId(
 export async function upsertNutritionQuestionnaire(
   answers: NutritionAnswers
 ): Promise<NutritionQuestionnaire> {
-  const supabase = createClient()
-  const { error: authErr } = await supabase.auth.getUser()
-  if (authErr) throw new Error('Сессия истекла. Перезайдите.')
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Не удалось определить пользователя. Перезайдите.')
+  const { token, status } = await getAccessTokenWithRecovery()
+  if (!token) {
+    if (status === 'expired' || status === 'refresh_failed') {
+      throw new Error('Сессия истекла. Перезайдите.')
+    }
+    throw new Error('Не удалось определить пользователя. Перезайдите.')
+  }
 
   const res = await withTimeout(
     fetch('/api/questionnaire/nutrition-save', {

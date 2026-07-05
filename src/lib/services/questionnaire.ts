@@ -1,7 +1,7 @@
 // MetaSystem v2 — Questionnaire Service
 // Сервис для работы с анкетами клиентов
 
-import { createClient, safeGetUser } from '@/lib/supabase/client'
+import { createClient, safeGetUser, getAccessTokenWithRecovery } from '@/lib/supabase/client'
 import { withTimeout } from '@/lib/utils/with-timeout'
 
 export interface ClientQuestionnaire {
@@ -374,12 +374,13 @@ export async function getQuestionnaireByUserId(userId: string): Promise<ClientQu
 export async function upsertQuestionnaire(
   formData: QuestionnaireFormData
 ): Promise<ClientQuestionnaire> {
-  const supabase = createClient()
-  const { error: authErr } = await supabase.auth.getUser()
-  if (authErr) throw new Error('Сессия истекла. Перезайдите.')
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Не удалось определить пользователя. Перезайдите.')
+  const { token, status } = await getAccessTokenWithRecovery()
+  if (!token) {
+    if (status === 'expired' || status === 'refresh_failed') {
+      throw new Error('Сессия истекла. Перезайдите.')
+    }
+    throw new Error('Не удалось определить пользователя. Перезайдите.')
+  }
 
   const res = await withTimeout(
     fetch('/api/questionnaire/save', {
@@ -415,12 +416,13 @@ export async function uploadQuestionnairePhoto(
   file: File,
   type: 'front' | 'side' | 'back'
 ): Promise<string> {
-  const supabase = createClient()
-  const { error: authErr } = await supabase.auth.getUser()
-  if (authErr) throw new Error('Сессия истекла. Перезайдите.')
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Не удалось определить пользователя. Перезайдите.')
+  const { token, status } = await getAccessTokenWithRecovery()
+  if (!token) {
+    if (status === 'expired' || status === 'refresh_failed') {
+      throw new Error('Сессия истекла. Перезайдите.')
+    }
+    throw new Error('Не удалось определить пользователя. Перезайдите.')
+  }
 
   const form = new FormData()
   form.append('file', file)
