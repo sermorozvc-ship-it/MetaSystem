@@ -8,10 +8,14 @@ export async function fetchAllUsersForAdmin(service: SupabaseClient): Promise<Us
     let profiles: any[] | null = null
 
     const { data: rpcData, error: rpcError } = await service.rpc('get_all_users_secure')
-    if (!rpcError && rpcData) {
+    if (!rpcError && rpcData && rpcData.length > 0) {
         profiles = rpcData
     } else {
-        console.warn('[admin-users] RPC failed, direct query:', rpcError?.message)
+        if (rpcError) {
+            console.warn('[admin-users] RPC failed, direct query:', rpcError?.message)
+        } else {
+            console.warn('[admin-users] RPC returned empty (likely service-role call), falling back to direct query')
+        }
         const { data, error } = await service
             .from('profiles')
             .select('*')
