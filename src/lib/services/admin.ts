@@ -18,6 +18,8 @@ export interface UserProfile {
     has_nutrition_plan?: boolean
     /** Slug клиента в репозитории training-brain (clients/<slug>/...) */
     training_brain_client_id?: string | null
+    /** Видит ли клиент свои тренировочные программы */
+    programs_visible?: boolean
 }
 
 export interface UserWithProgress extends UserProfile {

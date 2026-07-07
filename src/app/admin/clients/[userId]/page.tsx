@@ -6,7 +6,7 @@ import {
     ArrowLeft, Dumbbell, TrendingUp, FileText, Plus,
     Loader2, Upload, X, Check, ChevronDown, ChevronUp,
     Download, CheckCircle2, Clock, Pencil, Archive, ArchiveRestore,
-    Apple, Copy, Calendar, RefreshCw, Layers, Save, Flame
+    Apple, Copy, Calendar, RefreshCw, Layers, Save, Flame, Eye, EyeOff
 } from 'lucide-react'
 import { useAdminGuard } from '@/lib/auth'
 import { getUserDetails, archiveUser, unarchiveUser } from '@/lib/services/admin'
@@ -1528,6 +1528,8 @@ export default function AdminClientDetailPage() {
     const [programs, setPrograms] = useState<TrainingProgram[]>([])
     const [nutritionPlans, setNutritionPlans] = useState<NutritionProgram[]>([])
     const [isArchiving, setIsArchiving] = useState(false)
+    const [programsVisible, setProgramsVisible] = useState(true)
+    const [togglingVisibility, setTogglingVisibility] = useState(false)
     const [clientPayment, setClientPayment] = useState<any>(null)
 
     // Upload nutrition plan modal state
@@ -1586,6 +1588,7 @@ export default function AdminClientDetailPage() {
                 ])
                 if (cancelled) return
                 setClientProfile(profile.status === 'fulfilled' ? profile.value : null)
+                setProgramsVisible(profile.status === 'fulfilled' ? (profile.value?.programs_visible ?? true) : true)
                 setQuestionnaire(quest.status === 'fulfilled' ? quest.value : null)
                 setPrograms(progs.status === 'fulfilled' ? progs.value : [])
                 setNutritionQ(nutQ.status === 'fulfilled' ? nutQ.value : null)
@@ -1641,6 +1644,24 @@ export default function AdminClientDetailPage() {
             alert('Ошибка: ' + error)
         }
         setIsArchiving(false)
+    }
+
+    const handleToggleProgramsVisible = async () => {
+        const newValue = !programsVisible
+        setTogglingVisibility(true)
+        try {
+            const { adminFetch } = await import('@/lib/api/admin-fetch')
+            await adminFetch(`/api/admin/clients/${userId}/programs-visible`, {
+                method: 'PATCH',
+                json: { programs_visible: newValue },
+            })
+            setProgramsVisible(newValue)
+            setClientProfile((prev: any) => ({ ...prev, programs_visible: newValue }))
+        } catch (e: any) {
+            alert('Ошибка: ' + (e?.message || 'неизвестная'))
+        } finally {
+            setTogglingVisibility(false)
+        }
     }
 
     const handleUploadProgram = async () => {
@@ -2566,10 +2587,31 @@ export default function AdminClientDetailPage() {
                             <h2 className="text-lg font-display font-bold text-white">
                                 Программы ({programs.length})
                             </h2>
-                            <button onClick={() => setShowUploadModal(true)} className="glass-button flex items-center gap-2 text-sm">
-                                <Plus className="w-4 h-4" />
-                                Загрузить программу
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleToggleProgramsVisible}
+                                    disabled={togglingVisibility}
+                                    className={`glass-button-secondary flex items-center gap-2 text-sm ${
+                                        programsVisible
+                                            ? 'text-accent hover:border-accent/40'
+                                            : 'text-danger hover:border-danger/40'
+                                    }`}
+                                    title={programsVisible ? 'Скрыть программы от клиента' : 'Показать программы клиенту'}
+                                >
+                                    {togglingVisibility ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : programsVisible ? (
+                                        <EyeOff className="w-4 h-4" />
+                                    ) : (
+                                        <Eye className="w-4 h-4" />
+                                    )}
+                                    <span>{programsVisible ? 'Скрыть' : 'Показать'}</span>
+                                </button>
+                                <button onClick={() => setShowUploadModal(true)} className="glass-button flex items-center gap-2 text-sm">
+                                    <Plus className="w-4 h-4" />
+                                    Загрузить программу
+                                </button>
+                            </div>
                         </div>
 
                         {/* Интеграция с training-brain */}
@@ -2588,6 +2630,13 @@ export default function AdminClientDetailPage() {
                                 }}
                             />
                         </div>
+
+                        {!programsVisible && (
+                            <div className="p-3 rounded-xl bg-danger/10 border border-danger/30 text-sm text-danger mb-4 flex items-center gap-2">
+                                <EyeOff className="w-4 h-4 flex-shrink-0" />
+                                <span>Программы скрыты от клиента. Клиент не видит свои тренировочные программы.</span>
+                            </div>
+                        )}
 
                         {programs.length === 0 ? (
                             <div className="glass-card p-12 text-center">
