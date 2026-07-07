@@ -4,10 +4,11 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
     Calendar, CheckCircle2, Clock, Lock, Loader2,
-    ChevronRight, Dumbbell, TrendingUp
+    ChevronRight, Dumbbell, TrendingUp, AlertTriangle
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { getAllMyTrainingData, type TrainingProgram, type TrainingEntry } from '@/lib/services/training'
+import { getMySubscriptionInfo } from '@/lib/services/renewal'
 
 export default function ProgramsPage() {
     const { user, isLoading: authLoading } = useAuth()
@@ -17,6 +18,7 @@ export default function ProgramsPage() {
     const [currentProgram, setCurrentProgram] = useState<TrainingProgram | null>(null)
     const [isLoading, setIsLoading] = useState(true)
     const [completionStats, setCompletionStats] = useState<Record<string, number>>({})
+    const [subscriptionExpired, setSubscriptionExpired] = useState(false)
 
     const userRef = useRef(user)
     useEffect(() => { userRef.current = user }, [user])
@@ -86,6 +88,16 @@ export default function ProgramsPage() {
 
         return () => { cancelled = true }
     }, [user?.id])
+
+    // Проверяем статус подписки
+    useEffect(() => {
+        if (!user) return
+        let cancelled = false
+        getMySubscriptionInfo().then(info => {
+            if (!cancelled) setSubscriptionExpired(info.isExpired)
+        })
+        return () => { cancelled = true }
+    }, [user])
 
     const getProgramStatus = (program: TrainingProgram) => {
         const today = new Date().toISOString().split('T')[0]
@@ -193,7 +205,21 @@ export default function ProgramsPage() {
                 )}
 
                 {/* Programs List */}
-                {programs.length === 0 ? (
+                {subscriptionExpired ? (
+                    <div className="glass-card p-12 text-center">
+                        <AlertTriangle className="w-16 h-16 text-danger mx-auto mb-4" />
+                        <h3 className="text-xl font-display font-bold text-white mb-2">Подписка истекла</h3>
+                        <p className="text-text-secondary mb-6">
+                            Для доступа к тренировочным программам необходимо продлить подписку
+                        </p>
+                        <button
+                            onClick={() => router.push('/renew?expired=true')}
+                            className="glass-button bg-accent text-bg-main font-semibold hover:bg-accent/90"
+                        >
+                            Продлить подписку
+                        </button>
+                    </div>
+                ) : programs.length === 0 ? (
                     <div className="glass-card p-12 text-center">
                         <Calendar className="w-16 h-16 text-text-muted mx-auto mb-4" />
                         <h3 className="text-xl font-display font-bold text-white mb-2">Программ пока нет</h3>

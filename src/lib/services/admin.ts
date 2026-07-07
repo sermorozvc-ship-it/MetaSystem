@@ -887,6 +887,7 @@ export async function confirmPayment(paymentId: string): Promise<{ success: bool
             subscription_start_date: subscriptionStartDate.toISOString().split('T')[0],
             subscription_end_date: subscriptionEndDate.toISOString().split('T')[0],
             has_nutrition_plan: payment.includes_nutrition || false,
+            programs_visible: true,
         })
         .eq('id', payment.user_id)
 

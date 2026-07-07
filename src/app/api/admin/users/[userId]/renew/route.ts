@@ -92,6 +92,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ userId
             subscription_end_date: newEndStr,
             has_nutrition_plan: includesNutrition ? true : (profile?.has_nutrition_plan ?? false),
             renewal_pending: false,
+            programs_visible: true,
         })
         .eq('id', userId)
 

@@ -182,6 +182,7 @@ async function handleOrphanPayment(
             subscription_start_date: subscriptionStartDate.toISOString().split('T')[0],
             subscription_end_date: subscriptionEndDate.toISOString().split('T')[0],
             has_nutrition_plan: includes_nutrition,
+            programs_visible: true,
         })
         .eq('id', userId)
 
@@ -263,6 +264,7 @@ async function handleInitialPayment(
                 subscription_start_date: subscriptionStartDate.toISOString().split('T')[0],
                 subscription_end_date: subscriptionEndDate.toISOString().split('T')[0],
                 has_nutrition_plan: paymentData.includes_nutrition || false,
+                programs_visible: true,
             })
             .eq('id', userId)
 
@@ -323,6 +325,7 @@ async function handleInitialPayment(
             subscription_start_date: subscriptionStartDate.toISOString().split('T')[0],
             subscription_end_date: subscriptionEndDate.toISOString().split('T')[0],
             has_nutrition_plan: includes_nutrition,
+            programs_visible: true,
         })
         .eq('id', userId)
 
@@ -392,6 +395,7 @@ async function handleRenewalPayment(
             subscription_end_date: newEnd.toISOString().split('T')[0],
             has_nutrition_plan: payment.includes_nutrition ? true : undefined,
             renewal_pending: false,
+            programs_visible: true,
         })
         .eq('id', userId)
 

@@ -380,6 +380,7 @@ export async function confirmRenewal(
           ? true
           : undefined, // не перезаписываем если уже было
         renewal_pending: false,
+        programs_visible: true,
       })
       .eq('id', payment.user_id)
 
