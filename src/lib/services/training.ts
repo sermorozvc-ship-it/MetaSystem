@@ -120,20 +120,23 @@ export interface TrainingEntry {
 }
 
 /**
- * Получить все программы пользователя
+ * Получить все программы пользователя.
+ * Если передан userId — используем его напрямую (без сетевого getUser()).
+ * Это критично для первичной загрузки страницы, когда AuthContext уже
+ * знает user.id из localStorage, а safeGetUser() ещё не вернулся.
  */
-export async function getMyPrograms(): Promise<TrainingProgram[]> {
+export async function getMyPrograms(userId?: string): Promise<TrainingProgram[]> {
   const supabase = createClient()
-  
-  const user = await safeGetUser()
-  if (!user) throw new Error('Not authenticated')
+
+  const uid = userId ?? (await safeGetUser())?.id
+  if (!uid) throw new Error('Not authenticated')
 
   try {
     const { data, error } = await withTimeout<{ data: TrainingProgram[] | null; error: any }>(
       supabase
         .from('training_programs')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', uid)
         .order('week_number', { ascending: false }),
       'getMyPrograms',
     )
@@ -518,30 +521,34 @@ export async function getClientPrograms(userId: string): Promise<TrainingProgram
 }
 
 /**
- * Получить все записи тренировок пользователя (для статистики прогресса)
- * Возвращает записи вместе с данными программы (start_date, program_data)
+ * Получить все записи тренировок пользователя (для статистики прогресса).
+ * Возвращает записи вместе с данными программы (start_date, program_data).
+ * Если передан userId — используем его напрямую (без сетевого getUser()).
  */
-export async function getAllMyTrainingData(): Promise<{
+export async function getAllMyTrainingData(userId?: string): Promise<{
   programs: TrainingProgram[]
   entries: TrainingEntry[]
 }> {
   const supabase = createClient()
 
-  const user = await safeGetUser()
-  if (!user) throw new Error('Not authenticated')
+  const uid = userId ?? (await safeGetUser())?.id
+  if (!uid) throw new Error('Not authenticated')
 
-  const [programsRes, entriesRes] = await Promise.all([
-    supabase
-      .from('training_programs')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('week_number', { ascending: true }),
-    supabase
-      .from('training_entries')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: true }),
-  ])
+  const [programsRes, entriesRes] = await withTimeout<[{ data: TrainingProgram[] | null }, { data: TrainingEntry[] | null }]> (
+    Promise.all([
+      supabase
+        .from('training_programs')
+        .select('*')
+        .eq('user_id', uid)
+        .order('week_number', { ascending: true }),
+      supabase
+        .from('training_entries')
+        .select('*')
+        .eq('user_id', uid)
+        .order('created_at', { ascending: true }),
+    ]),
+    'getAllMyTrainingData',
+  )
 
   return {
     programs: programsRes.data || [],

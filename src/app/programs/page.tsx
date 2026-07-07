@@ -7,8 +7,7 @@ import {
     ChevronRight, Dumbbell, TrendingUp
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { getMyPrograms, type TrainingProgram } from '@/lib/services/training'
-import { getProgramEntries } from '@/lib/services/training'
+import { getAllMyTrainingData, type TrainingProgram, type TrainingEntry } from '@/lib/services/training'
 
 export default function ProgramsPage() {
     const { user, isLoading: authLoading } = useAuth()
@@ -39,34 +38,37 @@ export default function ProgramsPage() {
     // возвращал [] из-за гонки/таймаута — список программ «пропадал»
     // до следующего ручного reload. См. .kiro/steering/desktop-page-load.md
     useEffect(() => {
-        if (!user) return
+        if (!user?.id) return
 
         let cancelled = false
 
         const loadPrograms = async () => {
             try {
-                const allPrograms = await getMyPrograms()
+                // Один запрос: и программы, и записи — без N+1.
+                // Передаём user.id напрямую, чтобы safeGetUser() (сетевой)
+                // не блокировал загрузку при холодном старте.
+                const { programs: allPrograms, entries: allEntries } =
+                    await getAllMyTrainingData(user.id)
                 if (cancelled) return
 
-                // Не затираем уже загруженные программы пустым ответом —
-                // это может быть таймаут/RLS-флап. Лучше показать прежний
-                // список, чем мигнуть пустотой.
                 setPrograms(prev => (allPrograms.length === 0 && prev.length > 0 ? prev : allPrograms))
 
-                // Определяем текущую программу по ДАТАМ, а не по полю status в БД.
-                // getCurrentProgram() фильтрует по status='active', но тренер может
-                // не обновить статус вовремя — тогда fallback берёт последнюю по
-                // week_number (будущую). Дата今天 — единственный надёжный критерий.
                 const today = new Date().toISOString().split('T')[0]
                 const dateMatch = allPrograms.find(p => p.start_date <= today && p.end_date >= today)
                 const current = dateMatch ?? (allPrograms.length > 0 ? allPrograms[0] : null)
                 setCurrentProgram(prev => (current === null && prev ? prev : current))
 
-                // Загружаем статистику заполнения для каждой программы
+                // Считаем статистику из уже загруженных записей
+                const entriesByProgram = new Map<string, TrainingEntry[]>()
+                for (const entry of allEntries) {
+                    const list = entriesByProgram.get(entry.program_id) ?? []
+                    list.push(entry)
+                    entriesByProgram.set(entry.program_id, list)
+                }
+
                 const stats: Record<string, number> = {}
                 for (const program of allPrograms) {
-                    if (cancelled) return
-                    const entries = await getProgramEntries(program.id)
+                    const entries = entriesByProgram.get(program.id) ?? []
                     const completedDays = entries.filter((e) => e.completed_at).length
                     const totalDays = program.program_data.days.length
                     stats[program.id] = totalDays > 0 ? (completedDays / totalDays) * 100 : 0

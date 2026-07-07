@@ -77,7 +77,7 @@ export default function DashboardPage() {
         const loadDashboardData = async () => {
             try {
                 const [allPrograms, metric, qDone, needsNutrition, nutritionDone, subInfoData] = await Promise.all([
-                    getMyPrograms(),
+                    getMyPrograms(user.id),
                     getLatestMetric(),
                     isQuestionnaireCompleted(),
                     isNutritionQuestionnaireRequired(),
