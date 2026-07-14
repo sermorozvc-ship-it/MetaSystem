@@ -1678,53 +1678,28 @@ export default function AdminClientDetailPage() {
 
             // Грузим через серверный API /api/admin/create-program — он использует
             // UPSERT по (user_id, week_number) и сохраняет training_entries клиента.
-            // Раньше тут был DELETE + INSERT через захардкоженный service_role
-            // ключ — это и удаляло заполненный дневник через ON DELETE CASCADE,
-            // и было утечкой ключа в клиентский бандл.
-            const { createClient } = await import('@/lib/supabase/client')
-            const supabase = createClient()
-            // getUser() форсирует рефRESH токена — без этого getSession()
-            // отдаёт просроченный JWT из localStorage и API возвращает 401.
-            const { error: authErr } = await Promise.race([
-                supabase.auth.getUser(),
-                new Promise<{ error: { message: string } }>((resolve) =>
-                    setTimeout(() => resolve({ error: { message: 'Auth timeout' } }), 5_000)
-                ),
-            ])
-            if (authErr) {
-                setUploadError('Сессия истекла. Перезайдите в админку.')
+            // adminFetch сам достаёт/обновляет access_token (с retry), без ложных
+            // «сессия истекла» при таймауте getUser на занятом inTabLock.
+            const { adminFetch } = await import('@/lib/api/admin-fetch')
+            let data: any
+            try {
+                const result = await adminFetch<{ program: any }>('/api/admin/create-program', {
+                    method: 'POST',
+                    json: {
+                        userId,
+                        weekNumber,
+                        startDate,
+                        endDate,
+                        trainingDaysCount: trainingDays,
+                        programMd,
+                        programData,
+                    },
+                })
+                data = result?.program
+            } catch (e: any) {
+                setUploadError('Ошибка: ' + (e?.message || 'неизвестная'))
                 return
             }
-            const { data: { session } } = await supabase.auth.getSession()
-            if (!session?.access_token) {
-                setUploadError('Нет токена сессии. Перезайдите в админку.')
-                return
-            }
-
-            const res = await fetch('/api/admin/create-program', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${session.access_token}`,
-                },
-                body: JSON.stringify({
-                    userId,
-                    weekNumber,
-                    startDate,
-                    endDate,
-                    trainingDaysCount: trainingDays,
-                    programMd,
-                    programData,
-                }),
-            })
-
-            if (!res.ok) {
-                const errBody = await res.json().catch(() => ({}))
-                setUploadError('Ошибка: ' + (errBody.error || `HTTP ${res.status}`))
-                return
-            }
-
-            const { program: data } = await res.json()
             if (!data) {
                 setUploadError('Сервер не вернул программу')
                 return
@@ -1749,16 +1724,15 @@ export default function AdminClientDetailPage() {
             // Но фактически create-program уже сделал sendPushDirect, так что
             // лишний вызов мог бы дублировать пуши. Поэтому просто не зовём его здесь.
 
-            // Обновляем список программ — вытаскиваем через тот же контекст RLS
-            // (админ видит все training_programs клиентов)
-            supabase
-                .from('training_programs')
-                .select('*')
-                .eq('user_id', userId)
-                .order('week_number', { ascending: false })
-                .then(({ data: updated }) => {
-                    if (updated) setPrograms(updated as TrainingProgram[])
-                })
+            // Обновляем список программ локально (create-program уже вернул запись)
+            setPrograms((prev) => {
+                const rest = prev.filter(
+                    (p) => p.id !== data.id && p.week_number !== data.week_number,
+                )
+                return [data as TrainingProgram, ...rest].sort(
+                    (a, b) => (b.week_number ?? 0) - (a.week_number ?? 0),
+                )
+            })
         } catch (e: any) {
             setUploadError(e.message || 'Ошибка загрузки')
         } finally {

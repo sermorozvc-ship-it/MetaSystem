@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { GitBranch, Download, Loader2, Check, X, Pencil } from 'lucide-react'
 import { updateTrainingBrainClientId } from '@/lib/services/admin'
-import { createClient } from '@/lib/supabase/client'
 
 interface ImportResult {
     md: string
@@ -77,22 +76,15 @@ export default function TrainingBrainIntegration({ userId, initialSlug, onImport
         const timeout = setTimeout(() => controller.abort(), 60_000)
 
         try {
-            const sb = createClient()
-            const { error: authErr } = await Promise.race([
-                sb.auth.getUser(),
-                new Promise<{ error: { message: string } }>((resolve) =>
-                    setTimeout(() => resolve({ error: { message: 'Auth timeout' } }), 5_000)
-                ),
-            ])
-            if (authErr) throw new Error('Сессия истекла. Перезайдите в админку.')
-            const { data: { session } } = await sb.auth.getSession()
-            if (!session?.access_token) throw new Error('Нет токена сессии')
+            const { getAccessTokenWithRecovery } = await import('@/lib/supabase/client')
+            const { token } = await getAccessTokenWithRecovery()
+            if (!token) throw new Error('Сессия истекла. Перезайдите в админку.')
 
             const res = await fetch('/api/admin/training-brain/import', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    Authorization: `Bearer ${session.access_token}`,
+                    Authorization: `Bearer ${token}`,
                 },
                 body: JSON.stringify({ userId }),
                 signal: controller.signal,

@@ -620,6 +620,22 @@ export async function getAccessTokenForCriticalAction(): Promise<{
     }
 }
 
+/**
+ * Последний шанс: JWT из storage, если exp ещё не наступил.
+ * Нужен когда refresh/getSession упали из‑за inTabLock/таймаута, а access_token
+ * в localStorage ещё валиден — иначе админка ложно пишет «Сессия истекла» до F5.
+ */
+function usableStoredTokenFallback(skewSeconds: number = 0): {
+    token: string
+    status: AccessTokenStatus
+} | null {
+    const token = readStoredTokenFromLocalStorage()
+    if (token && isJwtFresh(token, skewSeconds)) {
+        return { token, status: 'fresh' }
+    }
+    return null
+}
+
 export async function getAccessTokenWithRecovery(): Promise<{
     token: string | null
     status: AccessTokenStatus
@@ -632,7 +648,7 @@ export async function getAccessTokenWithRecovery(): Promise<{
         // ПРИОРИТЕТ: localStorage → синхронно и мгновенно.
         // Чтение из storage не зависит от inTabLock и не висит на auth-refresh.
         // Это критично для handleCompleteDay / directSupabaseFetch, когда
-        // autosave держит inTabLock и.getSession() таймаутится на 3с × N вызовов.
+        // autosave держит inTabLock и getSession() таймаутится на 3с × N вызовов.
         const storedToken = readStoredTokenFromLocalStorage()
         if (storedToken && isJwtFresh(storedToken)) {
             pushAuthDebugEvent('token_fresh_from_storage')
@@ -641,7 +657,7 @@ export async function getAccessTokenWithRecovery(): Promise<{
 
         const supabase = createClient()
 
-        // localStorage не помог (нет токена или протух) — идём через Supabase клиент.
+        // localStorage не помог (нет токена или «почти протух») — идём через клиент.
         // getSession → inTabLock, может таймаутиться если autosave держит lock.
         const session = await getSessionWithTimeout(supabase, 3_000)
         if (session?.access_token) {
@@ -666,6 +682,18 @@ export async function getAccessTokenWithRecovery(): Promise<{
                 return { token: recoveredToken, status: 'refreshed' }
             }
 
+            // JWT ещё не истёк по exp — отдаём его вместо ложного «сессия истекла»
+            const stillUsable = usableStoredTokenFallback(0)
+            if (stillUsable) {
+                console.warn('[auth] refresh failed, using still-valid stored token')
+                pushAuthDebugEvent('token_usable_after_refresh_failure')
+                return stillUsable
+            }
+            if (isJwtFresh(session.access_token, 0)) {
+                pushAuthDebugEvent('token_usable_from_session_after_refresh_failure')
+                return { token: session.access_token, status: 'fresh' }
+            }
+
             pushAuthDebugEvent('token_expired_no_recovery')
             return { token: null, status: 'expired' }
         }
@@ -679,11 +707,38 @@ export async function getAccessTokenWithRecovery(): Promise<{
             return { token: refreshed.access_token, status: 'refreshed' }
         }
 
+        // getSession/refresh могли умереть на lock-таймауте, а JWT в storage жив
+        const afterLock = usableStoredTokenFallback(0)
+        if (afterLock) {
+            console.warn('[auth] session/refresh timed out, using still-valid stored token')
+            pushAuthDebugEvent('token_usable_after_session_timeout')
+            return afterLock
+        }
+
+        // Короткая пауза + второй refresh: lock мог освободиться (AuthContext/heartbeat)
+        await new Promise((r) => setTimeout(r, 400))
+        const refreshed2 = await refreshSessionWithTimeout(supabase, 6_000)
+        if (refreshed2?.access_token && isJwtFresh(refreshed2.access_token, 15)) {
+            pushAuthDebugEvent('token_refreshed_on_retry')
+            return { token: refreshed2.access_token, status: 'refreshed' }
+        }
+
+        const finalStored = usableStoredTokenFallback(0)
+        if (finalStored) {
+            pushAuthDebugEvent('token_usable_final_fallback')
+            return finalStored
+        }
+
         pushAuthDebugEvent('token_missing_no_recovery')
         return { token: null, status: 'missing' }
     } catch (e) {
         console.warn('[auth] getAccessTokenWithRecovery failed:', e)
         pushAuthDebugEvent('token_recovery_exception', { message: e instanceof Error ? e.message : String(e) })
+        const fallback = usableStoredTokenFallback(0)
+        if (fallback) {
+            pushAuthDebugEvent('token_usable_after_exception')
+            return fallback
+        }
         return { token: null, status: 'refresh_failed' }
     }
 }
