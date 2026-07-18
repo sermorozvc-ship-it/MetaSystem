@@ -22,7 +22,7 @@ export default function Navigation() {
     return () => clearTimeout(t)
   }, [])
 
-  const noNavPaths = ['/', '/auth', '/payment', '/questionnaire', '/onboarding', '/get-started']
+  const noNavPaths = ['/', '/auth', '/payment', '/questionnaire', '/onboarding', '/get-started', '/screening']
   if (!user || noNavPaths.some(p => pathname === p || pathname.startsWith(p + '/'))) {
     return null
   }

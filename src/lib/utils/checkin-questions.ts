@@ -21,11 +21,60 @@ export interface CheckinQuestion {
 }
 
 /**
+ * Вопросы логирования подходов, которые иногда попадают в начало блока
+ * «Чек-ин в конце недели» из training-brain / старых MD.
+ * В недельном чек-ине их быть не должно — это поля дневника упражнения.
+ */
+const EXERCISE_LOGGING_QUESTION_RE =
+    /финальный\s+рабочий\s+вес|фактические\s+повторения|фактический\s+rir|техника\s+плыл/i
+
+/** Первый «настоящий» вопрос недельного чек-ина */
+const SLEEP_QUALITY_RE = /качество\s+сна/i
+
+/**
+ * Чистит markdown блока чек-ина: убирает пункты логирования подходов
+ * и всё list-содержимое до «Качество сна».
+ * Используется при parseMdToJson, чтобы program_data.checkin сразу был чистым.
+ */
+export function normalizeCheckinMarkdown(checkinMd: string): string {
+    if (!checkinMd) return checkinMd
+
+    const lines = checkinMd.split('\n')
+
+    let sleepLineIdx = -1
+    for (let i = 0; i < lines.length; i++) {
+        const t = lines[i].trim()
+        if (t.startsWith('- ') && SLEEP_QUALITY_RE.test(t)) {
+            sleepLineIdx = i
+            break
+        }
+    }
+
+    if (sleepLineIdx >= 0) {
+        // Сохраняем не-list преамбулу (blockquote и т.п.), list-пункты до сна — выкидываем
+        const before = lines.slice(0, sleepLineIdx).filter(l => !l.trim().startsWith('- '))
+        return [...before, ...lines.slice(sleepLineIdx)].join('\n')
+    }
+
+    // Нет «Качество сна» — просто выкидываем известные пункты логирования
+    return lines
+        .filter(l => {
+            const t = l.trim()
+            if (!t.startsWith('- ')) return true
+            return !EXERCISE_LOGGING_QUESTION_RE.test(t)
+        })
+        .join('\n')
+}
+
+/**
  * Извлекает вопросы из markdown чек-ина.
  *
  * Алгоритм: берём все строки начинающиеся с `- ` (это пункты списка),
  * обрезаем `**bold**`, отделяем хвост в скобках как hint, выбираем тип
  * инпута по виду текста (число для "1-10" и "Вес", textarea для "Заметки").
+ *
+ * Нормализация: отбрасываем вопросы логирования подходов; если есть
+ * «Качество сна» — список всегда начинается с него (всё до него срезается).
  */
 export function parseCheckinQuestions(checkinMd: string): CheckinQuestion[] {
     if (!checkinMd) return []
@@ -56,6 +105,9 @@ export function parseCheckinQuestions(checkinMd: string): CheckinQuestion[] {
         const cleanLabel = label.replace(/\s*:\s*$/, '').trim()
         if (!cleanLabel) continue
 
+        // Пропускаем пункты логирования подходов (не относятся к недельному чек-ину)
+        if (EXERCISE_LOGGING_QUESTION_RE.test(cleanLabel)) continue
+
         // Тип инпута: эвристика
         // - "1-10" → number с min=1 max=10
         // - "1-5"  → number с min=1 max=5
@@ -71,7 +123,7 @@ export function parseCheckinQuestions(checkinMd: string): CheckinQuestion[] {
             inputType = 'number'
             min = parseInt(rangeMatch[1], 10)
             max = parseInt(rangeMatch[2], 10)
-        } else if (/\bвес\b/i.test(cleanLabel)) {
+        } else if (/(^|[^а-яёa-z])вес([^а-яёa-z]|$)/i.test(cleanLabel)) {
             inputType = 'number'
         } else if (/заметк|вопрос|причин|пожелан|комментар/i.test(cleanLabel)) {
             inputType = 'textarea'
@@ -86,6 +138,10 @@ export function parseCheckinQuestions(checkinMd: string): CheckinQuestion[] {
             max,
         })
     }
+
+    // Недельный чек-ин всегда начинается с «Качество сна» — срезаем всё до него
+    const sleepIdx = out.findIndex(q => SLEEP_QUALITY_RE.test(q.label))
+    if (sleepIdx > 0) return out.slice(sleepIdx)
 
     return out
 }

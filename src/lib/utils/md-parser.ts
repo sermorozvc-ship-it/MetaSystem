@@ -1,6 +1,7 @@
 // MetaSystem v2 — Markdown Parser
 
 import type { ProgramData, TrainingDay, Exercise, AlternativeExercise } from '@/lib/services/training'
+import { normalizeCheckinMarkdown } from '@/lib/utils/checkin-questions'
 
 /**
  * Формат MD:
@@ -491,7 +492,7 @@ export function parseMdToJson(markdown: string): ProgramData {
     weeklyNote: trim(weeklyNote) || undefined,
     weekContext: trim(weekContext) || undefined,
     redFlags: trim(redFlags) || undefined,
-    checkin: trim(checkin) || undefined,
+    checkin: trim(normalizeCheckinMarkdown(checkin)) || undefined,
     loggingNote: trim(loggingNote) || undefined,
     prevWeekStats,
   }
