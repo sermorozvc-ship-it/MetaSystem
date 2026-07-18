@@ -370,6 +370,14 @@ export function buildDiaryMd(
         out.push('')
         out.push(`**Красные флаги:** ${pd.redFlags}`)
     }
+    if (pd?.weekVolume) {
+        out.push('')
+        out.push(`**Объём недели:** ${pd.weekVolume}`)
+    }
+    if (pd?.nutritionNote) {
+        out.push('')
+        out.push(`**Питание / калории:** ${pd.nutritionNote}`)
+    }
     if (pd?.prevWeekStats?.coachSummary) {
         out.push('')
         out.push(`**Резюме прошлой недели:** ${pd.prevWeekStats.coachSummary}`)
@@ -418,6 +426,14 @@ export function buildDiaryMd(
         out.push(`| Всего подходов | ${weekSets} |`)
         out.push(`| Всего повторений | ${weekReps} |`)
         out.push(`| Завершено тренировок | ${completedCount}/${days.length} |`)
+        out.push('')
+    }
+
+    // Алгоритм подбора веса (если был в программе)
+    if (pd?.weightAlgorithm) {
+        out.push(`## Алгоритм подбора веса`)
+        out.push('')
+        out.push(pd.weightAlgorithm)
         out.push('')
     }
 

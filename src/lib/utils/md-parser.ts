@@ -11,6 +11,8 @@ import { normalizeCheckinMarkdown } from '@/lib/utils/checkin-questions'
  * **Рекомендация:** Неделя средняя по нагрузке. Закрываем базовый объём.
  * **Контекст недели:** Многострочный текст...
  * **Красные флаги:** Многострочный текст...
+ * **Объём недели:** Вход на спокойном уровне, подходы не разгоняем...
+ * **Питание / калории:** Ориентир 1700–1900 ккал, белок 140–160 г...
  *
  * Опционально — статистика за прошлую неделю (показывается клиенту вверху страницы):
  * **Резюме прошлой недели:** Что сделано, недочёты, общий обзор и мысли тренера.
@@ -19,6 +21,8 @@ import { normalizeCheckinMarkdown } from '@/lib/utils/checkin-questions'
  *
  * ## День 1: Верх тела (Push)
  * **Рекомендация дня:** Сегодня работаем не до отказа, RIR 2-3 на всех подходах.
+ * **Разминка:** ...
+ * **Заминка:** ...
  *
  * ### Жим гантелей лёжа
  * [Видео](url)
@@ -41,6 +45,11 @@ import { normalizeCheckinMarkdown } from '@/lib/utils/checkin-questions'
  *    говорить полными предложениями, не задыхаясь.
  *
  *    40 мин ходьба или велотренажёр (ЧСС 115-130), без интервалов.
+ *
+ * После дней (опционально):
+ * ## Алгоритм подбора веса (калибровка)
+ * 1. ...
+ * 2. ...
  */
 
 // Типы текущего многострочного блока
@@ -48,6 +57,9 @@ type MultilineBlock =
   | 'weeklyNote'
   | 'weekContext'
   | 'redFlags'
+  | 'weekVolume'
+  | 'nutritionNote'
+  | 'weightAlgorithm'
   | 'coachNote'
   | 'dayContext'
   | 'warmup'
@@ -87,6 +99,9 @@ export function parseMdToJson(markdown: string): ProgramData {
   let weeklyNote = ''
   let weekContext = ''
   let redFlags = ''
+  let weekVolume = ''
+  let nutritionNote = ''
+  let weightAlgorithm = ''
   let checkin = ''
   let loggingNote = ''
 
@@ -105,6 +120,9 @@ export function parseMdToJson(markdown: string): ProgramData {
     if (currentBlock === 'weeklyNote') weeklyNote += (weeklyNote ? sep : '') + text
     else if (currentBlock === 'weekContext') weekContext += (weekContext ? sep : '') + text
     else if (currentBlock === 'redFlags') redFlags += (redFlags ? sep : '') + text
+    else if (currentBlock === 'weekVolume') weekVolume += (weekVolume ? sep : '') + text
+    else if (currentBlock === 'nutritionNote') nutritionNote += (nutritionNote ? sep : '') + text
+    else if (currentBlock === 'weightAlgorithm') weightAlgorithm += (weightAlgorithm ? sep : '') + text
     else if (currentBlock === 'checkin') checkin += (checkin ? sep : '') + text
     else if (currentBlock === 'loggingNote') loggingNote += (loggingNote ? sep : '') + text
     else if (currentBlock === 'prevCoachSummary') prevCoachSummary += (prevCoachSummary ? sep : '') + text
@@ -126,20 +144,39 @@ export function parseMdToJson(markdown: string): ProgramData {
     }
   }
 
+  /** Закрыть текущий день/упражнение перед week-level ## секцией */
+  const flushDay = () => {
+    if (currentExercise && currentDay) {
+      currentDay.exercises.push(currentExercise)
+      currentExercise = null
+    }
+    if (currentDay) {
+      days.push(currentDay)
+      currentDay = null
+    }
+    parsingAlternatives = false
+  }
+
   for (const line of lines) {
-    // ── Специальные ## секции (Чек-ин, Памятка) ────────────────────────────
+    // ── Специальные ## секции (Чек-ин, Памятка, Алгоритм подбора веса) ────
     if (line.match(/^##\s+.*чек.?ин/i)) {
-      if (currentExercise && currentDay) { currentDay.exercises.push(currentExercise); currentExercise = null }
-      if (currentDay) { days.push(currentDay); currentDay = null }
-      parsingAlternatives = false
+      flushDay()
       currentBlock = 'checkin'
       continue
     }
     if (line.match(/^##\s+.*памятк/i) || line.match(/^##\s+.*логирован/i)) {
-      if (currentExercise && currentDay) { currentDay.exercises.push(currentExercise); currentExercise = null }
-      if (currentDay) { days.push(currentDay); currentDay = null }
-      parsingAlternatives = false
+      flushDay()
       currentBlock = 'loggingNote'
+      continue
+    }
+    // ## Алгоритм подбора веса (калибровка) — week-level инструкция.
+    // Не матчим голое «калибровка» — оно может встретиться в названии дня.
+    if (
+      line.match(/^##\s+.*алгоритм/i) ||
+      line.match(/^##\s+.*подбор\s+веса/i)
+    ) {
+      flushDay()
+      currentBlock = 'weightAlgorithm'
       continue
     }
     // ВАЖНО: НЕ добавлять здесь «## Сводка...» как источник prevCoachSummary.
@@ -235,6 +272,26 @@ export function parseMdToJson(markdown: string): ProgramData {
         continue
       }
 
+      // **Объём недели:** — план/ориентир по объёму ТЕКУЩЕЙ недели.
+      // Важно: матчить ДО «Объём прошлой недели», иначе «Объём недели»
+      // ошибочно уйдёт в prevWeekStats.
+      const weekVolumeMatch = line.match(/^\*\*Объ[её]м\s+недели[^:]*:\*\*\s*(.*)/i)
+      if (weekVolumeMatch) {
+        currentBlock = 'weekVolume'
+        const inline = weekVolumeMatch[1].trim()
+        if (inline) weekVolume = inline
+        continue
+      }
+
+      // **Питание / калории:** или **Питание:**
+      const nutritionMatch = line.match(/^\*\*Питание[^:]*:\*\*\s*(.*)/i)
+      if (nutritionMatch) {
+        currentBlock = 'nutritionNote'
+        const inline = nutritionMatch[1].trim()
+        if (inline) nutritionNote = inline
+        continue
+      }
+
       // Статистика за прошлую неделю — три блока
       const prevCoachMatch = line.match(/^\*\*(?:Резюме|Итоги|Обзор)[^:]*:\*\*\s*(.*)/i)
       if (prevCoachMatch) {
@@ -243,7 +300,10 @@ export function parseMdToJson(markdown: string): ProgramData {
         if (inline) prevCoachSummary = inline
         continue
       }
-      const prevVolumeMatch = line.match(/^\*\*(?:Объ[её]м|Тоннаж|Нагрузка)[^:]*:\*\*\s*(.*)/i)
+      // Только «прошлой» / тоннаж / нагрузка — НЕ «Объём недели» (см. выше)
+      const prevVolumeMatch = line.match(
+        /^\*\*(?:Объ[её]м\s+прошлой|Тоннаж|Нагрузка)[^:]*:\*\*\s*(.*)/i,
+      )
       if (prevVolumeMatch) {
         currentBlock = 'prevVolumeSummary'
         const inline = prevVolumeMatch[1].trim()
@@ -328,6 +388,8 @@ export function parseMdToJson(markdown: string): ProgramData {
       currentBlock = 'cardioBody'
     }
 
+    // Продолжение многострочного блока (в т.ч. week-level секции после
+    // flushDay, когда currentDay уже null: алгоритм / чек-ин / памятка).
     if (currentBlock && !currentExercise) {
       // На «кардио-дне» текст после `**Рекомендация дня:**` отделён
       // пустой строкой и идёт уже в `cardio` (свободный текст-описание
@@ -492,6 +554,9 @@ export function parseMdToJson(markdown: string): ProgramData {
     weeklyNote: trim(weeklyNote) || undefined,
     weekContext: trim(weekContext) || undefined,
     redFlags: trim(redFlags) || undefined,
+    weekVolume: trim(weekVolume) || undefined,
+    nutritionNote: trim(nutritionNote) || undefined,
+    weightAlgorithm: trim(weightAlgorithm) || undefined,
     checkin: trim(normalizeCheckinMarkdown(checkin)) || undefined,
     loggingNote: trim(loggingNote) || undefined,
     prevWeekStats,
@@ -527,6 +592,10 @@ type: standard
 **Контекст недели:** Вторая неделя адаптационного блока. Объём держим, добавляем интенсивность только там, где запас по RIR позволяет. Если в течение недели появляется усталость — снижаем вес на 5%, подходы и повторы оставляем как есть.
 
 **Красные флаги:** Любая острая боль (а не «непривычное ощущение») в спине или коленях — стоп упражнение, сообщить в чат. Если сон проседает 2 дня подряд (≤4/5) — пропускаем тренировку с приседом, не двигаем её на другой день.
+
+**Объём недели:** Держим базовый объём, подходы не разгоняем. Интенсивность поднимаем только там, где RIR на прошлой неделе был ≥3.
+
+**Питание / калории:** Ориентир на неделю: **2200–2400 ккал** в день, белок **160–180 г**. Стабильность важнее идеального подсчёта.
 
 **Резюме прошлой недели:** Неделя выполнена полностью, все 3 тренировки закрыты. Технику жима ты подтянул — комментарий «локоть стал на месте» это подтверждает. Из недочётов: на приседаниях во второй и третий день RIR был 0-1, ты на грани отказа — это слишком тяжело для адаптационного блока, на этой неделе снизим вес и поднимем повторы.
 
@@ -590,6 +659,16 @@ type: standard
 **Рекомендация дня:** Лёгкий восстановительный день, зона Z2, можешь говорить полными предложениями, не задыхаясь.
 
 40 мин ходьба или велотренажёр (ЧСС 115-130), без интервалов.
+
+---
+
+## Алгоритм подбора веса (калибровка)
+
+1. Вспомните свой обычный рабочий вес на похожем движении.
+2. Первый подход сделайте примерно на 50-60% от него на плановые повторения.
+3. Если RIR 5+ и техника уверенная, добавьте вес на следующий подход.
+4. Цель последнего подхода: плановые повторения с RIR 2-3.
+5. Зафиксируйте все рабочие подходы в приложении (вес × повторы × RIR).
 
 ---
 

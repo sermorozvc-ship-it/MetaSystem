@@ -934,6 +934,9 @@ export default function ProgramDetailPage() {
     const [isWeeklyNoteCollapsed, setIsWeeklyNoteCollapsed] = useState(true)
     const [isWeekContextCollapsed, setIsWeekContextCollapsed] = useState(true)
     const [isRedFlagsCollapsed, setIsRedFlagsCollapsed] = useState(true)
+    const [isWeekVolumeCollapsed, setIsWeekVolumeCollapsed] = useState(true)
+    const [isNutritionCollapsed, setIsNutritionCollapsed] = useState(true)
+    const [isWeightAlgorithmCollapsed, setIsWeightAlgorithmCollapsed] = useState(true)
     const [isDayNoteCollapsed, setIsDayNoteCollapsed] = useState(true)
     const [isDayContextCollapsed, setIsDayContextCollapsed] = useState(true)
     const [isWarmupCollapsed, setIsWarmupCollapsed] = useState(true)
@@ -1226,20 +1229,39 @@ export default function ProgramDetailPage() {
                     try {
                         const pd = data.program_data
                         const parsed = parseMdToJson(data.program_md)
+                        // weekVolume / nutritionNote / weightAlgorithm — новые поля:
+                        // берём из свежего parse в первую очередь (старый program_data их не знал).
+                        // prevWeekStats: если старый парсер положил «Объём недели» в volumeSummary,
+                        // а новый parse видит weekVolume с тем же текстом — убираем ложный volumeSummary.
+                        let prevWeekStats = pd.prevWeekStats ?? parsed.prevWeekStats
+                        if (
+                            prevWeekStats?.volumeSummary &&
+                            parsed.weekVolume &&
+                            prevWeekStats.volumeSummary === parsed.weekVolume &&
+                            !parsed.prevWeekStats?.volumeSummary
+                        ) {
+                            const { volumeSummary: _drop, ...rest } = prevWeekStats
+                            prevWeekStats = (rest.coachSummary || rest.wellnessSummary) ? rest : undefined
+                        }
                         data.program_data = {
                             ...pd,
                             weeklyNote: pd.weeklyNote ?? parsed.weeklyNote,
                             weekContext: pd.weekContext ?? parsed.weekContext,
                             redFlags: pd.redFlags ?? parsed.redFlags,
+                            weekVolume: parsed.weekVolume ?? pd.weekVolume,
+                            nutritionNote: parsed.nutritionNote ?? pd.nutritionNote,
+                            weightAlgorithm: parsed.weightAlgorithm ?? pd.weightAlgorithm,
                             checkin: pd.checkin ?? parsed.checkin,
                             loggingNote: pd.loggingNote ?? parsed.loggingNote,
-                            prevWeekStats: pd.prevWeekStats ?? parsed.prevWeekStats,
+                            prevWeekStats,
                             days: pd.days.map((day, i) => ({
                                 ...day,
                                 coachNote: day.coachNote ?? parsed.days[i]?.coachNote,
                                 dayContext: day.dayContext ?? parsed.days[i]?.dayContext,
                                 warmup: day.warmup ?? parsed.days[i]?.warmup,
                                 cooldown: day.cooldown ?? parsed.days[i]?.cooldown,
+                                cardio: day.cardio ?? parsed.days[i]?.cardio,
+                                cardioOnly: day.cardioOnly ?? parsed.days[i]?.cardioOnly,
                             })),
                         }
                     } catch (e) {
@@ -2039,20 +2061,35 @@ export default function ProgramDetailPage() {
                         try {
                             const pd = fresh.program_data
                             const parsed = parseMdToJson(fresh.program_md)
+                            let prevWeekStats = pd.prevWeekStats ?? parsed.prevWeekStats
+                            if (
+                                prevWeekStats?.volumeSummary &&
+                                parsed.weekVolume &&
+                                prevWeekStats.volumeSummary === parsed.weekVolume &&
+                                !parsed.prevWeekStats?.volumeSummary
+                            ) {
+                                const { volumeSummary: _drop, ...rest } = prevWeekStats
+                                prevWeekStats = (rest.coachSummary || rest.wellnessSummary) ? rest : undefined
+                            }
                             fresh.program_data = {
                                 ...pd,
                                 weeklyNote: pd.weeklyNote ?? parsed.weeklyNote,
                                 weekContext: pd.weekContext ?? parsed.weekContext,
                                 redFlags: pd.redFlags ?? parsed.redFlags,
+                                weekVolume: parsed.weekVolume ?? pd.weekVolume,
+                                nutritionNote: parsed.nutritionNote ?? pd.nutritionNote,
+                                weightAlgorithm: parsed.weightAlgorithm ?? pd.weightAlgorithm,
                                 checkin: pd.checkin ?? parsed.checkin,
                                 loggingNote: pd.loggingNote ?? parsed.loggingNote,
-                                prevWeekStats: pd.prevWeekStats ?? parsed.prevWeekStats,
+                                prevWeekStats,
                                 days: pd.days.map((day, i) => ({
                                     ...day,
                                     coachNote: day.coachNote ?? parsed.days[i]?.coachNote,
                                     dayContext: day.dayContext ?? parsed.days[i]?.dayContext,
                                     warmup: day.warmup ?? parsed.days[i]?.warmup,
                                     cooldown: day.cooldown ?? parsed.days[i]?.cooldown,
+                                    cardio: day.cardio ?? parsed.days[i]?.cardio,
+                                    cardioOnly: day.cardioOnly ?? parsed.days[i]?.cardioOnly,
                                 })),
                             }
                         } catch {}
@@ -2779,6 +2816,66 @@ export default function ProgramDetailPage() {
                                 <div className="px-3 py-2.5 bg-danger/5">
                                     <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
                                         {program.program_data.redFlags}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {program.program_data.weekVolume && (
+                        <div className="mb-2 rounded-xl border border-violet-500/20 overflow-hidden">
+                            <button
+                                onClick={() => setIsWeekVolumeCollapsed(v => !v)}
+                                className="w-full flex items-center gap-2 px-3 py-2.5 text-left bg-violet-500/10 hover:bg-violet-500/15 transition-colors"
+                            >
+                                <span className="text-base flex-shrink-0">📊</span>
+                                <span className="text-sm font-semibold text-violet-300 flex-1">Объём недели</span>
+                                <ChevronDown className={`w-4 h-4 text-violet-300/60 transition-transform duration-200 ${isWeekVolumeCollapsed ? '' : 'rotate-180'}`} />
+                            </button>
+                            {!isWeekVolumeCollapsed && (
+                                <div className="px-3 py-2.5 bg-violet-500/5">
+                                    <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                        {program.program_data.weekVolume}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {program.program_data.nutritionNote && (
+                        <div className="mb-2 rounded-xl border border-amber-500/20 overflow-hidden">
+                            <button
+                                onClick={() => setIsNutritionCollapsed(v => !v)}
+                                className="w-full flex items-center gap-2 px-3 py-2.5 text-left bg-amber-500/10 hover:bg-amber-500/15 transition-colors"
+                            >
+                                <span className="text-base flex-shrink-0">🍽</span>
+                                <span className="text-sm font-semibold text-amber-300 flex-1">Питание / калории</span>
+                                <ChevronDown className={`w-4 h-4 text-amber-300/60 transition-transform duration-200 ${isNutritionCollapsed ? '' : 'rotate-180'}`} />
+                            </button>
+                            {!isNutritionCollapsed && (
+                                <div className="px-3 py-2.5 bg-amber-500/5">
+                                    <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                        {program.program_data.nutritionNote}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {program.program_data.weightAlgorithm && (
+                        <div className="mb-2 rounded-xl border border-sky-500/20 overflow-hidden">
+                            <button
+                                onClick={() => setIsWeightAlgorithmCollapsed(v => !v)}
+                                className="w-full flex items-center gap-2 px-3 py-2.5 text-left bg-sky-500/10 hover:bg-sky-500/15 transition-colors"
+                            >
+                                <span className="text-base flex-shrink-0">⚖️</span>
+                                <span className="text-sm font-semibold text-sky-300 flex-1">Алгоритм подбора веса</span>
+                                <ChevronDown className={`w-4 h-4 text-sky-300/60 transition-transform duration-200 ${isWeightAlgorithmCollapsed ? '' : 'rotate-180'}`} />
+                            </button>
+                            {!isWeightAlgorithmCollapsed && (
+                                <div className="px-3 py-2.5 bg-sky-500/5">
+                                    <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                                        {program.program_data.weightAlgorithm}
                                     </p>
                                 </div>
                             )}
