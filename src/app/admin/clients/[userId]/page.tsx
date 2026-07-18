@@ -18,7 +18,8 @@ import {
     NUTRITION_LABELS,
     type NutritionQuestionnaire,
 } from '@/lib/services/nutrition'
-import { getClientPrograms, type TrainingProgram, type TrainingEntry } from '@/lib/services/training'
+import { type TrainingProgram, type TrainingEntry } from '@/lib/services/training'
+import { adminFetch } from '@/lib/api/admin-fetch'
 import ExerciseProgressView from '@/components/ExerciseProgressView'
 import { parseMdToJson, EXAMPLE_PROGRAM_MD } from '@/lib/utils/md-parser'
 import { buildDiaryMd } from '@/lib/utils/diary-export'
@@ -1526,6 +1527,8 @@ export default function AdminClientDetailPage() {
     const [nutritionQ, setNutritionQ] = useState<NutritionQuestionnaire | null>(null)
     const [nutritionAccess, setNutritionAccess] = useState(false)
     const [programs, setPrograms] = useState<TrainingProgram[]>([])
+    const [programsLoadError, setProgramsLoadError] = useState<string | null>(null)
+    const [programsLoading, setProgramsLoading] = useState(false)
     const [nutritionPlans, setNutritionPlans] = useState<NutritionProgram[]>([])
     const [isArchiving, setIsArchiving] = useState(false)
     const [programsVisible, setProgramsVisible] = useState(true)
@@ -1574,49 +1577,109 @@ export default function AdminClientDetailPage() {
     const [isSavingDates, setIsSavingDates] = useState(false)
     const [editDatesError, setEditDatesError] = useState('')
 
+    /** Загрузка программ только через server API (service_role).
+     *  Браузерный getClientPrograms + RLS часто отдавал [] при гонке сессии/таймауте —
+     *  после F5 данные появлялись. Retry + явная ошибка, чтобы не маскировать сбой пустым списком. */
+    const fetchClientProgramsWithRetry = async (uid: string): Promise<{
+        ok: true
+        programs: TrainingProgram[]
+    } | {
+        ok: false
+        error: string
+    }> => {
+        const maxAttempts = 3
+        let lastError = ''
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                const res = await adminFetch<{ programs: TrainingProgram[] }>(
+                    `/api/admin/clients/${uid}/programs`,
+                )
+                return { ok: true, programs: res.programs || [] }
+            } catch (e: any) {
+                lastError = e?.message || 'Не удалось загрузить программы'
+                console.warn(`[AdminClientDetail] programs attempt ${attempt}/${maxAttempts}:`, lastError)
+                if (attempt < maxAttempts) {
+                    await new Promise((r) => setTimeout(r, 400 * attempt))
+                }
+            }
+        }
+        return { ok: false, error: lastError }
+    }
+
+    const reloadPrograms = async () => {
+        if (!userId) return
+        setProgramsLoading(true)
+        setProgramsLoadError(null)
+        const result = await fetchClientProgramsWithRetry(userId)
+        if (result.ok) {
+            setPrograms(result.programs)
+            setProgramsLoadError(null)
+        } else {
+            setProgramsLoadError(result.error)
+        }
+        setProgramsLoading(false)
+    }
+
     useEffect(() => {
         if (authLoading || !authReady || !isAdminUser || !userId) return
         let cancelled = false
+
+        // Сброс при смене клиента — не показываем чужие/пустые данные «между» запросами
+        setIsLoading(true)
+        setPrograms([])
+        setProgramsLoadError(null)
+        setProgramsLoading(true)
+        setNutritionPlans([])
+        setClientPayment(null)
+
         const load = async () => {
             try {
-                const [profile, quest, progs, nutQ, nutAccess] = await Promise.allSettled([
-                    getUserDetails(userId),
-                    getQuestionnaireByUserId(userId),
-                    getClientPrograms(userId),
-                    getNutritionQuestionnaireByUserId(userId),
-                    userHasNutritionAccess(userId),
+                const [settled, progsResult] = await Promise.all([
+                    Promise.allSettled([
+                        getUserDetails(userId),
+                        getQuestionnaireByUserId(userId),
+                        getNutritionQuestionnaireByUserId(userId),
+                        userHasNutritionAccess(userId),
+                        adminFetch<{ plans: any[] }>(`/api/admin/clients/${userId}/nutrition-plans`),
+                        adminFetch<{ payment: any }>(`/api/admin/clients/${userId}/payment`),
+                    ]),
+                    // Программы — только server API (service_role), не браузерный RLS
+                    fetchClientProgramsWithRetry(userId),
                 ])
+
                 if (cancelled) return
+
+                const [profile, quest, nutQ, nutAccess, nutPlansRes, paymentRes] = settled
+
                 setClientProfile(profile.status === 'fulfilled' ? profile.value : null)
                 setProgramsVisible(profile.status === 'fulfilled' ? (profile.value?.programs_visible ?? true) : true)
                 setQuestionnaire(quest.status === 'fulfilled' ? quest.value : null)
-                setPrograms(progs.status === 'fulfilled' ? progs.value : [])
                 setNutritionQ(nutQ.status === 'fulfilled' ? nutQ.value : null)
                 setNutritionAccess(nutAccess.status === 'fulfilled' ? nutAccess.value : false)
 
-                // Загружаем планы питания через серверный API (без service_role в браузере)
-                try {
-                    const { adminFetch } = await import('@/lib/api/admin-fetch')
-                    const { plans: nutPlansData } = await adminFetch<{ plans: any[] }>(
-                        `/api/admin/clients/${userId}/nutrition-plans`,
-                    )
-                    if (!cancelled) {
-                        const nutPlans = nutPlansData || []
-                        setNutritionPlans(nutPlans)
-                        if (nutPlans.length > 0) setNutritionPlanNumber(nutPlans[0].plan_number + 1)
-                    }
-                } catch {}
+                if (nutPlansRes.status === 'fulfilled') {
+                    const nutPlans = nutPlansRes.value.plans || []
+                    setNutritionPlans(nutPlans)
+                    if (nutPlans.length > 0) setNutritionPlanNumber(nutPlans[0].plan_number + 1)
+                }
+                if (paymentRes.status === 'fulfilled') {
+                    setClientPayment(paymentRes.value.payment)
+                }
 
-                // Загружаем платёж клиента для отображения подписки
-                try {
-                    const { adminFetch } = await import('@/lib/api/admin-fetch')
-                    const { payment: paymentData } = await adminFetch<{ payment: any }>(
-                        `/api/admin/clients/${userId}/payment`,
-                    )
-                    if (!cancelled) setClientPayment(paymentData)
-                } catch {}
+                if (progsResult.ok) {
+                    setPrograms(progsResult.programs)
+                    setProgramsLoadError(null)
+                } else {
+                    setPrograms([])
+                    setProgramsLoadError(progsResult.error)
+                }
+                setProgramsLoading(false)
             } catch (e) {
                 console.error('Error loading client data:', e)
+                if (!cancelled) {
+                    setProgramsLoadError(e instanceof Error ? e.message : 'Ошибка загрузки')
+                    setProgramsLoading(false)
+                }
             } finally {
                 if (!cancelled) setIsLoading(false)
             }
@@ -1625,10 +1688,13 @@ export default function AdminClientDetailPage() {
         const failsafe = setTimeout(() => {
             if (!cancelled) {
                 console.warn('[AdminClientDetail] Failsafe timeout — forcing isLoading=false')
+                // Только оболочка страницы. programsLoading не сбрасываем —
+                // иначе мелькает «Программ пока нет» до ответа API.
                 setIsLoading(false)
             }
-        }, 8000)
+        }, 12000)
         return () => { cancelled = true; clearTimeout(failsafe) }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authLoading, authReady, isAdminUser, userId])
 
     const handleArchiveToggle = async () => {
@@ -1859,23 +1925,108 @@ export default function AdminClientDetailPage() {
                     </button>
                 </div>
 
-                {/* Блок подписки */}
+                {/* Блок подписки.
+                    Раньше показывался только при (payment) ИЛИ (start AND end).
+                    Если start_date = null (исторические клиенты / ручные апдейты) —
+                    плашка пропадала целиком. Теперь: достаточно любой даты, платежа
+                    или статуса active/paused/expired; недостающую дату достраиваем. */}
                 {(() => {
-                    const hasPaymentData = clientPayment && clientPayment.confirmed_at && clientPayment.plan_months
-                    const hasProfileDates = clientProfile?.subscription_start_date && clientProfile?.subscription_end_date
-                    if (!hasPaymentData && !hasProfileDates) return null
+                    const hasPaymentData = !!(clientPayment && clientPayment.confirmed_at && clientPayment.plan_months)
+                    const profileStart = clientProfile?.subscription_start_date || null
+                    const profileEnd = clientProfile?.subscription_end_date || null
+                    const status = clientProfile?.subscription_status as string | undefined
+                    const hasKnownStatus = status === 'active' || status === 'paused' || status === 'expired'
+                    if (!hasPaymentData && !profileStart && !profileEnd && !hasKnownStatus) return null
 
                     const planLabels: Record<string, string> = { '1_month': '1 месяц', '3_months': '3 месяца', '6_months': '6 месяцев' }
-                    const totalDays = (clientPayment?.plan_months || 1) * 30
-                    const subStartDate = clientProfile?.subscription_start_date || clientPayment?.confirmed_at?.split('T')[0] || new Date().toISOString().split('T')[0]
-                    const subEndDate = clientProfile?.subscription_end_date || (() => {
-                        if (!clientPayment?.confirmed_at) return ''
-                        const d = new Date(clientPayment.confirmed_at)
-                        d.setMonth(d.getMonth() + clientPayment.plan_months)
+                    const planMonths = clientPayment?.plan_months || 1
+
+                    const shiftMonths = (isoDate: string, months: number) => {
+                        const d = new Date(isoDate.includes('T') ? isoDate : isoDate + 'T12:00:00')
+                        d.setMonth(d.getMonth() + months)
                         return d.toISOString().split('T')[0]
-                    })()
-                    if (!subStartDate || !subEndDate) return null
-                    const endDate = new Date(subEndDate)
+                    }
+                    const toDateOnly = (v: string | null | undefined) =>
+                        v ? (v.includes('T') ? v.split('T')[0] : v) : null
+
+                    let subStartDate =
+                        toDateOnly(profileStart) ||
+                        toDateOnly(clientPayment?.confirmed_at) ||
+                        toDateOnly(clientProfile?.created_at) ||
+                        null
+
+                    let subEndDate =
+                        toDateOnly(profileEnd) ||
+                        (clientPayment?.confirmed_at && clientPayment?.plan_months
+                            ? shiftMonths(clientPayment.confirmed_at, clientPayment.plan_months)
+                            : null)
+
+                    // Есть конец, нет начала — откат на plan_months / 1 месяц
+                    if (subEndDate && !subStartDate) {
+                        subStartDate = shiftMonths(subEndDate, -(planMonths || 1))
+                    }
+                    // Есть начало, нет конца — +plan_months
+                    if (subStartDate && !subEndDate) {
+                        subEndDate = shiftMonths(subStartDate, planMonths || 1)
+                    }
+
+                    const openEditDates = (start: string, end: string) => {
+                        setEditStartDate(start)
+                        setEditEndDate(end)
+                        setEditDatesError('')
+                        setShowEditDatesModal(true)
+                    }
+
+                    // Статус есть, дат нет совсем — упрощённая плашка, чтобы админ мог задать период
+                    if (!subStartDate || !subEndDate) {
+                        const today = new Date().toISOString().split('T')[0]
+                        const defaultEnd = shiftMonths(today, 1)
+                        return (
+                            <div className="glass-card p-4 mb-4">
+                                <div className="flex items-center justify-between gap-4 mb-2">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <Calendar className="w-4 h-4 text-text-muted flex-shrink-0" />
+                                        <div className="min-w-0">
+                                            <span className="text-sm text-text-muted">Подписка: </span>
+                                            <span className="text-sm font-semibold text-warning">даты не заданы</span>
+                                            {status && (
+                                                <span className="ml-2 text-xs text-text-muted">({status})</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                                <p className="text-xs text-text-secondary mb-3">
+                                    У клиента нет периода подписки. Задайте даты, чтобы управлять доступом.
+                                </p>
+                                <div className="flex flex-wrap gap-2 pt-3 border-t border-border">
+                                    <button
+                                        onClick={() => openEditDates(today, defaultEnd)}
+                                        className="glass-button-secondary flex items-center gap-1.5 text-xs py-1.5 px-3"
+                                    >
+                                        <Pencil className="w-3.5 h-3.5" />
+                                        Задать даты
+                                    </button>
+                                    <button
+                                        onClick={() => setShowRenewModal(true)}
+                                        className="glass-button-secondary flex items-center gap-1.5 text-xs py-1.5 px-3"
+                                    >
+                                        <RefreshCw className="w-3.5 h-3.5" />
+                                        Продлить
+                                    </button>
+                                </div>
+                            </div>
+                        )
+                    }
+
+                    const endDate = new Date(subEndDate + 'T12:00:00')
+                    const startDateObj = new Date(subStartDate + 'T12:00:00')
+                    const periodDays = Math.max(
+                        1,
+                        Math.ceil((endDate.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24)),
+                    )
+                    const totalDays = clientPayment?.plan_months
+                        ? clientPayment.plan_months * 30
+                        : periodDays
                     const daysLeft = Math.ceil((endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
                     const daysLeftClamped = Math.max(0, daysLeft)
                     const pct = Math.min(100, Math.max(0, (daysLeftClamped / totalDays) * 100))
@@ -1883,6 +2034,7 @@ export default function AdminClientDetailPage() {
                     const isWarning = daysLeftClamped <= 30 && daysLeftClamped > 14
                     const barColor = isExpiring ? 'bg-danger' : isWarning ? 'bg-warning' : 'bg-accent'
                     const textColor = isExpiring ? 'text-danger' : isWarning ? 'text-warning' : 'text-accent'
+                    const datesIncomplete = !profileStart || !profileEnd
 
                     return (
                         <div className="glass-card p-4 mb-4">
@@ -1895,6 +2047,11 @@ export default function AdminClientDetailPage() {
                                         {clientPayment?.includes_nutrition && (
                                             <span className="ml-2 text-xs text-accent">+ питание</span>
                                         )}
+                                        {datesIncomplete && (
+                                            <span className="ml-2 text-xs text-warning" title="В профиле не хватает start/end — даты восстановлены для отображения">
+                                                даты уточнить
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="text-right flex-shrink-0">
@@ -1906,14 +2063,14 @@ export default function AdminClientDetailPage() {
                                 <div className={`h-full ${barColor} rounded-full transition-all`} style={{ width: `${pct}%` }} />
                             </div>
                             <div className="flex justify-between text-xs text-text-muted">
-                                <span>с {new Date(subStartDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</span>
+                                <span>с {startDateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</span>
                                 <span className={isExpiring ? 'text-danger font-semibold' : ''}>
                                     до {endDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
                                 </span>
                             </div>
 
                             {/* Кнопки управления подпиской */}
-                            <div className="flex gap-2 mt-3 pt-3 border-t border-border">
+                            <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-border">
                                 <button
                                     onClick={() => setShowRenewModal(true)}
                                     className="glass-button-secondary flex items-center gap-1.5 text-xs py-1.5 px-3"
@@ -1922,18 +2079,13 @@ export default function AdminClientDetailPage() {
                                     Продлить
                                 </button>
                                 <button
-                                    onClick={() => {
-                                        setEditStartDate(subStartDate)
-                                        setEditEndDate(subEndDate)
-                                        setEditDatesError('')
-                                        setShowEditDatesModal(true)
-                                    }}
+                                    onClick={() => openEditDates(subStartDate, subEndDate)}
                                     className="glass-button-secondary flex items-center gap-1.5 text-xs py-1.5 px-3"
                                 >
                                     <Pencil className="w-3.5 h-3.5" />
                                     Изменить даты
                                 </button>
-                                {!clientPayment?.includes_nutrition && (
+                                {!clientPayment?.includes_nutrition && !clientProfile?.has_nutrition_plan && (
                                     <button
                                         onClick={async () => {
                                             if (!confirm('Подключить план питания клиенту бесплатно?')) return
@@ -1941,6 +2093,7 @@ export default function AdminClientDetailPage() {
                                             const result = await enableNutritionForClient(userId)
                                             if (result.success) {
                                                 setClientPayment((prev: any) => prev ? { ...prev, includes_nutrition: true } : prev)
+                                                setClientProfile((prev: any) => prev ? { ...prev, has_nutrition_plan: true } : prev)
                                                 alert('Питание подключено!')
                                             } else {
                                                 alert('Ошибка: ' + result.error)
@@ -2612,7 +2765,25 @@ export default function AdminClientDetailPage() {
                             </div>
                         )}
 
-                        {programs.length === 0 ? (
+                        {programsLoading ? (
+                            <div className="glass-card p-12 text-center">
+                                <Loader2 className="w-10 h-10 text-accent animate-spin mx-auto mb-4" />
+                                <p className="text-text-secondary">Загрузка программ…</p>
+                            </div>
+                        ) : programsLoadError ? (
+                            <div className="glass-card p-12 text-center">
+                                <Dumbbell className="w-16 h-16 text-danger/60 mx-auto mb-4" />
+                                <h3 className="text-xl font-display font-bold text-white mb-2">Не удалось загрузить программы</h3>
+                                <p className="text-text-secondary mb-6 text-sm">{programsLoadError}</p>
+                                <button
+                                    onClick={() => void reloadPrograms()}
+                                    className="glass-button flex items-center gap-2 mx-auto"
+                                >
+                                    <RefreshCw className="w-4 h-4" />
+                                    Повторить
+                                </button>
+                            </div>
+                        ) : programs.length === 0 ? (
                             <div className="glass-card p-12 text-center">
                                 <Dumbbell className="w-16 h-16 text-text-muted mx-auto mb-4" />
                                 <h3 className="text-xl font-display font-bold text-white mb-2">Программ пока нет</h3>
