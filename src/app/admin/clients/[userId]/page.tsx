@@ -9,11 +9,9 @@ import {
     Apple, Copy, Calendar, RefreshCw, Layers, Save, Flame, Eye, EyeOff
 } from 'lucide-react'
 import { useAdminGuard } from '@/lib/auth'
-import { getUserDetails, archiveUser, unarchiveUser } from '@/lib/services/admin'
-import { getQuestionnaireByUserId, type ClientQuestionnaire } from '@/lib/services/questionnaire'
+import { archiveUser, unarchiveUser } from '@/lib/services/admin'
+import { type ClientQuestionnaire } from '@/lib/services/questionnaire'
 import {
-    getNutritionQuestionnaireByUserId,
-    userHasNutritionAccess,
     formatNutritionForAdmin,
     NUTRITION_LABELS,
     type NutritionQuestionnaire,
@@ -1577,29 +1575,61 @@ export default function AdminClientDetailPage() {
     const [isSavingDates, setIsSavingDates] = useState(false)
     const [editDatesError, setEditDatesError] = useState('')
 
-    /** Загрузка программ только через server API (service_role).
-     *  Браузерный getClientPrograms + RLS часто отдавал [] при гонке сессии/таймауте —
-     *  после F5 данные появлялись. Retry + явная ошибка, чтобы не маскировать сбой пустым списком. */
-    const fetchClientProgramsWithRetry = async (uid: string): Promise<{
-        ok: true
+    type ClientDetailPayload = {
+        profile: any
+        questionnaire: ClientQuestionnaire | null
+        nutritionQuestionnaire: NutritionQuestionnaire | null
+        nutritionAccess: boolean
         programs: TrainingProgram[]
-    } | {
-        ok: false
-        error: string
-    }> => {
+        nutritionPlans: NutritionProgram[]
+        payment: any
+    }
+
+    /**
+     * Единая загрузка карточки через /detail (service_role).
+     * Раньше микс browser-supabase + API: getUserDetails/questionnaire без таймаута
+     * висели на inTabLock при soft-nav → Promise.all не доходил до setPrograms,
+     * после F5 всё «оживало». Теперь один adminFetch, retry, abort по смене userId.
+     */
+    const applyClientDetail = (data: ClientDetailPayload) => {
+        setClientProfile(data.profile)
+        setProgramsVisible(data.profile?.programs_visible ?? true)
+        setQuestionnaire(data.questionnaire)
+        setNutritionQ(data.nutritionQuestionnaire)
+        setNutritionAccess(!!data.nutritionAccess)
+        setPrograms(data.programs || [])
+        setProgramsLoadError(null)
+        setNutritionPlans(data.nutritionPlans || [])
+        if ((data.nutritionPlans || []).length > 0) {
+            setNutritionPlanNumber(data.nutritionPlans[0].plan_number + 1)
+        }
+        setClientPayment(data.payment)
+        setProgramsLoading(false)
+        setIsLoading(false)
+    }
+
+    const fetchClientDetailWithRetry = async (
+        uid: string,
+        signal?: AbortSignal,
+    ): Promise<{ ok: true; data: ClientDetailPayload } | { ok: false; error: string }> => {
         const maxAttempts = 3
         let lastError = ''
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            if (signal?.aborted) return { ok: false, error: 'Отменено' }
             try {
-                const res = await adminFetch<{ programs: TrainingProgram[] }>(
-                    `/api/admin/clients/${uid}/programs`,
+                const data = await adminFetch<ClientDetailPayload>(
+                    `/api/admin/clients/${uid}/detail`,
+                    { signal, timeoutMs: 18_000 },
                 )
-                return { ok: true, programs: res.programs || [] }
+                return { ok: true, data }
             } catch (e: any) {
-                lastError = e?.message || 'Не удалось загрузить программы'
-                console.warn(`[AdminClientDetail] programs attempt ${attempt}/${maxAttempts}:`, lastError)
+                if (signal?.aborted || e?.name === 'AbortError') {
+                    return { ok: false, error: 'Отменено' }
+                }
+                lastError = e?.message || 'Не удалось загрузить карточку клиента'
+                console.warn(`[AdminClientDetail] detail attempt ${attempt}/${maxAttempts}:`, lastError)
                 if (attempt < maxAttempts) {
-                    await new Promise((r) => setTimeout(r, 400 * attempt))
+                    await new Promise((r) => setTimeout(r, 350 * attempt))
                 }
             }
         }
@@ -1608,92 +1638,67 @@ export default function AdminClientDetailPage() {
 
     const reloadPrograms = async () => {
         if (!userId) return
+        setIsLoading(true)
         setProgramsLoading(true)
         setProgramsLoadError(null)
-        const result = await fetchClientProgramsWithRetry(userId)
+        const result = await fetchClientDetailWithRetry(userId)
         if (result.ok) {
-            setPrograms(result.programs)
-            setProgramsLoadError(null)
+            applyClientDetail(result.data)
         } else {
             setProgramsLoadError(result.error)
+            setProgramsLoading(false)
+            setIsLoading(false)
         }
-        setProgramsLoading(false)
     }
 
     useEffect(() => {
-        if (authLoading || !authReady || !isAdminUser || !userId) return
-        let cancelled = false
+        // Ждём auth + admin. Без isAdminUser не бьём API (403), но не оставляем
+        // isLoading=true навечно: failsafe ниже снимает спиннер.
+        if (authLoading || !authReady || !userId) return
+        if (!isAdminUser) return
 
-        // Сброс при смене клиента — не показываем чужие/пустые данные «между» запросами
+        const ac = new AbortController()
+        let finished = false
+
         setIsLoading(true)
         setPrograms([])
         setProgramsLoadError(null)
         setProgramsLoading(true)
         setNutritionPlans([])
         setClientPayment(null)
+        setClientProfile(null)
+        setQuestionnaire(null)
+        setNutritionQ(null)
 
         const load = async () => {
-            try {
-                const [settled, progsResult] = await Promise.all([
-                    Promise.allSettled([
-                        getUserDetails(userId),
-                        getQuestionnaireByUserId(userId),
-                        getNutritionQuestionnaireByUserId(userId),
-                        userHasNutritionAccess(userId),
-                        adminFetch<{ plans: any[] }>(`/api/admin/clients/${userId}/nutrition-plans`),
-                        adminFetch<{ payment: any }>(`/api/admin/clients/${userId}/payment`),
-                    ]),
-                    // Программы — только server API (service_role), не браузерный RLS
-                    fetchClientProgramsWithRetry(userId),
-                ])
-
-                if (cancelled) return
-
-                const [profile, quest, nutQ, nutAccess, nutPlansRes, paymentRes] = settled
-
-                setClientProfile(profile.status === 'fulfilled' ? profile.value : null)
-                setProgramsVisible(profile.status === 'fulfilled' ? (profile.value?.programs_visible ?? true) : true)
-                setQuestionnaire(quest.status === 'fulfilled' ? quest.value : null)
-                setNutritionQ(nutQ.status === 'fulfilled' ? nutQ.value : null)
-                setNutritionAccess(nutAccess.status === 'fulfilled' ? nutAccess.value : false)
-
-                if (nutPlansRes.status === 'fulfilled') {
-                    const nutPlans = nutPlansRes.value.plans || []
-                    setNutritionPlans(nutPlans)
-                    if (nutPlans.length > 0) setNutritionPlanNumber(nutPlans[0].plan_number + 1)
-                }
-                if (paymentRes.status === 'fulfilled') {
-                    setClientPayment(paymentRes.value.payment)
-                }
-
-                if (progsResult.ok) {
-                    setPrograms(progsResult.programs)
-                    setProgramsLoadError(null)
-                } else {
-                    setPrograms([])
-                    setProgramsLoadError(progsResult.error)
-                }
+            const result = await fetchClientDetailWithRetry(userId, ac.signal)
+            if (ac.signal.aborted) return
+            finished = true
+            if (result.ok) {
+                applyClientDetail(result.data)
+            } else {
+                console.error('[AdminClientDetail] load failed:', result.error)
+                setPrograms([])
+                setProgramsLoadError(result.error)
                 setProgramsLoading(false)
-            } catch (e) {
-                console.error('Error loading client data:', e)
-                if (!cancelled) {
-                    setProgramsLoadError(e instanceof Error ? e.message : 'Ошибка загрузки')
-                    setProgramsLoading(false)
-                }
-            } finally {
-                if (!cancelled) setIsLoading(false)
-            }
-        }
-        load()
-        const failsafe = setTimeout(() => {
-            if (!cancelled) {
-                console.warn('[AdminClientDetail] Failsafe timeout — forcing isLoading=false')
-                // Только оболочка страницы. programsLoading не сбрасываем —
-                // иначе мелькает «Программ пока нет» до ответа API.
                 setIsLoading(false)
             }
-        }, 12000)
-        return () => { cancelled = true; clearTimeout(failsafe) }
+        }
+        void load()
+
+        const failsafe = setTimeout(() => {
+            if (!finished && !ac.signal.aborted) {
+                console.warn('[AdminClientDetail] Failsafe — page shell unlocked')
+                setIsLoading(false)
+                setProgramsLoading(false)
+                setProgramsLoadError((prev) => prev || 'Долгая загрузка. Нажмите «Повторить».')
+            }
+        }, 15_000)
+
+        return () => {
+            ac.abort()
+            clearTimeout(failsafe)
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authLoading, authReady, isAdminUser, userId])
 
@@ -1874,10 +1879,37 @@ export default function AdminClientDetailPage() {
         }
     }
 
-    if (authLoading || !authReady || isLoading || !isAdminUser) {
+    // Спиннер только пока auth/guard или первичная загрузка detail.
+    // При ошибке load isLoading=false — показываем каркас + «Повторить», не F5.
+    if (authLoading || !authReady || !isAdminUser || (isLoading && !clientProfile && !programsLoadError)) {
         return (
             <div className="min-h-screen bg-bg-main flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />
+            </div>
+        )
+    }
+
+    if (!isLoading && !clientProfile && programsLoadError) {
+        return (
+            <div className="min-h-screen bg-bg-main flex items-center justify-center p-4">
+                <div className="glass-card p-8 max-w-md w-full text-center space-y-4">
+                    <h2 className="text-xl font-display font-bold text-white">Не удалось загрузить клиента</h2>
+                    <p className="text-sm text-text-secondary">{programsLoadError}</p>
+                    <button
+                        onClick={() => void reloadPrograms()}
+                        className="glass-button flex items-center gap-2 mx-auto"
+                    >
+                        <RefreshCw className="w-4 h-4" />
+                        Повторить
+                    </button>
+                    <button
+                        onClick={() => router.push('/admin/clients')}
+                        className="glass-button-secondary flex items-center gap-2 mx-auto text-sm"
+                    >
+                        <ArrowLeft className="w-4 h-4" />
+                        К списку клиентов
+                    </button>
+                </div>
             </div>
         )
     }

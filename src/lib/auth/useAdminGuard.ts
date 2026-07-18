@@ -29,6 +29,9 @@ export function useAdminGuard() {
     const { user, isLoading: authLoading } = useAuth()
     const router = useRouter()
     const pathname = usePathname()
+    // Sticky: module-level cache + fast role check. Soft-nav между /admin/*
+    // не должен сбрасывать isAdminUser в false (иначе карточка клиента
+    // не стартует load и ждёт F5).
     const [isAdminUser, setIsAdminUser] = useState(() => hasFastAdminAccess(user))
     const [isReady, setIsReady] = useState(() => hasFastAdminAccess(user) || !!user?.id)
 
@@ -58,9 +61,18 @@ export function useAdminGuard() {
 
         let cancelled = false
 
+        // Уже знаем что админ — сразу ready + load на дочерних страницах.
+        // verify() в фоне подтверждает / обновляет кеш, но не блокирует UI.
+        const knownAdmin = hasFastAdminAccess(user)
+        if (knownAdmin) {
+            setIsReady(true)
+            setIsAdminUser(true)
+        }
+
         const verify = async () => {
             try {
                 const hasFreshToken = !!getStoredAccessTokenSync()
+                // Не блокируем soft-nav ensureSession если JWT уже в storage
                 const sessionOk = hasFreshToken ? true : await ensureSession()
                 if (!sessionOk && !userRef.current) {
                     const returnTo = pathname?.startsWith('/admin') ? pathname : '/admin'
@@ -77,27 +89,33 @@ export function useAdminGuard() {
                     guardAdminCache = { userId: user.id, isAdmin: admin }
                 }
                 if (!admin) {
-                    router.replace('/dashboard')
+                    // Не сбрасываем sticky true при кратковременном fail RPC,
+                    // если fast-path уже сказал admin — только полный false.
+                    if (!knownAdmin && !hasFastAdminAccess(user)) {
+                        setIsAdminUser(false)
+                        router.replace('/dashboard')
+                    }
                     return
                 }
                 setIsAdminUser(true)
             } catch (e) {
                 console.error('[useAdminGuard]', e)
+                // При ошибке verify не трогаем isAdminUser если уже true
             } finally {
                 if (!cancelled) setIsReady(true)
             }
         }
 
-        if (hasFastAdminAccess(user)) {
-            setIsReady(true)
-            setIsAdminUser(true)
-            void verify()
-        } else {
-            void verify()
-        }
+        void verify()
 
         const failsafe = setTimeout(() => {
-            if (!cancelled) setIsReady(true)
+            if (!cancelled) {
+                setIsReady(true)
+                // Если RPC завис, но fast-path уже admin — держим isAdminUser
+                if (hasFastAdminAccess(userRef.current)) {
+                    setIsAdminUser(true)
+                }
+            }
         }, 8000)
 
         return () => {
