@@ -6,7 +6,8 @@ import {
     ArrowLeft, Dumbbell, TrendingUp, FileText, Plus,
     Loader2, Upload, X, Check, ChevronDown, ChevronUp,
     Download, CheckCircle2, Clock, Pencil, Archive, ArchiveRestore,
-    Apple, Copy, Calendar, RefreshCw, Layers, Save, Flame, Eye, EyeOff
+    Apple, Copy, Calendar, RefreshCw, Layers, Save, Flame, Eye, EyeOff,
+    Activity, Camera, Play
 } from 'lucide-react'
 import { useAdminGuard } from '@/lib/auth'
 import { archiveUser, unarchiveUser } from '@/lib/services/admin'
@@ -47,7 +48,7 @@ import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 
-type Tab = 'questionnaire' | 'nutrition' | 'programs' | 'nutrition_plans' | 'metrics' | 'exercise_stats' | 'activity'
+type Tab = 'questionnaire' | 'nutrition' | 'programs' | 'nutrition_plans' | 'metrics' | 'exercise_stats' | 'activity' | 'screening'
 
 // ─── Просмотр метрик клиента (для админа) ───────────────────────────────────
 function ClientMetricsView({ userId }: { userId: string }) {
@@ -1510,6 +1511,91 @@ function AdminExerciseStats({ userId }: { userId: string }) {
     )
 }
 
+// ─── Скрининг клиента ──────────────────────────────────────────────────────
+function ScreeningTab({ userId }: { userId: string }) {
+    const [screening, setScreening] = useState<any>(null)
+    const [loading, setLoading] = useState(true)
+
+    useEffect(() => {
+        let cancelled = false
+        const load = async () => {
+            try {
+                const { adminFetch } = await import('@/lib/api/admin-fetch')
+                const res = await adminFetch<{ screening: any }>(
+                    `/api/admin/clients/${userId}/detail`,
+                )
+                if (!cancelled) setScreening(res.screening || null)
+            } catch (e) {
+                console.error('ScreeningTab load error:', e)
+            } finally {
+                if (!cancelled) setLoading(false)
+            }
+        }
+        load()
+        return () => { cancelled = true }
+    }, [userId])
+
+    if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-accent animate-spin" /></div>
+
+    if (!screening) {
+        return (
+            <div className="glass-card p-12 text-center">
+                <Activity className="w-16 h-16 text-text-muted mx-auto mb-4" />
+                <p className="text-text-secondary">Клиент ещё не прошёл скрининг</p>
+            </div>
+        )
+    }
+
+    const tests = Array.isArray(screening.tests) ? screening.tests : []
+
+    return (
+        <div className="space-y-4">
+            <div className="glass-card p-5">
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="w-9 h-9 rounded-xl bg-accent/15 flex items-center justify-center">
+                        <Activity className="w-4.5 h-4.5 text-accent" />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-display font-semibold text-white">Скрининг тела</h3>
+                        <p className="text-xs text-text-muted">
+                            {screening.client_date && `Дата съёмки: ${new Date(screening.client_date + 'T12:00:00').toLocaleDateString('ru-RU')}`}
+                            {screening.client_contact && ` · Связь: ${screening.client_contact}`}
+                        </p>
+                    </div>
+                </div>
+
+                {tests.length > 0 && (
+                    <div className="space-y-3">
+                        {tests.map((t: any) => (
+                            <div key={t.id} className="flex items-start gap-3 p-3 rounded-xl bg-bg-elevated border border-border">
+                                <div className="w-8 h-8 rounded-lg bg-accent/15 flex items-center justify-center flex-shrink-0">
+                                    <span className="text-xs font-bold text-accent">{t.id}</span>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-white">{t.title}</p>
+                                    {t.video_url ? (
+                                        <a
+                                            href={t.video_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-xs text-accent hover:underline mt-1 inline-flex items-center gap-1"
+                                        >
+                                            <Play className="w-3 h-3" />
+                                            Смотреть видео
+                                        </a>
+                                    ) : (
+                                        <p className="text-xs text-text-muted mt-1">Видео не загружено</p>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    )
+}
+
 // ─── Главная страница ────────────────────────────────────────────────────────
 export default function AdminClientDetailPage() {
     const { user, authLoading, isAdminUser, isReady: authReady } = useAdminGuard()
@@ -2144,7 +2230,7 @@ export default function AdminClientDetailPage() {
 
                 {/* Tabs */}
                 <div className="-mx-4 px-4 flex gap-2 mb-6 overflow-x-auto pb-1" style={{scrollbarWidth: 'none'}}>
-                    {(['questionnaire', 'nutrition', 'programs', 'nutrition_plans', 'metrics', 'activity', 'exercise_stats'] as Tab[]).map(tab => {
+                    {(['questionnaire', 'nutrition', 'programs', 'nutrition_plans', 'metrics', 'activity', 'exercise_stats', 'screening'] as Tab[]).map(tab => {
                         if (tab === 'nutrition' && !nutritionAccess) return null
                         return (
                             <button
@@ -2161,6 +2247,7 @@ export default function AdminClientDetailPage() {
                                 {tab === 'metrics' && <><TrendingUp className="w-4 h-4 inline mr-1" />Метрики</>}
                                 {tab === 'activity' && <><Flame className="w-4 h-4 inline mr-1" />Активность</>}
                                 {tab === 'exercise_stats' && <>📊 Прогресс</>}
+                                {tab === 'screening' && <><Activity className="w-4 h-4 inline mr-1" />Скрининг</>}
                             </button>
                         )
                     })}
@@ -2894,6 +2981,11 @@ export default function AdminClientDetailPage() {
                 {/* Прогресс упражнений */}
                 {activeTab === 'exercise_stats' && (
                     <AdminExerciseStats userId={userId} />
+                )}
+
+                {/* Скрининг */}
+                {activeTab === 'screening' && (
+                    <ScreeningTab userId={userId} />
                 )}            </div>
 
             {/* Модал загрузки программы */}

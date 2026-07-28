@@ -193,6 +193,12 @@ export default function QuestionnairePage() {
           if (!nutritionDone) { router.replace('/questionnaire/nutrition'); return }
         }
       } catch {}
+      // Все анкеты заполнены — предлагаем скрининг
+      const { isScreeningCompleted } = await import('@/lib/services/screening')
+      if (cancelled) return
+      const screeningDone = await isScreeningCompleted()
+      if (cancelled) return
+      if (!screeningDone) { router.replace('/screening'); return }
       router.replace('/dashboard')
     }
     init()
@@ -282,11 +288,19 @@ export default function QuestionnairePage() {
         ),
       ])
 
-      // Сохранили — сразу на dashboard. Если нужна анкета по питанию, dashboard
-      // сам покажет баннер и предложит её заполнить. Не блокируем переход
-      // дополнительными сетевыми проверками — это создавало впечатление,
-      // что после "Завершить" страница зависла.
-      router.push('/dashboard')
+      // Сохранили — проверяем, нужна ли анкета по питанию.
+      // Если да — идём туда, если нет — на скрининг.
+      try {
+        const { isNutritionQuestionnaireRequired } = await import('@/lib/services/nutrition')
+        const needsNutrition = await isNutritionQuestionnaireRequired()
+        if (needsNutrition) {
+          router.push('/questionnaire/nutrition')
+        } else {
+          router.push('/screening')
+        }
+      } catch {
+        router.push('/screening')
+      }
     } catch (e: any) {
       setError(e?.message || 'Ошибка сохранения анкеты')
     } finally {

@@ -29,6 +29,7 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ userId:
         programsRes,
         nutritionPlansRes,
         paymentRes,
+        screeningRes,
     ] = await Promise.all([
         db.from('profiles').select('*').eq('id', userId).maybeSingle(),
         db.from('user_progress').select('completed').eq('user_id', userId),
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ userId:
             .order('confirmed_at', { ascending: false })
             .limit(1)
             .maybeSingle(),
+        db.from('client_screenings').select('*').eq('user_id', userId).maybeSingle(),
     ])
 
     if (profileRes.error) {
@@ -79,6 +81,9 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ userId:
     if (nutritionQRes.error) console.error('[admin/clients/detail] nutritionQ:', nutritionQRes.error.message)
     if (nutritionPlansRes.error) console.error('[admin/clients/detail] nutPlans:', nutritionPlansRes.error.message)
     if (paymentRes.error) console.error('[admin/clients/detail] payment:', paymentRes.error.message)
+    if (screeningRes.error && screeningRes.error.code !== 'PGRST116') {
+        console.error('[admin/clients/detail] screening:', screeningRes.error.message)
+    }
 
     return NextResponse.json({
         profile,
@@ -88,5 +93,6 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ userId:
         programs: programsRes.data || [],
         nutritionPlans: nutritionPlansRes.data || [],
         payment: paymentRes.data || null,
+        screening: screeningRes.data || null,
     })
 }

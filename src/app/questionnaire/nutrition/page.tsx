@@ -58,7 +58,7 @@ export default function NutritionQuestionnairePage() {
           new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 10_000)),
         ])
         if (!allowed) {
-          router.replace('/dashboard')
+          router.replace('/screening')
           return
         }
         // Если уже заполнена — предзаполняем
@@ -127,7 +127,7 @@ export default function NutritionQuestionnairePage() {
           setTimeout(() => reject(new Error('Превышено время ожидания сохранения (20 сек). Проверьте соединение.')), 20_000)
         ),
       ])
-      router.push('/dashboard')
+      router.push('/screening')
     } catch (e: any) {
       setError(e?.message || 'Ошибка сохранения анкеты')
     } finally {

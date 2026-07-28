@@ -9,6 +9,8 @@ import {
   Info, CheckCircle2, AlertCircle
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
+import { upsertScreening } from '@/lib/services/screening'
+import { createClient } from '@/lib/supabase/client'
 
 // ──────────────────────────────────────────────────────────────────────────
 // Данные 7 тестов
@@ -23,6 +25,8 @@ interface Test {
   filmingIcon: React.ReactNode
   interpretation: string[]
   placeholder: string
+  videoUrl?: string
+  vertical?: boolean
 }
 
 const TESTS: Test[] = [
@@ -43,6 +47,8 @@ const TESTS: Test[] = [
       'Точный разбор и программу я составлю лично по вашему видео.',
     ],
     placeholder: 'Вставьте ссылку на видео (YouTube, VK, файловый хостинг)',
+    videoUrl: 'https://www.youtube.com/embed/3vpl5MeyOdQ',
+    vertical: true,
   },
   {
     id: 2,
@@ -59,6 +65,8 @@ const TESTS: Test[] = [
       'Если не дотягиваетесь до пальцев, приходится сгибать колени или спина остаётся жёсткой доской, вероятна зажатость задней поверхности бедра или ограничение подвижности поясницы.',
     ],
     placeholder: 'Вставьте ссылку на видео (YouTube, VK, файловый хостинг)',
+    videoUrl: 'https://www.youtube.com/embed/7jfonl3lIDE',
+    vertical: true,
   },
   {
     id: 3,
@@ -75,6 +83,8 @@ const TESTS: Test[] = [
       'Если опущенное бедро не ложится вниз, голень уходит вперёд или бедро уезжает в сторону, это признаки укорочения мышц-сгибателей, которые тянут таз и перегружают поясницу.',
     ],
     placeholder: 'Вставьте ссылку на видео (YouTube, VK, файловый хостинг)',
+    videoUrl: 'https://www.youtube.com/embed/XBHh_ne1Hcg',
+    vertical: true,
   },
   {
     id: 4,
@@ -85,12 +95,14 @@ const TESTS: Test[] = [
       'Руки в позе вратаря (буква W), прижаты к стене.',
       'Медленно скользи руками вверх в букву Y, не отрывая запястья. Поясница не выгибается.',
     ],
-    filming: 'Спереди и сбоку.',
-    filmingIcon: <><Camera className="w-4 h-4" /> Спереди + Сбоку</>,
+    filming: '',
+    filmingIcon: <><Camera className="w-4 h-4" /> Сбоку</>,
     interpretation: [
       'Если запястья отрываются от стены, поясница сильно выгибается или голова уходит вперёд, это частый признак сутулости и зажатых грудных мышц.',
     ],
     placeholder: 'Вставьте ссылку на видео (YouTube, VK, файловый хостинг)',
+    videoUrl: 'https://www.youtube.com/embed/TahARuKEvyI',
+    vertical: true,
   },
   {
     id: 5,
@@ -107,6 +119,8 @@ const TESTS: Test[] = [
       'Если нога поднимается невысоко, вторая нога отрывается или таз крутит, это говорит о зажатости задней поверхности или слабом контроле центра тела.',
     ],
     placeholder: 'Вставьте ссылку на видео (YouTube, VK, файловый хостинг)',
+    videoUrl: 'https://www.youtube.com/embed/qrHV5c0JYRk',
+    vertical: true,
   },
   {
     id: 6,
@@ -117,13 +131,15 @@ const TESTS: Test[] = [
       'Медленно присядь насколько уверенно держишь равновесие.',
       '5 медленных повторов на каждую ногу.',
     ],
-    filming: 'Спереди (главный), дополнительно сбоку.',
-    filmingIcon: <><Camera className="w-4 h-4" /> Спереди + Сбоку</>,
+    filming: '',
+    filmingIcon: <><Camera className="w-4 h-4" /> Сбоку</>,
     interpretation: [
       'Если колено заваливается внутрь или таз проваливается в сторону, это признак слабых стабилизаторов таза.',
       'Часто заметна разница между правой и левой ногой.',
     ],
     placeholder: 'Вставьте ссылку на видео (YouTube, VK, файловый хостинг)',
+    videoUrl: 'https://www.youtube.com/embed/ftEXls6SmOU',
+    vertical: true,
   },
   {
     id: 7,
@@ -140,6 +156,8 @@ const TESTS: Test[] = [
       'Если в одну сторону поворот заметно меньше, чем в другую, или поворот идёт за счёт таза, это говорит о скованности грудного отдела.',
     ],
     placeholder: 'Вставьте ссылку на видео (YouTube, VK, файловый хостинг)',
+    videoUrl: 'https://www.youtube.com/embed/skDUax0Kp54',
+    vertical: true,
   },
 ]
 
@@ -233,6 +251,37 @@ export default function ScreeningPage() {
     }
   }, [])
 
+  // Загрузка существующего скрининга
+  useEffect(() => {
+    if (!user) return
+    const supabase = createClient()
+    const load = async () => {
+      try {
+        const { data } = await supabase
+          .from('client_screenings')
+          .select('client_date, client_contact, tests')
+          .eq('user_id', user.id)
+          .maybeSingle()
+        if (!data) return
+        if (data.client_date) setClientDate(data.client_date)
+        if (data.client_contact) setClientContact(data.client_contact)
+        if (Array.isArray(data.tests)) {
+          const newLinks: Record<number, string> = {}
+          const newCompleted = new Set<number>()
+          for (const t of data.tests) {
+            if (t.video_url) {
+              newLinks[t.id] = t.video_url
+              newCompleted.add(t.id)
+            }
+          }
+          setLinks(newLinks)
+          setCompletedTests(newCompleted)
+        }
+      } catch {}
+    }
+    load()
+  }, [user])
+
   const toggleTest = useCallback((id: number) => {
     setExpandedTests(prev => {
       const next = new Set(prev)
@@ -270,21 +319,16 @@ export default function ScreeningPage() {
 
     setIsSubmitting(true)
 
-    const formData = {
-      client_date: clientDate,
-      client_contact: clientContact.trim(),
-      tests: TESTS.map(t => ({
-        id: t.id,
-        title: t.title,
-        video_url: links[t.id]?.trim() || '',
-      })),
-    }
-
     try {
-      // Заглушка: пока просто показываем успех.
-      // Подключение к бэкенду будет позже.
-      console.log('Screening form data:', formData)
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      await upsertScreening({
+        client_date: clientDate,
+        client_contact: clientContact.trim(),
+        tests: TESTS.map(t => ({
+          id: t.id,
+          title: t.title,
+          video_url: links[t.id]?.trim() || '',
+        })),
+      })
       setSuccess(true)
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e: any) {
@@ -351,6 +395,12 @@ export default function ScreeningPage() {
               Семь простых тестов покажут, как работает ваше тело. Запишите видео по инструкции,
               вставьте ссылки, и я составлю персональный разбор с программой коррекции.
             </p>
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="mt-4 px-5 py-2 rounded-xl border border-border text-sm font-medium text-text-secondary hover:text-white hover:border-accent/50 hover:bg-accent/10 transition-all"
+            >
+              Пропустить пока
+            </button>
           </div>
         </RevealSection>
 
@@ -595,6 +645,13 @@ export default function ScreeningPage() {
                   <><Check className="w-5 h-5" /> Отправить скрининг</>
                 )}
               </button>
+              <button
+                type="button"
+                onClick={() => router.push('/dashboard')}
+                className="w-full mt-3 py-2.5 rounded-xl border border-border text-sm font-medium text-text-secondary hover:text-white hover:border-accent/50 hover:bg-accent/10 transition-all"
+              >
+                Вернуться позже
+              </button>
             </div>
           </RevealSection>
         </form>
@@ -659,29 +716,43 @@ function TestSection({ test, isExpanded, onToggle, link, onLinkChange, isComplet
       }`}>
         <div className="px-5 md:px-6 pb-6 space-y-5">
 
-          {/* Видео тренера (плейсхолдер) */}
+          {/* Видео тренера */}
           <div>
             <p className="text-xs font-semibold text-accent uppercase tracking-wider mb-3">
               Как выполнять
             </p>
-            <div
-              data-role="trainer-video"
-              data-test={test.id}
-              className="relative aspect-video rounded-xl bg-bg-elevated border border-border flex items-center justify-center overflow-hidden screening-video-placeholder"
-            >
-              <div className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-accent/5" />
-              <div className="relative flex flex-col items-center gap-3 z-10">
-                <div className="w-14 h-14 rounded-full bg-accent/20 flex items-center justify-center screening-play-pulse">
-                  <Play className="w-6 h-6 text-accent ml-0.5" />
+            {test.videoUrl ? (
+              <div className={`rounded-xl overflow-hidden border border-border screening-video-placeholder ${test.vertical ? 'max-w-[280px] mx-auto' : ''}`}>
+                <div className={test.vertical ? 'aspect-[9/16]' : 'aspect-video'}>
+                  <iframe
+                    src={test.videoUrl}
+                    title={`Демонстрация: ${test.title}`}
+                    className="w-full h-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
                 </div>
-                <span className="text-sm font-medium text-text-muted">
-                  Видео-демонстрация
-                </span>
-                <span className="text-xs text-text-muted/60">
-                  Тренер подставит видео позже
-                </span>
               </div>
-            </div>
+            ) : (
+              <div
+                data-role="trainer-video"
+                data-test={test.id}
+                className="relative aspect-video rounded-xl bg-bg-elevated border border-border flex items-center justify-center overflow-hidden screening-video-placeholder"
+              >
+                <div className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-accent/5" />
+                <div className="relative flex flex-col items-center gap-3 z-10">
+                  <div className="w-14 h-14 rounded-full bg-accent/20 flex items-center justify-center screening-play-pulse">
+                    <Play className="w-6 h-6 text-accent ml-0.5" />
+                  </div>
+                  <span className="text-sm font-medium text-text-muted">
+                    Видео-демонстрация
+                  </span>
+                  <span className="text-xs text-text-muted/60">
+                    Тренер подставит видео позже
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Инструкция */}

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import {
     Dumbbell, TrendingUp, Calendar, MessageCircle,
     ChevronRight, Loader2, Zap, Apple, RefreshCw,
-    AlertTriangle, CheckCircle2, Plus, Flame, X
+    AlertTriangle, CheckCircle2, Plus, Flame, X, Activity
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { getMyPrograms, type TrainingProgram } from '@/lib/services/training'
@@ -16,6 +16,7 @@ import {
 } from '@/lib/services/nutrition'
 import { getCurrentNutritionProgram, type NutritionProgram } from '@/lib/services/nutrition-programs'
 import { getMyQuestionnaire, isQuestionnaireCompleted } from '@/lib/services/questionnaire'
+import { isScreeningCompleted } from '@/lib/services/screening'
 import { getMySubscriptionInfo, type SubscriptionInfo } from '@/lib/services/renewal'
 import { getMyStreakStats, type StreakStats } from '@/lib/services/streaks'
 import StreakCard from '@/components/StreakCard'
@@ -37,6 +38,7 @@ export default function DashboardPage() {
     const [subscriptionPlanLabel, setSubscriptionPlanLabel] = useState<string | null>(null)
     const [nutritionPending, setNutritionPending] = useState(false)
     const [questionnairePending, setQuestionnairePending] = useState(false)
+    const [screeningPending, setScreeningPending] = useState(false)
     const [subInfo, setSubInfo] = useState<SubscriptionInfo | null>(null)
     const [renewedBanner, setRenewedBanner] = useState(false)
     const [nutritionBannerDismissed, setNutritionBannerDismissed] = useState(false)
@@ -76,13 +78,14 @@ export default function DashboardPage() {
 
         const loadDashboardData = async () => {
             try {
-                const [allPrograms, metric, qDone, needsNutrition, nutritionDone, subInfoData] = await Promise.all([
+                const [allPrograms, metric, qDone, needsNutrition, nutritionDone, subInfoData, screeningDone] = await Promise.all([
                     getMyPrograms(user.id),
                     getLatestMetric(),
                     isQuestionnaireCompleted(),
                     isNutritionQuestionnaireRequired(),
                     isNutritionQuestionnaireCompleted(),
                     getMySubscriptionInfo(),
+                    isScreeningCompleted(),
                 ])
 
                 // Определяем текущую программу по ДАТАМ, а не по getCurrentProgram()
@@ -95,6 +98,7 @@ export default function DashboardPage() {
                 setLatestMetric(metric)
                 setQuestionnairePending(!qDone)
                 setNutritionPending(needsNutrition && !nutritionDone)
+                setScreeningPending(!screeningDone)
                 setSubInfo(subInfoData)
 
                 // Данные подписки из subInfo
@@ -205,6 +209,25 @@ export default function DashboardPage() {
                             </p>
                         </div>
                         <ChevronRight className="w-5 h-5 text-accent flex-shrink-0" />
+                    </button>
+                )}
+
+                {/* Баннер: скрининг */}
+                {screeningPending && !questionnairePending && !nutritionPending && (
+                    <button
+                        onClick={() => router.push('/screening')}
+                        className="w-full mb-6 rounded-2xl border border-info/40 bg-info/10 p-5 flex items-center gap-4 text-left hover:bg-info/15 transition-colors"
+                    >
+                        <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-info/20 flex items-center justify-center">
+                            <Activity className="w-6 h-6 text-info" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-white font-semibold mb-1">Пройдите скрининг тела</p>
+                            <p className="text-text-secondary text-sm">
+                                7 простых тестов помогут тренеру лучше понять ваше тело. Займёт 15–20 минут.
+                            </p>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-info flex-shrink-0" />
                     </button>
                 )}
 

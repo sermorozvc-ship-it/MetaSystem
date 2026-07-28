@@ -40,6 +40,16 @@ export default function OnboardingPage() {
                         return
                     }
                 }
+                // Питание не требуется или уже заполнено — скрининг опционален,
+                // но предлагаем пройти. Если уже проходил — на дашборд.
+                const { isScreeningCompleted } = await import('@/lib/services/screening')
+                if (cancelled) return
+                const screeningDone = await isScreeningCompleted()
+                if (cancelled) return
+                if (!screeningDone) {
+                    router.replace('/screening')
+                    return
+                }
                 router.replace('/dashboard')
             } catch {
                 if (!cancelled) router.replace('/questionnaire')
