@@ -20,6 +20,7 @@ import {
 import { type TrainingProgram, type TrainingEntry } from '@/lib/services/training'
 import { adminFetch } from '@/lib/api/admin-fetch'
 import ExerciseProgressView from '@/components/ExerciseProgressView'
+import { parseCheckinQuestions } from '@/lib/utils/checkin-questions'
 import { parseMdToJson, EXAMPLE_PROGRAM_MD } from '@/lib/utils/md-parser'
 import { buildDiaryMd } from '@/lib/utils/diary-export'
 import ExerciseLibraryCheck from '@/components/admin/ExerciseLibraryCheck'
@@ -747,6 +748,7 @@ function ProgramCard({ program, onDelete, onUpdate, clientName, clientId, traini
     const [entries, setEntries] = useState<TrainingEntry[]>([])
     const [loadingEntries, setLoadingEntries] = useState(false)
     const [loadError, setLoadError] = useState('')
+    const [weeklyCheckin, setWeeklyCheckin] = useState<{ answers: Record<string, string>; completed_at: string | null } | null>(null)
     const [deleting, setDeleting] = useState(false)
     const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -821,8 +823,14 @@ function ProgramCard({ program, onDelete, onUpdate, clientName, clientId, traini
             setLoadingEntries(true)
             setLoadError('')
             try {
-                const fetched = await fetchEntries()
+                const [fetched, checkinRes] = await Promise.all([
+                    fetchEntries(),
+                    adminFetch<{ checkin: { answers: Record<string, string>; completed_at: string | null } | null }>(
+                        `/api/admin/programs/${program.id}/checkin`,
+                    ),
+                ])
                 setEntries(fetched)
+                setWeeklyCheckin(checkinRes.checkin)
             } catch (e: any) {
                 setLoadError(e.message)
             } finally {
@@ -1146,6 +1154,40 @@ function ProgramCard({ program, onDelete, onUpdate, clientName, clientId, traini
                             })}
                         </div>
                     )}
+
+                    {/* Недельный чек-ин */}
+                    {!loadingEntries && weeklyCheckin && (() => {
+                        const checkinMd = program.program_data?.checkin as string | undefined
+                        const questions = checkinMd ? parseCheckinQuestions(checkinMd) : []
+                        const answered = questions.filter((q) => {
+                            const a = weeklyCheckin.answers[q.key]
+                            return a !== undefined && a !== null && String(a).trim() !== ''
+                        })
+                        if (answered.length === 0) return null
+                        return (
+                            <div className="mt-4 rounded-xl bg-bg-elevated border border-border p-4">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <CheckCircle2 className="w-5 h-5 text-accent flex-shrink-0" />
+                                    <h4 className="font-display font-bold text-white">
+                                        Чек-ин недели
+                                    </h4>
+                                    {weeklyCheckin.completed_at && (
+                                        <span className="text-xs text-text-muted ml-auto">
+                                            {new Date(weeklyCheckin.completed_at).toLocaleString('ru-RU')}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="space-y-2">
+                                    {answered.map((q) => (
+                                        <div key={q.key} className="text-sm border-b border-border/40 pb-2 last:border-0 last:pb-0">
+                                            <span className="text-text-secondary">{q.label}:</span>
+                                            <span className="text-white ml-1">{weeklyCheckin.answers[q.key]}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )
+                    })()}
                 </div>
             )}
         </div>
