@@ -217,19 +217,19 @@ export default function DashboardPage() {
 
                 {/* Баннер: скрининг */}
                 {screeningPending && !questionnairePending && !nutritionPending && !screeningBannerDismissed && (
-                    <div className="mb-6">
+                    <div className="mb-6 rounded-2xl border border-info/40 bg-info/10 overflow-hidden">
                         <button
                             onClick={() => {
                                 setScreeningBannerDismissed(true)
                                 localStorage.setItem('screeningBannerDismissed', '1')
                             }}
-                            className="text-xs text-text-muted hover:text-white transition-colors mb-1.5 ml-1"
+                            className="w-full text-right px-5 pt-2.5 pb-0 text-xs font-medium text-text-muted hover:text-white transition-colors border-b border-info/20"
                         >
                             Не сейчас
                         </button>
                         <button
                             onClick={() => router.push('/screening')}
-                            className="w-full rounded-2xl border border-info/40 bg-info/10 p-5 flex items-center gap-4 text-left hover:bg-info/15 transition-colors"
+                            className="w-full p-5 flex items-center gap-4 text-left hover:bg-info/15 transition-colors"
                         >
                             <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-info/20 flex items-center justify-center">
                                 <Activity className="w-6 h-6 text-info" />
