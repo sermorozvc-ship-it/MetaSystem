@@ -339,9 +339,19 @@ export default function ScreeningPage() {
         const existing = prev[testId] || []
         const next = [...existing]
         next[slot] = result.url
-        return { ...prev, [testId]: next }
+        const updated = { ...prev, [testId]: next }
+
+        // Помечаем тест как выполненный только если все ракурсы загружены
+        const test = TESTS.find(t => t.id === testId)
+        if (test) {
+          const filled = (next || []).filter(u => u && u.trim()).length
+          if (filled >= test.filmingAngles) {
+            setCompletedTests(prev => new Set(prev).add(testId))
+          }
+        }
+
+        return updated
       })
-      setCompletedTests(prev => new Set(prev).add(testId))
     } catch (e: any) {
       setUploadErrors(prev => ({ ...prev, [slotKey]: e?.message || 'Ошибка загрузки' }))
     } finally {
@@ -361,23 +371,30 @@ export default function ScreeningPage() {
   const handleRemoveVideo = useCallback((testId: number, slot: number) => {
     setVideoUrls(prev => {
       const existing = prev[testId] || []
-      const next = existing.filter((_, i) => i !== slot)
-      return next.length > 0 ? { ...prev, [testId]: next } : (() => {
+      const next = [...existing]
+      next[slot] = ''  // Обнуляем слот, не сдвигая индексы
+      const hasAny = next.some(u => u && u.trim())
+
+      // Снимаем "выполнено" если не все ракурсы загружены
+      const test = TESTS.find(t => t.id === testId)
+      if (test) {
+        const filled = next.filter(u => u && u.trim()).length
+        if (filled < test.filmingAngles) {
+          setCompletedTests(prev => {
+            const s = new Set(prev)
+            s.delete(testId)
+            return s
+          })
+        }
+      }
+
+      return hasAny ? { ...prev, [testId]: next } : (() => {
         const copy = { ...prev }
         delete copy[testId]
         return copy
       })()
     })
-    setCompletedTests(prev => {
-      const test = TESTS.find(t => t.id === testId)
-      if (!test) return prev
-      const remaining = (videoUrls[testId] || []).filter((_, i) => i !== slot)
-      if (remaining.length >= test.filmingAngles) return prev
-      const next = new Set(prev)
-      next.delete(testId)
-      return next
-    })
-  }, [videoUrls])
+  }, [])
 
   const allLinksFilled = TESTS.every(t => {
     const urls = videoUrls[t.id] || []
