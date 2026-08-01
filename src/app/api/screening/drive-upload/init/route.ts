@@ -1,12 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { createResumableUploadSession } from '@/lib/services/google-drive-upload'
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user }, error } = await supabase.auth.getUser()
-    if (error || !user) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+
+    if (!url || !serviceKey) {
+      return NextResponse.json({ error: 'Сервер не настроен' }, { status: 500 })
+    }
+
+    const adminClient = createSupabaseAdmin(url, serviceKey, {
+      auth: { persistSession: false },
+    })
+
+    const authHeader = req.headers.get('authorization') || ''
+    const token = authHeader.replace('Bearer ', '').trim()
+
+    if (!token) {
+      return NextResponse.json({ error: 'Не авторизован' }, { status: 401 })
+    }
+
+    const { data: { user }, error: authError } = await adminClient.auth.getUser(token)
+    if (authError || !user) {
       return NextResponse.json({ error: 'Не авторизован' }, { status: 401 })
     }
 
