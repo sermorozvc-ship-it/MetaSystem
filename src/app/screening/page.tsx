@@ -275,7 +275,7 @@ export default function ScreeningPage() {
 
   // Загрузка существующего скрининга
   useEffect(() => {
-    if (!user) return
+    if (authLoading || !user) return
     const supabase = createClient()
     const load = async () => {
       try {
@@ -304,7 +304,7 @@ export default function ScreeningPage() {
       } catch {}
     }
     load()
-  }, [user])
+  }, [user, authLoading])
 
   const toggleTest = useCallback((id: number) => {
     setExpandedTests(prev => {
