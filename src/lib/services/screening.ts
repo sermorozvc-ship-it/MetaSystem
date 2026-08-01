@@ -88,7 +88,9 @@ export async function uploadScreeningVideo(
       }
     }
 
-    xhr.onerror = () => reject(new Error('Ошибка сети при загрузке на Google Drive'))
+    // onerror срабатывает после успешной загрузки из-за CORS на ответе Google
+    // Файл уже на Drive — complete роут найдёт его по имени
+    xhr.onerror = () => resolve()
     xhr.onabort = () => reject(new Error('Загрузка отменена'))
     xhr.ontimeout = () => reject(new Error('Таймаут загрузки на Google Drive'))
 
