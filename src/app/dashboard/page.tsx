@@ -42,10 +42,13 @@ export default function DashboardPage() {
     const [subInfo, setSubInfo] = useState<SubscriptionInfo | null>(null)
     const [renewedBanner, setRenewedBanner] = useState(false)
     const [nutritionBannerDismissed, setNutritionBannerDismissed] = useState(false)
+    const [screeningBannerDismissed, setScreeningBannerDismissed] = useState(false)
 
     useEffect(() => {
         const dismissed = localStorage.getItem('nutritionBannerDismissed')
         if (dismissed) setNutritionBannerDismissed(true)
+        const screeningDismissed = localStorage.getItem('screeningBannerDismissed')
+        if (screeningDismissed) setScreeningBannerDismissed(true)
     }, [])
 
     const userRef = useRef(user)
@@ -213,22 +216,34 @@ export default function DashboardPage() {
                 )}
 
                 {/* Баннер: скрининг */}
-                {screeningPending && !questionnairePending && !nutritionPending && (
-                    <button
-                        onClick={() => router.push('/screening')}
-                        className="w-full mb-6 rounded-2xl border border-info/40 bg-info/10 p-5 flex items-center gap-4 text-left hover:bg-info/15 transition-colors"
-                    >
-                        <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-info/20 flex items-center justify-center">
-                            <Activity className="w-6 h-6 text-info" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-white font-semibold mb-1">Пройдите скрининг тела</p>
-                            <p className="text-text-secondary text-sm">
-                                7 простых тестов помогут тренеру лучше понять ваше тело. Займёт 15–20 минут.
-                            </p>
-                        </div>
-                        <ChevronRight className="w-5 h-5 text-info flex-shrink-0" />
-                    </button>
+                {screeningPending && !questionnairePending && !nutritionPending && !screeningBannerDismissed && (
+                    <div className="relative w-full mb-6 rounded-2xl border border-info/40 bg-info/10 p-5 flex items-center gap-4 text-left">
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                setScreeningBannerDismissed(true)
+                                localStorage.setItem('screeningBannerDismissed', '1')
+                            }}
+                            className="absolute top-3 right-3 p-1 rounded-full hover:bg-white/10 transition-colors"
+                        >
+                            <X className="w-4 h-4 text-text-muted" />
+                        </button>
+                        <button
+                            onClick={() => router.push('/screening')}
+                            className="flex items-center gap-4 flex-1 min-w-0 text-left"
+                        >
+                            <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-info/20 flex items-center justify-center">
+                                <Activity className="w-6 h-6 text-info" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-white font-semibold mb-1">Пройдите скрининг тела</p>
+                                <p className="text-text-secondary text-sm">
+                                    7 простых тестов помогут тренеру лучше понять ваше тело. Займёт 15–20 минут.
+                                </p>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-info flex-shrink-0" />
+                        </button>
+                    </div>
                 )}
 
                 {/* Баннер: тариф успешно продлён */}
