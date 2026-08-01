@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
     if (!initRes.ok) {
       const errText = await initRes.text()
       console.error('[init] Google Drive resumable init failed:', initRes.status, errText)
-      return NextResponse.json({ error: 'Ошибка создания сессии загрузки' }, { status: 500 })
+      return NextResponse.json({ error: `Drive error ${initRes.status}: ${errText}` }, { status: 500 })
     }
 
     const uploadUrl = initRes.headers.get('Location')
