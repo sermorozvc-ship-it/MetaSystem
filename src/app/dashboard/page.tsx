@@ -232,14 +232,14 @@ export default function DashboardPage() {
                                 </p>
                             </div>
                         </button>
-                        <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="flex items-center gap-3 flex-shrink-0 ml-2">
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation()
                                     setScreeningBannerDismissed(true)
                                     localStorage.setItem('screeningBannerDismissed', '1')
                                 }}
-                                className="px-3 py-1 rounded-lg text-xs font-medium text-text-muted hover:text-white hover:bg-white/10 transition-colors"
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium text-text-muted hover:text-white hover:bg-white/10 transition-colors"
                             >
                                 Скрыть
                             </button>
