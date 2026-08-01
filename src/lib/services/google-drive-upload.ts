@@ -92,7 +92,7 @@ export async function createResumableUploadSession(params: {
   userId: string
   testId: number
   slot: number
-}): Promise<{ uploadUrl: string }> {
+}): Promise<{ uploadUrl: string; clientFolderId: string; fileName: string }> {
   const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID
   if (!rootFolderId) throw new Error('GOOGLE_DRIVE_FOLDER_ID не задан')
 
@@ -129,7 +129,26 @@ export async function createResumableUploadSession(params: {
   const uploadUrl = res.headers.get('Location')
   if (!uploadUrl) throw new Error('Google не вернул upload URL')
 
-  return { uploadUrl }
+  return { uploadUrl, clientFolderId: clientFolder, fileName: safeName }
+}
+
+/**
+ * Ищет файл по имени в папке (fallback если ID не пришёл в ответе загрузки)
+ */
+export async function findFileByName(fileName: string, folderId: string): Promise<string | null> {
+  const drive = getDrive()
+  const q = `name='${fileName.replace(/'/g, "\\'")}' and '${folderId}' in parents and trashed=false`
+
+  const { data } = await drive.files.list({
+    q,
+    fields: 'files(id, createdTime)',
+    orderBy: 'createdTime desc',
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+  })
+
+  if (data.files && data.files.length > 0) return data.files[0].id!
+  return null
 }
 
 /**

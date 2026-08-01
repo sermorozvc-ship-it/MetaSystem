@@ -48,10 +48,12 @@ export async function uploadScreeningVideo(
     throw new Error(err.error || `Ошибка инициализации загрузки: ${initRes.status}`)
   }
 
-  const { uploadUrl } = await initRes.json()
+  const { uploadUrl, clientFolderId, driveFileName } = await initRes.json()
 
   // 2. Загружаем файл напрямую на Google Drive (Vercel не блокирует)
-  const uploadResult = await new Promise<{ fileId: string }>((resolve, reject) => {
+  let fileId: string | null = null
+
+  await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', uploadUrl, true)
 
@@ -68,32 +70,25 @@ export async function uploadScreeningVideo(
         if (xhr.responseText) {
           try {
             const resp = JSON.parse(xhr.responseText)
-            if (resp.id) {
-              resolve({ fileId: resp.id })
-              return
-            }
+            if (resp.id) fileId = resp.id
           } catch {}
         }
         // Если body пустой — пробуем из заголовка Location
-        const location = xhr.getResponseHeader('Location')
-        if (location) {
-          const match = location.match(/\/([^/]+)\?/)
-          if (match) {
-            resolve({ fileId: match[1] })
-            return
+        if (!fileId) {
+          const location = xhr.getResponseHeader('Location')
+          if (location) {
+            const match = location.match(/\/([^/]+)\?/)
+            if (match) fileId = match[1]
           }
         }
-        reject(new Error('Google Drive загрузил файл, но не вернул ID. Статус: ' + xhr.status))
+        // ID может быть не получен — complete роут найдёт по имени
+        resolve()
       } else {
         reject(new Error(`Ошибка загрузки на Google Drive: ${xhr.status} ${xhr.statusText}`))
       }
     }
 
-    xhr.onerror = (e) => {
-      // onerror может сработать после успешной загрузки из-за CORS
-      // Проверяем — если прогресс был 100%, считаем успешной
-      reject(new Error('Ошибка сети при загрузке на Google Drive'))
-    }
+    xhr.onerror = () => reject(new Error('Ошибка сети при загрузке на Google Drive'))
     xhr.onabort = () => reject(new Error('Загрузка отменена'))
     xhr.ontimeout = () => reject(new Error('Таймаут загрузки на Google Drive'))
 
@@ -108,7 +103,7 @@ export async function uploadScreeningVideo(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${tokenData.token}`,
     },
-    body: JSON.stringify({ fileId: uploadResult.fileId }),
+    body: JSON.stringify({ fileId, clientFolderId, driveFileName }),
   })
 
   if (!completeRes.ok) {

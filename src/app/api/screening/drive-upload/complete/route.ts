@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
-import { makeFilePublic } from '@/lib/services/google-drive-upload'
+import { makeFilePublic, findFileByName } from '@/lib/services/google-drive-upload'
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,13 +28,19 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    const { fileId } = body
+    const { fileId, clientFolderId, driveFileName } = body
 
-    if (!fileId) {
-      return NextResponse.json({ error: 'fileId не передан' }, { status: 400 })
+    // Определяем ID файла: либо передан напрямую, либо ищем по имени
+    let resolvedFileId = fileId
+    if (!resolvedFileId && clientFolderId && driveFileName) {
+      resolvedFileId = await findFileByName(driveFileName, clientFolderId)
     }
 
-    const publicUrl = await makeFilePublic(fileId)
+    if (!resolvedFileId) {
+      return NextResponse.json({ error: 'Файл не найден на Google Drive' }, { status: 404 })
+    }
+
+    const publicUrl = await makeFilePublic(resolvedFileId)
     return NextResponse.json({ url: publicUrl })
   } catch (e: any) {
     console.error('[drive-upload/complete]', e)

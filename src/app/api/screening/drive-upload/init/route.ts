@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Не все параметры переданы' }, { status: 400 })
     }
 
-    const { uploadUrl } = await createResumableUploadSession({
+    const session = await createResumableUploadSession({
       fileName,
       fileSize,
       mimeType,
@@ -44,7 +44,11 @@ export async function POST(req: NextRequest) {
       slot,
     })
 
-    return NextResponse.json({ uploadUrl })
+    return NextResponse.json({
+      uploadUrl: session.uploadUrl,
+      clientFolderId: session.clientFolderId,
+      driveFileName: session.fileName,
+    })
   } catch (e: any) {
     console.error('[drive-upload/init]', e)
     return NextResponse.json({ error: e?.message || 'Ошибка сервера' }, { status: 500 })
