@@ -510,7 +510,19 @@ export default function ScreeningPage() {
               <div className="w-9 h-9 rounded-xl bg-accent/15 flex items-center justify-center">
                 <User className="w-4.5 h-4.5 text-accent" />
               </div>
-              <h2 className="text-lg font-display font-semibold text-white">Ваши данные</h2>
+              <h2 className="text-lg font-display font-semibold text-white flex-1">Ваши данные</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setClientDate(new Date().toISOString().split('T')[0])
+                  setClientName('')
+                  setVideoUrls({})
+                  setCompletedTests(new Set())
+                }}
+                className="text-xs text-text-muted hover:text-danger transition-colors"
+              >
+                Очистить
+              </button>
             </div>
             <div className="grid sm:grid-cols-2 gap-4">
               <div>
