@@ -219,16 +219,6 @@ export default function DashboardPage() {
                 {screeningPending && !questionnairePending && !nutritionPending && !screeningBannerDismissed && (
                     <div className="relative w-full mb-6 rounded-2xl border border-info/40 bg-info/10 p-5 flex items-center gap-4 text-left">
                         <button
-                            onClick={(e) => {
-                                e.stopPropagation()
-                                setScreeningBannerDismissed(true)
-                                localStorage.setItem('screeningBannerDismissed', '1')
-                            }}
-                            className="absolute top-3 right-3 px-3 py-1 rounded-lg text-xs font-medium text-text-muted hover:text-white hover:bg-white/10 transition-colors"
-                        >
-                            Скрыть
-                        </button>
-                        <button
                             onClick={() => router.push('/screening')}
                             className="flex items-center gap-4 flex-1 min-w-0 text-left"
                         >
@@ -241,8 +231,20 @@ export default function DashboardPage() {
                                     7 простых тестов помогут тренеру лучше понять ваше тело. Займёт 15–20 минут.
                                 </p>
                             </div>
-                            <ChevronRight className="w-5 h-5 text-info flex-shrink-0" />
                         </button>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    setScreeningBannerDismissed(true)
+                                    localStorage.setItem('screeningBannerDismissed', '1')
+                                }}
+                                className="px-3 py-1 rounded-lg text-xs font-medium text-text-muted hover:text-white hover:bg-white/10 transition-colors"
+                            >
+                                Скрыть
+                            </button>
+                            <ChevronRight className="w-5 h-5 text-info" />
+                        </div>
                     </div>
                 )}
 
