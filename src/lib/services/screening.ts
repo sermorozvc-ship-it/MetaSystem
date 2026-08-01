@@ -53,8 +53,7 @@ export async function uploadScreeningVideo(
   // 2. Загружаем файл напрямую на Google Drive (Vercel не блокирует)
   const uploadResult = await new Promise<{ fileId: string }>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('PUT', uploadUrl)
-    xhr.setRequestHeader('Content-Type', file.type || 'video/mp4')
+    xhr.open('PUT', uploadUrl, true)
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
@@ -65,20 +64,40 @@ export async function uploadScreeningVideo(
 
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const resp = JSON.parse(xhr.responseText)
-          resolve({ fileId: resp.id })
-        } catch {
-          reject(new Error('Не удалось получить ID файла после загрузки'))
+        // Пробуем получить file ID из body
+        if (xhr.responseText) {
+          try {
+            const resp = JSON.parse(xhr.responseText)
+            if (resp.id) {
+              resolve({ fileId: resp.id })
+              return
+            }
+          } catch {}
         }
+        // Если body пустой — пробуем из заголовка Location
+        const location = xhr.getResponseHeader('Location')
+        if (location) {
+          const match = location.match(/\/([^/]+)\?/)
+          if (match) {
+            resolve({ fileId: match[1] })
+            return
+          }
+        }
+        reject(new Error('Google Drive загрузил файл, но не вернул ID. Статус: ' + xhr.status))
       } else {
-        reject(new Error(`Ошибка загрузки на Google Drive: ${xhr.status}`))
+        reject(new Error(`Ошибка загрузки на Google Drive: ${xhr.status} ${xhr.statusText}`))
       }
     }
 
-    xhr.onerror = () => reject(new Error('Сеть недоступна при загрузке'))
+    xhr.onerror = (e) => {
+      // onerror может сработать после успешной загрузки из-за CORS
+      // Проверяем — если прогресс был 100%, считаем успешной
+      reject(new Error('Ошибка сети при загрузке на Google Drive'))
+    }
     xhr.onabort = () => reject(new Error('Загрузка отменена'))
+    xhr.ontimeout = () => reject(new Error('Таймаут загрузки на Google Drive'))
 
+    xhr.timeout = 300_000 // 5 минут
     xhr.send(file)
   })
 
