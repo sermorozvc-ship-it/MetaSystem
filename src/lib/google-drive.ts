@@ -1,5 +1,4 @@
 import { google } from 'googleapis'
-import type { OAuth2Client, JWT } from 'google-auth-library'
 
 export function normalizePrivateKey(raw: string | undefined): string | null {
   if (!raw) return null
@@ -11,7 +10,7 @@ export function normalizePrivateKey(raw: string | undefined): string | null {
   return key
 }
 
-export function getDriveAuth(): { drive: ReturnType<typeof google.drive>; auth: JWT } {
+export function getDriveAuth() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
   const rawKey = process.env.GOOGLE_PRIVATE_KEY
   const key = normalizePrivateKey(rawKey)
@@ -31,5 +30,6 @@ export function getDriveAuth(): { drive: ReturnType<typeof google.drive>; auth: 
     scopes: ['https://www.googleapis.com/auth/drive.file'],
   })
 
-  return { drive: google.drive({ version: 'v3', auth }), auth }
+  const drive = google.drive({ version: 'v3', auth })
+  return { drive, auth }
 }
