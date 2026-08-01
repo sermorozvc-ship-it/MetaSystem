@@ -6,10 +6,10 @@ import {
   Activity, Camera, ChevronDown, ChevronUp, Check, Loader2,
   AlertTriangle, Shield, Play, Link as LinkIcon, Video,
   ClipboardCheck, User, Calendar, Phone, ChevronRight,
-  Info, CheckCircle2, AlertCircle
+  Info, CheckCircle2, AlertCircle, Upload, FileVideo, X
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { upsertScreening } from '@/lib/services/screening'
+import { upsertScreening, uploadScreeningVideo, type UploadProgress } from '@/lib/services/screening'
 import { createClient } from '@/lib/supabase/client'
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -23,6 +23,8 @@ interface Test {
   instruction: string[]
   filming: string
   filmingIcon: React.ReactNode
+  filmingAngles: number
+  filmingLabels?: string[]
   interpretation: string[]
   placeholder: string
   videoUrl?: string
@@ -40,8 +42,10 @@ const TESTS: Test[] = [
       'Медленно присядь как можешь глубоко, пятки на полу.',
       'Медленно встань, 5 повторов.',
     ],
-    filming: 'Два дубля, спереди и сбоку, телефон на уровне таза.',
+    filming: 'Два отдельных видео: спереди и сбоку. Каждый ракурс — отдельный файл, загрузите по одному.',
     filmingIcon: <><Camera className="w-4 h-4" /> Спереди + Сбоку</>,
+    filmingAngles: 2,
+    filmingLabels: ['Спереди (основной)', 'Сбоку (основной)'],
     interpretation: [
       'Если колени заваливаются внутрь, пятки отрываются или корпус сильно падает вперёд, это часто говорит о зажатости голеностопов и слабых ягодичных.',
       'Точный разбор и программу я составлю лично по вашему видео.',
@@ -58,9 +62,12 @@ const TESTS: Test[] = [
       'Стопы вместе, колени прямые.',
       'Медленно наклоняйся вниз, тянись к пальцам стоп.',
       'Опустись максимум без боли, задержись 2 секунды.',
+      '3 повтора в каждом ракурсе с задержкой внизу 2 секунды.',
     ],
-    filming: 'Сбоку (главный), дополнительно сзади.',
+    filming: 'Два отдельных видео: сбоку и сзади. Каждый ракурс — отдельный файл, загрузите по одному.',
     filmingIcon: <><Camera className="w-4 h-4" /> Сбоку + Сзади</>,
+    filmingAngles: 2,
+    filmingLabels: ['Сбоку (основной)', 'Сзади'],
     interpretation: [
       'Если не дотягиваетесь до пальцев, приходится сгибать колени или спина остаётся жёсткой доской, вероятна зажатость задней поверхности бедра или ограничение подвижности поясницы.',
     ],
@@ -75,10 +82,13 @@ const TESTS: Test[] = [
     instruction: [
       'Сядь на край кровати, ляг на спину, подтяни оба колена к груди.',
       'Удерживая одно колено руками, медленно опусти вторую ногу, полностью расслабь её.',
-      'Замри 3 секунды, повтори другой ногой.',
+      'Выпрямляемая нога должна быть почти прямой и не сгибаться в колене.',
+      'Замри 3 секунды, 2 повтора на каждую ногу.',
     ],
-    filming: 'Сбоку со стороны опускаемой ноги.',
-    filmingIcon: <><Camera className="w-4 h-4" /> Сбоку</>,
+    filming: 'Два отдельных видео: с правой и с левой ноги. Каждый ракурс — отдельный файл, загрузите по одному.',
+    filmingIcon: <><Camera className="w-4 h-4" /> Правая + Левая нога</>,
+    filmingAngles: 2,
+    filmingLabels: ['Правая нога (основная)', 'Левая нога (основная)'],
     interpretation: [
       'Если опущенное бедро не ложится вниз, голень уходит вперёд или бедро уезжает в сторону, это признаки укорочения мышц-сгибателей, которые тянут таз и перегружают поясницу.',
     ],
@@ -97,6 +107,7 @@ const TESTS: Test[] = [
     ],
     filming: 'Сбоку, чтобы было видно отрыв рук и поясницы от стены.',
     filmingIcon: <><Camera className="w-4 h-4" /> Сбоку</>,
+    filmingAngles: 1,
     interpretation: [
       'Если запястья отрываются от стены, поясница сильно выгибается или голова уходит вперёд, это частый признак сутулости и зажатых грудных мышц.',
     ],
@@ -111,10 +122,13 @@ const TESTS: Test[] = [
     instruction: [
       'Ляг на спину, ноги прямые.',
       'Не сгибая колено, медленно подними одну ногу как можно выше.',
-      'Вторая нога прижата к полу, таз не проворачивается. Повтори другой ногой.',
+      'Вторая нога прижата к полу, таз не проворачивается.',
+      '3 повтора на каждую ногу.',
     ],
-    filming: 'Сбоку, телефон на уровне пола.',
-    filmingIcon: <><Camera className="w-4 h-4" /> Сбоку</>,
+    filming: 'Два отдельных видео: правая и левая нога. Каждый ракурс — отдельный файл, загрузите по одному.',
+    filmingIcon: <><Camera className="w-4 h-4" /> Правая + Левая нога</>,
+    filmingAngles: 2,
+    filmingLabels: ['Правая нога (основная)', 'Левая нога (основная)'],
     interpretation: [
       'Если нога поднимается невысоко, вторая нога отрывается или таз крутит, это говорит о зажатости задней поверхности или слабом контроле центра тела.',
     ],
@@ -129,10 +143,13 @@ const TESTS: Test[] = [
     instruction: [
       'Встань на одну ногу, руки на поясе.',
       'Медленно присядь насколько уверенно держишь равновесие.',
+      'Не опирайся на другую ногу — она свободно свисает.',
       '5 медленных повторов на каждую ногу.',
     ],
-    filming: 'Сбоку, телефон на уровне таза.',
-    filmingIcon: <><Camera className="w-4 h-4" /> Сбоку</>,
+    filming: 'Два отдельных видео: правая и левая нога. Каждый ракурс — отдельный файл, загрузите по одному.',
+    filmingIcon: <><Camera className="w-4 h-4" /> Правая + Левая нога</>,
+    filmingAngles: 2,
+    filmingLabels: ['Правая нога (основная)', 'Левая нога (основная)'],
     interpretation: [
       'Если колено заваливается внутрь или таз проваливается в сторону, это признак слабых стабилизаторов таза.',
       'Часто заметна разница между правой и левой ногой.',
@@ -149,9 +166,11 @@ const TESTS: Test[] = [
       'Сядь на край стула, колени вместе.',
       'Скрести руки на груди.',
       'Медленно повернись максимум вправо, потом влево, не двигая тазом.',
+      '2 поворота в каждую сторону, одно видео на весь тест.',
     ],
-    filming: 'Сверху-спереди (телефон чуть выше головы).',
+    filming: 'Одно видео: снимай спереди, 2 поворота влево и 2 вправо.',
     filmingIcon: <><Camera className="w-4 h-4" /> Сверху-спереди</>,
+    filmingAngles: 1,
     interpretation: [
       'Если в одну сторону поворот заметно меньше, чем в другую, или поворот идёт за счёт таза, это говорит о скованности грудного отдела.',
     ],
@@ -227,8 +246,11 @@ export default function ScreeningPage() {
     warmup: false,
   })
   const [clientDate, setClientDate] = useState('')
-  const [clientContact, setClientContact] = useState('')
-  const [links, setLinks] = useState<Record<number, string>>({})
+  const [clientName, setClientName] = useState('')
+  const [videoUrls, setVideoUrls] = useState<Record<number, string[]>>({})
+  const [uploadingSlots, setUploadingSlots] = useState<Set<string>>(new Set())
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({})
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({})
 
   const userRef = useRef(user)
   useEffect(() => { userRef.current = user }, [user])
@@ -264,17 +286,19 @@ export default function ScreeningPage() {
           .maybeSingle()
         if (!data) return
         if (data.client_date) setClientDate(data.client_date)
-        if (data.client_contact) setClientContact(data.client_contact)
+        if (data.client_contact) setClientName(data.client_contact)
         if (Array.isArray(data.tests)) {
-          const newLinks: Record<number, string> = {}
+          const newVideoUrls: Record<number, string[]> = {}
           const newCompleted = new Set<number>()
           for (const t of data.tests) {
-            if (t.video_url) {
-              newLinks[t.id] = t.video_url
+            // Поддержка нового формата (video_urls) и старого (video_url)
+            const urls: string[] = t.video_urls || (t.video_url ? [t.video_url] : [])
+            if (urls.length > 0) {
+              newVideoUrls[t.id] = urls
               newCompleted.add(t.id)
             }
           }
-          setLinks(newLinks)
+          setVideoUrls(newVideoUrls)
           setCompletedTests(newCompleted)
         }
       } catch {}
@@ -291,21 +315,78 @@ export default function ScreeningPage() {
     })
   }, [])
 
-  const updateLink = useCallback((testId: number, value: string) => {
-    setLinks(prev => ({ ...prev, [testId]: value }))
-    if (value.trim()) {
+  const handleFileUpload = useCallback(async (testId: number, slot: number, file: File) => {
+    if (!clientName.trim()) {
+      setUploadErrors(prev => ({ ...prev, [`${testId}-${slot}`]: 'Сначала введите имя и фамилию' }))
+      return
+    }
+
+    const slotKey = `${testId}-${slot}`
+    setUploadingSlots(prev => new Set(prev).add(slotKey))
+    setUploadErrors(prev => {
+      const next = { ...prev }
+      delete next[slotKey]
+      return next
+    })
+    setUploadProgress(prev => ({ ...prev, [slotKey]: 0 }))
+
+    try {
+      const result = await uploadScreeningVideo(file, testId, slot, clientName.trim(), (progress) => {
+        setUploadProgress(prev => ({ ...prev, [slotKey]: progress.percent }))
+      })
+
+      setVideoUrls(prev => {
+        const existing = prev[testId] || []
+        const next = [...existing]
+        next[slot] = result.url
+        return { ...prev, [testId]: next }
+      })
       setCompletedTests(prev => new Set(prev).add(testId))
-    } else {
-      setCompletedTests(prev => {
+    } catch (e: any) {
+      setUploadErrors(prev => ({ ...prev, [slotKey]: e?.message || 'Ошибка загрузки' }))
+    } finally {
+      setUploadingSlots(prev => {
         const next = new Set(prev)
-        next.delete(testId)
+        next.delete(slotKey)
+        return next
+      })
+      setUploadProgress(prev => {
+        const next = { ...prev }
+        delete next[slotKey]
         return next
       })
     }
   }, [])
 
-  const allLinksFilled = TESTS.every(t => links[t.id]?.trim())
-  const filledCount = TESTS.filter(t => links[t.id]?.trim()).length
+  const handleRemoveVideo = useCallback((testId: number, slot: number) => {
+    setVideoUrls(prev => {
+      const existing = prev[testId] || []
+      const next = existing.filter((_, i) => i !== slot)
+      return next.length > 0 ? { ...prev, [testId]: next } : (() => {
+        const copy = { ...prev }
+        delete copy[testId]
+        return copy
+      })()
+    })
+    setCompletedTests(prev => {
+      const test = TESTS.find(t => t.id === testId)
+      if (!test) return prev
+      const remaining = (videoUrls[testId] || []).filter((_, i) => i !== slot)
+      if (remaining.length >= test.filmingAngles) return prev
+      const next = new Set(prev)
+      next.delete(testId)
+      return next
+    })
+  }, [videoUrls])
+
+  const allLinksFilled = TESTS.every(t => {
+    const urls = videoUrls[t.id] || []
+    return urls.filter(u => u.trim()).length >= t.filmingAngles
+  })
+  const filledCount = TESTS.filter(t => {
+    const urls = videoUrls[t.id] || []
+    return urls.filter(u => u.trim()).length >= t.filmingAngles
+  }).length
   const allPrechecked = Object.values(precheckItems).every(Boolean)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -313,7 +394,7 @@ export default function ScreeningPage() {
     setError('')
 
     if (!allLinksFilled) {
-      setError('Вставьте ссылки на все 7 видео')
+      setError('Загрузите видео для всех 7 тестов')
       return
     }
 
@@ -322,11 +403,12 @@ export default function ScreeningPage() {
     try {
       await upsertScreening({
         client_date: clientDate,
-        client_contact: clientContact.trim(),
+        client_contact: clientName.trim(),
         tests: TESTS.map(t => ({
           id: t.id,
           title: t.title,
-          video_url: links[t.id]?.trim() || '',
+          video_url: videoUrls[t.id]?.[0] || '',
+          video_urls: videoUrls[t.id] || [],
         })),
       })
       setSuccess(true)
@@ -359,7 +441,7 @@ export default function ScreeningPage() {
               Видео отправлены!
             </h1>
             <p className="text-text-secondary text-lg mb-2">
-              Я просмотрю все 7 видео и составлю персональный разбор.
+              Я просмотрю все видео и составлю персональный разбор.
             </p>
             <p className="text-text-muted text-sm mb-8">
               Обратная связь в течение 48 часов в разделе «Сообщения».
@@ -393,7 +475,7 @@ export default function ScreeningPage() {
             <p className="text-lg text-text-secondary mb-1">Домашняя диагностика движения</p>
             <p className="text-sm text-text-muted max-w-lg mx-auto leading-relaxed mt-3">
               Семь простых тестов покажут, как работает ваше тело. Запишите видео по инструкции,
-              вставьте ссылки, и я составлю персональный разбор с программой коррекции.
+              загрузите файлы, и я составлю персональный разбор с программой коррекции.
             </p>
             <button
               onClick={() => router.push('/dashboard')}
@@ -427,14 +509,15 @@ export default function ScreeningPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-1.5">
-                  Связь
+                  Имя и фамилия
                 </label>
                 <input
                   type="text"
-                  value={clientContact}
-                  onChange={e => setClientContact(e.target.value)}
+                  value={clientName}
+                  onChange={e => setClientName(e.target.value)}
                   className="glass-input"
-                  placeholder="Телефон или Telegram"
+                  placeholder="Иван Иванов"
+                  required
                 />
               </div>
             </div>
@@ -557,8 +640,12 @@ export default function ScreeningPage() {
                   test={test}
                   isExpanded={expandedTests.has(test.id)}
                   onToggle={() => toggleTest(test.id)}
-                  link={links[test.id] || ''}
-                  onLinkChange={(v) => updateLink(test.id, v)}
+                  uploadedUrls={videoUrls[test.id] || []}
+                  onFileUpload={(slot, file) => handleFileUpload(test.id, slot, file)}
+                  onRemoveVideo={(slot) => handleRemoveVideo(test.id, slot)}
+                  uploadingSlots={uploadingSlots}
+                  uploadProgress={uploadProgress}
+                  uploadErrors={uploadErrors}
                   isCompleted={completedTests.has(test.id)}
                 />
               </RevealSection>
@@ -575,7 +662,7 @@ export default function ScreeningPage() {
                 <div>
                   <h2 className="text-lg font-display font-semibold text-white">Готово к отправке</h2>
                   <p className="text-xs text-text-muted">
-                    Загружено ссылок: {filledCount} из 7
+                    Загружено видео: {filledCount} из 7
                   </p>
                 </div>
               </div>
@@ -594,10 +681,11 @@ export default function ScreeningPage() {
                 </div>
               </div>
 
-              {/* Чек-лист ссылок */}
+              {/* Чек-лист видео */}
               <div className="space-y-1.5 mb-6">
                 {TESTS.map(t => {
-                  const filled = !!links[t.id]?.trim()
+                  const urls = videoUrls[t.id] || []
+                  const filled = urls.filter(u => u.trim()).length >= t.filmingAngles
                   return (
                     <div key={t.id} className="flex items-center gap-2.5 text-sm">
                       <div className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
@@ -617,9 +705,8 @@ export default function ScreeningPage() {
               <div className="p-4 rounded-xl bg-accent/5 border border-accent/20 mb-6">
                 <p className="text-sm text-text-secondary">
                   <span className="font-semibold text-white">Как отправить видео:</span>{' '}
-                  Запишите каждое упражнение на телефон, загрузите на YouTube (скрытое видео),
-                  VK, Google Диск или любой файловый хостинг и вставьте ссылку в поле под тестом.
-                  Видео должны быть видны по ссылке.
+                  Запишите каждое упражнение на телефон, затем нажмите «Выберите видео»
+                  и загрузите файл напрямую. Поддерживаются форматы MP4, MOV, WebM и AVI (до 100MB).
                 </p>
                 <p className="text-xs text-text-muted mt-2">
                   Срок обратной связи: до 48 часов после отправки всех 7 видео.
@@ -664,14 +751,20 @@ export default function ScreeningPage() {
 // Компонент секции теста
 // ──────────────────────────────────────────────────────────────────────────
 
-function TestSection({ test, isExpanded, onToggle, link, onLinkChange, isCompleted }: {
+function TestSection({ test, isExpanded, onToggle, uploadedUrls, onFileUpload, onRemoveVideo, uploadingSlots, uploadProgress, uploadErrors, isCompleted }: {
   test: Test
   isExpanded: boolean
   onToggle: () => void
-  link: string
-  onLinkChange: (v: string) => void
+  uploadedUrls: string[]
+  onFileUpload: (slot: number, file: File) => void
+  onRemoveVideo: (slot: number) => void
+  uploadingSlots: Set<string>
+  uploadProgress: Record<string, number>
+  uploadErrors: Record<string, string>
   isCompleted: boolean
 }) {
+  const slots = Array.from({ length: test.filmingAngles }, (_, i) => i)
+
   return (
     <div className={`glass-card overflow-hidden transition-all duration-300 ${
       isCompleted ? 'screening-test-completed' : ''
@@ -696,9 +789,11 @@ function TestSection({ test, isExpanded, onToggle, link, onLinkChange, isComplet
             Тест {test.id}. {test.title}
           </h2>
           <p className="text-sm text-text-secondary leading-relaxed">{test.subtitle}</p>
-          <div className="flex items-center gap-2 mt-2">
-            {test.filmingIcon}
-            <span className="text-xs text-text-muted">{test.filming}</span>
+          <div className="mt-2 px-3 py-2 rounded-lg bg-bg-elevated border border-border">
+            <div className="flex items-start gap-2">
+              {test.filmingIcon}
+              <span className="text-xs text-text-muted leading-relaxed">{test.filming}</span>
+            </div>
           </div>
         </div>
         <div className="mt-1 flex-shrink-0">
@@ -712,7 +807,7 @@ function TestSection({ test, isExpanded, onToggle, link, onLinkChange, isComplet
 
       {/* Содержимое */}
       <div className={`transition-all duration-500 ease-out overflow-hidden ${
-        isExpanded ? 'max-h-[1200px] opacity-100' : 'max-h-0 opacity-0'
+        isExpanded ? 'max-h-[2400px] opacity-100' : 'max-h-0 opacity-0'
       }`}>
         <div className="px-5 md:px-6 pb-6 space-y-5">
 
@@ -781,20 +876,120 @@ function TestSection({ test, isExpanded, onToggle, link, onLinkChange, isComplet
             <p className="text-sm text-text-secondary">{test.filming}</p>
           </div>
 
-          {/* Поле ссылки */}
+          {/* Загрузка видео */}
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-2">
               Ваше видео <span className="text-accent">*</span>
+              {test.filmingAngles > 1 && (
+                <span className="text-xs text-text-muted ml-1">(два ракурса)</span>
+              )}
             </label>
-            <input
-              type="url"
-              name={`video_test_${test.id}`}
-              value={link}
-              onChange={e => onLinkChange(e.target.value)}
-              className="glass-input"
-              placeholder={test.placeholder}
-              required
-            />
+
+            <div className="space-y-3">
+              {slots.map((slot) => {
+                const slotKey = `${test.id}-${slot}`
+                const url = uploadedUrls[slot]
+                const isUploading = uploadingSlots.has(slotKey)
+                const progress = uploadProgress[slotKey]
+                const error = uploadErrors[slotKey]
+
+                const slotLabels = test.filmingLabels
+                  || (test.filmingAngles === 2
+                    ? ['Ракурс 1 (основной)', 'Ракурс 2 (дополнительный)']
+                    : ['Видео'])
+
+                return (
+                  <div key={slot}>
+                    {test.filmingAngles > 1 && (
+                      <p className="text-xs text-text-muted mb-1.5">{slotLabels[slot]}</p>
+                    )}
+
+                    {url ? (
+                      /* Видео загружено */
+                      <div className="relative rounded-xl border border-success/30 bg-success/5 p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-success/20 flex items-center justify-center flex-shrink-0">
+                            <FileVideo className="w-5 h-5 text-success" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-white truncate">Видео загружено</p>
+                            <p className="text-xs text-text-muted">Нажмите чтобы посмотреть</p>
+                          </div>
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-accent hover:underline flex items-center gap-1"
+                          >
+                            <Play className="w-3 h-3" />
+                            Открыть
+                          </a>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onRemoveVideo(slot)}
+                          className="absolute top-2 right-2 p-1.5 rounded-full hover:bg-danger/20 transition-colors"
+                        >
+                          <X className="w-4 h-4 text-text-muted hover:text-danger" />
+                        </button>
+                      </div>
+                    ) : isUploading ? (
+                      /* Загрузка в процессе */
+                      <div className="rounded-xl border border-accent/30 bg-accent/5 p-4">
+                        <div className="flex items-center gap-3 mb-3">
+                          <Loader2 className="w-5 h-5 text-accent animate-spin" />
+                          <p className="text-sm font-medium text-white">Загрузка видео...</p>
+                        </div>
+                        {progress !== undefined && (
+                          <div>
+                            <div className="flex justify-between mb-1 text-xs text-text-muted">
+                              <span>Прогресс</span>
+                              <span>{progress}%</span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-bg-elevated overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-accent transition-all duration-300"
+                                style={{ width: `${progress}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* Кнопка загрузки */
+                      <div>
+                        <input
+                          type="file"
+                          accept="video/mp4,video/quicktime,video/webm,video/x-msvideo,video/avi"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) onFileUpload(slot, file)
+                            e.target.value = ''
+                          }}
+                          className="hidden"
+                          id={`video-upload-${test.id}-${slot}`}
+                        />
+                        <label
+                          htmlFor={`video-upload-${test.id}-${slot}`}
+                          className="flex flex-col items-center justify-center p-4 sm:p-6 rounded-xl border-2 border-dashed border-border hover:border-accent/50 bg-bg-elevated hover:bg-accent/5 cursor-pointer transition-all"
+                        >
+                          <Upload className="w-8 h-8 text-text-muted mb-3" />
+                          <p className="text-sm font-medium text-text-secondary mb-1">
+                            Нажмите чтобы выбрать видео
+                          </p>
+                          <p className="text-xs text-text-muted">
+                            MP4, MOV, WebM или AVI (до 100MB)
+                          </p>
+                        </label>
+                        {error && (
+                          <p className="mt-2 text-xs text-danger">{error}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
 
           {/* Демо-интерпретация (свёрнутая) */}

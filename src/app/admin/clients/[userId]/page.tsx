@@ -1601,7 +1601,7 @@ function ScreeningTab({ userId }: { userId: string }) {
                         <h3 className="text-lg font-display font-semibold text-white">Скрининг тела</h3>
                         <p className="text-xs text-text-muted">
                             {screening.client_date && `Дата съёмки: ${new Date(screening.client_date + 'T12:00:00').toLocaleDateString('ru-RU')}`}
-                            {screening.client_contact && ` · Связь: ${screening.client_contact}`}
+                            {screening.client_contact && ` · Клиент: ${screening.client_contact}`}
                         </p>
                     </div>
                 </div>
@@ -1615,19 +1615,28 @@ function ScreeningTab({ userId }: { userId: string }) {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm font-semibold text-white">{t.title}</p>
-                                    {t.video_url ? (
-                                        <a
-                                            href={t.video_url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-xs text-accent hover:underline mt-1 inline-flex items-center gap-1"
-                                        >
-                                            <Play className="w-3 h-3" />
-                                            Смотреть видео
-                                        </a>
-                                    ) : (
-                                        <p className="text-xs text-text-muted mt-1">Видео не загружено</p>
-                                    )}
+                                    {(() => {
+                                        const urls: string[] = t.video_urls || (t.video_url ? [t.video_url] : [])
+                                        if (urls.length > 0) {
+                                            return (
+                                                <div className="flex flex-col gap-1 mt-1">
+                                                    {urls.map((url: string, idx: number) => (
+                                                        <a
+                                                            key={idx}
+                                                            href={url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="text-xs text-accent hover:underline inline-flex items-center gap-1"
+                                                        >
+                                                            <Play className="w-3 h-3" />
+                                                            {urls.length > 1 ? `Смотреть видео ${idx + 1}` : 'Смотреть видео'}
+                                                        </a>
+                                                    ))}
+                                                </div>
+                                            )
+                                        }
+                                        return <p className="text-xs text-text-muted mt-1">Видео не загружено</p>
+                                    })()}
                                 </div>
                             </div>
                         ))}

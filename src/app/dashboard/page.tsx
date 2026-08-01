@@ -224,9 +224,9 @@ export default function DashboardPage() {
                                 setScreeningBannerDismissed(true)
                                 localStorage.setItem('screeningBannerDismissed', '1')
                             }}
-                            className="absolute top-3 right-3 p-1 rounded-full hover:bg-white/10 transition-colors"
+                            className="absolute top-3 right-3 px-3 py-1 rounded-lg text-xs font-medium text-text-muted hover:text-white hover:bg-white/10 transition-colors"
                         >
-                            <X className="w-4 h-4 text-text-muted" />
+                            Скрыть
                         </button>
                         <button
                             onClick={() => router.push('/screening')}
@@ -542,6 +542,24 @@ export default function DashboardPage() {
                                             ? `${streakStats.currentStreak} ${streakStats.currentStreak === 1 ? 'неделя' : streakStats.currentStreak <= 4 ? 'недели' : 'недель'} подряд`
                                             : 'Серия закрытых недель'}
                                     </p>
+                                </div>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-text-muted" />
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => router.push('/screening')}
+                        className="glass-card p-6 text-left hover:border-accent transition-all"
+                    >
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-xl bg-info/20 flex items-center justify-center">
+                                    <Activity className="w-6 h-6 text-info" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-display font-bold text-white mb-1">Скрининг тела</h3>
+                                    <p className="text-sm text-text-secondary">Домашняя диагностика движения</p>
                                 </div>
                             </div>
                             <ChevronRight className="w-5 h-5 text-text-muted" />

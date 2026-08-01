@@ -5,6 +5,70 @@ export interface ScreeningTestData {
   id: number
   title: string
   video_url: string
+  video_urls?: string[]
+}
+
+export interface UploadProgress {
+  loaded: number
+  total: number
+  percent: number
+}
+
+export async function uploadScreeningVideo(
+  file: File,
+  testId: number,
+  slot: number,
+  clientName: string,
+  onProgress?: (progress: UploadProgress) => void,
+): Promise<{ url: string }> {
+  const { token, status } = await getAccessTokenWithRecovery()
+  if (!token) {
+    if (status === 'expired' || status === 'refresh_failed') {
+      throw new Error('Сессия истекла. Перезайдите.')
+    }
+    throw new Error('Не удалось определить пользователя. Перезайдите.')
+  }
+
+  return new Promise((resolve, reject) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('testId', String(testId))
+    formData.append('slot', String(slot))
+    formData.append('clientName', clientName)
+
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', '/api/screening/upload-video')
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress({
+          loaded: event.loaded,
+          total: event.total,
+          percent: Math.round((event.loaded / event.total) * 100),
+        })
+      }
+    }
+
+    xhr.onload = () => {
+      try {
+        const response = JSON.parse(xhr.responseText)
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(response)
+        } else {
+          reject(new Error(response.error || `HTTP ${xhr.status}`))
+        }
+      } catch {
+        reject(new Error(`HTTP ${xhr.status}`))
+      }
+    }
+
+    xhr.onerror = () => reject(new Error('Ошибка сети'))
+    xhr.ontimeout = () => reject(new Error('Таймаут загрузки'))
+    xhr.timeout = 120_000 // 2 минуты на загрузку видео
+
+    xhr.send(formData)
+  })
 }
 
 export interface ScreeningPayload {
