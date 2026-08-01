@@ -1,77 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
-import { google } from 'googleapis'
+import { getDriveAuth } from '@/lib/google-drive'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB
-
-const ALLOWED_MIME_TYPES = [
-  'video/mp4',
-  'video/quicktime',
-  'video/webm',
-  'video/x-msvideo',
-  'video/avi',
-  'video/x-matroska',
-]
-
-function getDriveClient() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
-  const key = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n')
-
-  if (!email || !key) {
-    throw new Error('Google Drive credentials not configured')
-  }
-
-  const auth = new google.auth.JWT({
-    email,
-    key,
-    scopes: ['https://www.googleapis.com/auth/drive.file'],
-  })
-
-  return google.drive({ version: 'v3', auth })
-}
-
-async function findFolder(drive: ReturnType<typeof google.drive>, name: string, parentId: string): Promise<string | null> {
-  const query = `name = '${name.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and '${parentId}' in parents and trashed = false`
-  const res = await drive.files.list({
-    q: query,
-    fields: 'files(id)',
-    pageSize: 1,
-  })
-  return res.data.files?.[0]?.id || null
-}
-
-async function createFolder(drive: ReturnType<typeof google.drive>, name: string, parentId: string): Promise<string> {
-  const res = await drive.files.create({
-    requestBody: {
-      name,
-      mimeType: 'application/vnd.google-apps.folder',
-      parents: [parentId],
-    },
-    fields: 'id',
-  })
-  if (!res.data.id) {
-    throw new Error('Ошибка создания папки в Google Drive')
-  }
-  return res.data.id
-}
-
 export async function POST(request: NextRequest) {
+  const chunks: Uint8Array[] = []
+  let totalSize = 0
+
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
-
     if (!url || !serviceKey) {
       return NextResponse.json({ error: 'Сервер не настроен' }, { status: 500 })
     }
 
-    const adminClient = createSupabaseAdmin(url, serviceKey, {
-      auth: { persistSession: false },
-    })
+    const adminClient = createSupabaseAdmin(url, serviceKey, { auth: { persistSession: false } })
 
-    // Авторизация
     const authHeader = request.headers.get('authorization') || ''
     const token = authHeader.replace('Bearer ', '').trim()
     if (!token) {
@@ -83,7 +29,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Не авторизован' }, { status: 401 })
     }
 
-    // FormData
     const form = await request.formData()
     const file = form.get('file')
     const testId = String(form.get('testId') || '')
@@ -93,92 +38,100 @@ export async function POST(request: NextRequest) {
     if (!(file instanceof File)) {
       return NextResponse.json({ error: 'Файл не передан' }, { status: 400 })
     }
-
     if (!clientName) {
       return NextResponse.json({ error: 'Имя клиента не указано' }, { status: 400 })
     }
 
     const testIdNum = parseInt(testId, 10)
-    if (!testId || isNaN(testIdNum) || testIdNum < 1 || testIdNum > 7) {
+    if (isNaN(testIdNum) || testIdNum < 1 || testIdNum > 7) {
       return NextResponse.json({ error: 'Неверный номер теста' }, { status: 400 })
     }
 
-    const slotNum = parseInt(slot, 10)
-    if (isNaN(slotNum) || slotNum < 0 || slotNum > 1) {
-      return NextResponse.json({ error: 'Неверный номер слота' }, { status: 400 })
+    if (file.size > 100 * 1024 * 1024) {
+      return NextResponse.json({ error: 'Файл слишком большой (макс. 100MB)' }, { status: 413 })
     }
 
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json(
-        { error: 'Файл слишком большой (макс. 100MB)' },
-        { status: 413 },
-      )
-    }
-
+    const ALLOWED_MIME_TYPES = ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-msvideo', 'video/avi', 'video/x-matroska']
     if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-      return NextResponse.json(
-        { error: 'Неподдерживаемый формат видео. Используйте MP4, MOV, WebM или AVI.' },
-        { status: 400 },
-      )
+      return NextResponse.json({ error: 'Неподдерживаемый формат видео' }, { status: 400 })
     }
 
-    // Загрузка в Google Drive
-    const drive = getDriveClient()
+    const { drive } = getDriveAuth()
     const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID
     if (!rootFolderId) {
       return NextResponse.json({ error: 'Google Drive folder not configured' }, { status: 500 })
     }
 
-    // Ищем или создаём папку пользователя {user_id}
     const userFolderName = user.id
-    let userFolderId = await findFolder(drive, userFolderName, rootFolderId)
+    let userFolderId: string | null = null
+    let clientFolderId: string | null = null
+
+    const userQ = `name = '${userFolderName.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and '${rootFolderId}' in parents and trashed = false`
+    const userRes = await drive.files.list({ q: userQ, fields: 'files(id)', pageSize: 1 })
+    userFolderId = userRes.data.files?.[0]?.id || null
+
     if (!userFolderId) {
-      userFolderId = await createFolder(drive, userFolderName, rootFolderId)
+      const createRes = await drive.files.create({
+        requestBody: { name: userFolderName, mimeType: 'application/vnd.google-apps.folder', parents: [rootFolderId] },
+        fields: 'id',
+      })
+      userFolderId = createRes.data.id || null
+    }
+    if (!userFolderId) {
+      return NextResponse.json({ error: 'Не удалось создать папку пользователя' }, { status: 500 })
     }
 
-    // Ищем или создаём папку с именем клиента {clientName}
-    let clientFolderId = await findFolder(drive, clientName, userFolderId)
+    const clientQ = `name = '${clientName.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and '${userFolderId}' in parents and trashed = false`
+    const clientRes = await drive.files.list({ q: clientQ, fields: 'files(id)', pageSize: 1 })
+    clientFolderId = clientRes.data.files?.[0]?.id || null
+
     if (!clientFolderId) {
-      clientFolderId = await createFolder(drive, clientName, userFolderId)
+      const createRes = await drive.files.create({
+        requestBody: { name: clientName, mimeType: 'application/vnd.google-apps.folder', parents: [userFolderId] },
+        fields: 'id',
+      })
+      clientFolderId = createRes.data.id || null
+    }
+    if (!clientFolderId) {
+      return NextResponse.json({ error: 'Не удалось создать папку клиента' }, { status: 500 })
     }
 
     const ext = (file.name.split('.').pop() || 'mp4').toLowerCase()
-    const fileName = `test-${testId}-slot${slotNum}_${Date.now()}.${ext}`
+    const storedFileName = `test-${testId}-slot${parseInt(slot, 10) || 0}_${Date.now()}.${ext}`
 
-    const buffer = Buffer.from(await file.arrayBuffer())
+    const arrayBuffer = await file.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
 
-    const { data: uploadedFile } = await drive.files.create({
+    const { Readable } = require('stream') as typeof import('stream')
+    const fileStream = Readable.from(buffer)
+
+    const uploadedFile = await drive.files.create({
       requestBody: {
-        name: fileName,
+        name: storedFileName,
         parents: [clientFolderId],
       },
       media: {
         mimeType: file.type || 'video/mp4',
-        body: require('stream').Readable.from(buffer),
+        body: fileStream,
       },
       fields: 'id, webViewLink, webContentLink',
-    })
+    } as any)
 
-    if (!uploadedFile?.id) {
+    if (!uploadedFile.data.id) {
       return NextResponse.json({ error: 'Ошибка загрузки в Google Drive' }, { status: 500 })
     }
 
-    // Делаем файл доступным по ссылке (для просмотра в браузере)
     await drive.permissions.create({
-      fileId: uploadedFile.id,
-      requestBody: {
-        role: 'reader',
-        type: 'anyone',
-      },
+      fileId: uploadedFile.data.id,
+      requestBody: { role: 'reader', type: 'anyone' },
     })
 
-    // Получаем публичную ссылку
     const { data: fileData } = await drive.files.get({
-      fileId: uploadedFile.id,
-      fields: 'webViewLink, webContentLink',
+      fileId: uploadedFile.data.id,
+      fields: 'webViewLink',
     })
 
-    const viewUrl = fileData?.webViewLink || `https://drive.google.com/file/d/${uploadedFile.id}/view`
+    const viewUrl = fileData?.webViewLink || `https://drive.google.com/file/d/${uploadedFile.data.id}/view`
 
     return NextResponse.json({ url: viewUrl })
   } catch (e: any) {

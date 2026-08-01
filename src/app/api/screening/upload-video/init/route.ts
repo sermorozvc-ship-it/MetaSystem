@@ -5,19 +5,18 @@ import { getDriveAuth } from '@/lib/google-drive'
 export const runtime = 'nodejs'
 export const maxDuration = 30
 
-async function findFolder(drive: any, name: string, parentId: string): Promise<string | null> {
-  const query = `name = '${name.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and '${parentId}' in parents and trashed = false`
-  const res = await drive.files.list({ q: query, fields: 'files(id)', pageSize: 1 })
-  return res.data.files?.[0]?.id || null
-}
+async function findOrCreateFolder(drive: any, name: string, parentId: string): Promise<string> {
+  const q = `name = '${name.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and '${parentId}' in parents and trashed = false`
+  const res = await drive.files.list({ q, fields: 'files(id)', pageSize: 1, supportsAllDrives: true, includeItemsFromAllDrives: true })
+  if (res.data.files?.[0]?.id) return res.data.files[0].id
 
-async function createFolder(drive: any, name: string, parentId: string): Promise<string> {
-  const res = await drive.files.create({
+  const createRes = await drive.files.create({
     requestBody: { name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] },
     fields: 'id',
+    supportsAllDrives: true,
   })
-  if (!res.data.id) throw new Error('Ошибка создания папки в Google Drive')
-  return res.data.id
+  if (!createRes.data.id) throw new Error('Ошибка создания папки в Google Drive')
+  return createRes.data.id
 }
 
 export async function POST(request: NextRequest) {
@@ -71,39 +70,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Google Drive folder not configured' }, { status: 500 })
     }
 
-    const userFolderId = await findFolder(drive, user.id, rootFolderId) || await createFolder(drive, user.id, rootFolderId)
-    const clientFolderId = await findFolder(drive, clientName.trim(), userFolderId) || await createFolder(drive, clientName.trim(), userFolderId)
+    const userFolderId = await findOrCreateFolder(drive, user.id, rootFolderId)
+    const clientFolderId = await findOrCreateFolder(drive, clientName.trim(), userFolderId)
 
     const ext = (fileName.split('.').pop() || 'mp4').toLowerCase()
     const storedFileName = `test-${testId}-slot${parseInt(String(slot), 10) || 0}_${Date.now()}.${ext}`
 
     const tokenResponse = await auth.authorize()
+    const accessToken = tokenResponse.access_token
 
-    const sessionUrl = `https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true`
+    const sessionRes = await fetch(
+      `https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json; charset=UTF-8',
+          'X-Upload-Content-Length': String(fileSize),
+          'X-Upload-Content-Type': mimeType,
+        },
+        body: JSON.stringify({
+          name: storedFileName,
+          parents: [clientFolderId],
+        }),
+      }
+    )
 
-    const metadata = {
-      name: storedFileName,
-      parents: [clientFolderId],
+    if (!sessionRes.ok) {
+      const errText = await sessionRes.text()
+      console.error('[init] Drive resumable session failed:', sessionRes.status, errText)
+      return NextResponse.json({ error: `Drive error ${sessionRes.status}: ${errText}` }, { status: 500 })
     }
 
-    const initRes = await fetch(sessionUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${tokenResponse.access_token}`,
-        'Content-Type': 'application/json; charset=UTF-8',
-        'X-Upload-Content-Length': String(fileSize),
-        'X-Upload-Content-Type': mimeType,
-      },
-      body: JSON.stringify(metadata),
-    })
-
-    if (!initRes.ok) {
-      const errText = await initRes.text()
-      console.error('[init] Google Drive resumable init failed:', initRes.status, errText)
-      return NextResponse.json({ error: `Drive error ${initRes.status}: ${errText}` }, { status: 500 })
-    }
-
-    const uploadUrl = initRes.headers.get('Location')
+    const uploadUrl = sessionRes.headers.get('Location')
     if (!uploadUrl) {
       return NextResponse.json({ error: 'Не получен URL загрузки' }, { status: 500 })
     }
