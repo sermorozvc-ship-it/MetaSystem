@@ -356,7 +356,7 @@ export default function ScreeningPage() {
         return next
       })
     }
-  }, [])
+  }, [clientName])
 
   const handleRemoveVideo = useCallback((testId: number, slot: number) => {
     setVideoUrls(prev => {
