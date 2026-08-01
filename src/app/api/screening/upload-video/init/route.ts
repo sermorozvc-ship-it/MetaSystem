@@ -1,29 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
-import { google } from 'googleapis'
+import { getDriveAuth } from '@/lib/google-drive'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
 
-function getDriveClient() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
-  const key = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n')
-  if (!email || !key) throw new Error('Google Drive credentials not configured')
-  const auth = new google.auth.JWT({
-    email,
-    key,
-    scopes: ['https://www.googleapis.com/auth/drive.file'],
-  })
-  return google.drive({ version: 'v3', auth })
-}
-
-async function findFolder(drive: ReturnType<typeof google.drive>, name: string, parentId: string): Promise<string | null> {
+async function findFolder(drive: any, name: string, parentId: string): Promise<string | null> {
   const query = `name = '${name.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and '${parentId}' in parents and trashed = false`
   const res = await drive.files.list({ q: query, fields: 'files(id)', pageSize: 1 })
   return res.data.files?.[0]?.id || null
 }
 
-async function createFolder(drive: ReturnType<typeof google.drive>, name: string, parentId: string): Promise<string> {
+async function createFolder(drive: any, name: string, parentId: string): Promise<string> {
   const res = await drive.files.create({
     requestBody: { name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] },
     fields: 'id',
@@ -77,7 +65,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Неподдерживаемый формат видео' }, { status: 400 })
     }
 
-    const drive = getDriveClient()
+    const { drive, auth } = getDriveAuth()
     const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID
     if (!rootFolderId) {
       return NextResponse.json({ error: 'Google Drive folder not configured' }, { status: 500 })
@@ -89,13 +77,7 @@ export async function POST(request: NextRequest) {
     const ext = (fileName.split('.').pop() || 'mp4').toLowerCase()
     const storedFileName = `test-${testId}-slot${parseInt(String(slot), 10) || 0}_${Date.now()}.${ext}`
 
-    const driveAuth = new google.auth.JWT({
-      email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-      scopes: ['https://www.googleapis.com/auth/drive.file'],
-    })
-
-    const resumableRes = await driveAuth.authorize()
+    const tokenResponse = await auth.authorize()
 
     const sessionUrl = `https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true`
 
@@ -107,7 +89,7 @@ export async function POST(request: NextRequest) {
     const initRes = await fetch(sessionUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${resumableRes.access_token}`,
+        'Authorization': `Bearer ${tokenResponse.access_token}`,
         'Content-Type': 'application/json; charset=UTF-8',
         'X-Upload-Content-Length': String(fileSize),
         'X-Upload-Content-Type': mimeType,

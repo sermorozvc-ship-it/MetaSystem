@@ -1,17 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
-import { google } from 'googleapis'
+import { getDriveAuth } from '@/lib/google-drive'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
-
-function getDriveClient() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
-  const key = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n')
-  if (!email || !key) throw new Error('Google Drive credentials not configured')
-  const auth = new google.auth.JWT({ email, key, scopes: ['https://www.googleapis.com/auth/drive.file'] })
-  return google.drive({ version: 'v3', auth })
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,7 +33,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'fileId не передан' }, { status: 400 })
     }
 
-    const drive = getDriveClient()
+    const { drive } = getDriveAuth()
 
     await drive.permissions.create({
       fileId,
