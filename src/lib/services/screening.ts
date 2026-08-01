@@ -29,33 +29,16 @@ export async function uploadScreeningVideo(
     throw new Error('Не удалось определить пользователя. Перезайдите.')
   }
 
-  const authHeaders = { Authorization: `Bearer ${token}` }
+  return new Promise((resolve, reject) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('testId', String(testId))
+    formData.append('slot', String(slot))
+    formData.append('clientName', clientName)
 
-  const initRes = await fetch('/api/screening/upload-video/init', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders },
-    body: JSON.stringify({
-      fileName: file.name,
-      mimeType: file.type || 'video/mp4',
-      fileSize: file.size,
-      testId,
-      slot,
-      clientName,
-    }),
-  })
-
-  if (!initRes.ok) {
-    const err = await initRes.json().catch(() => ({ error: `HTTP ${initRes.status}` }))
-    throw new Error(err.error || `Ошибка инициализации: HTTP ${initRes.status}`)
-  }
-
-  const { uploadUrl } = await initRes.json()
-
-  const fileResponse = await new Promise<Response>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('PUT', uploadUrl)
-    xhr.setRequestHeader('Content-Type', file.type || 'video/mp4')
-    xhr.responseType = 'text'
+    xhr.open('POST', '/api/screening/upload-video')
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
 
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && onProgress) {
@@ -68,48 +51,24 @@ export async function uploadScreeningVideo(
     }
 
     xhr.onload = () => {
-      resolve(new Response(xhr.responseText, { status: xhr.status, statusText: xhr.statusText }))
+      try {
+        const response = JSON.parse(xhr.responseText)
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(response)
+        } else {
+          reject(new Error(response.error || `HTTP ${xhr.status}`))
+        }
+      } catch {
+        reject(new Error(`HTTP ${xhr.status}`))
+      }
     }
-    xhr.onerror = () => reject(new Error('Ошибка сети при загрузке в Google Drive'))
+
+    xhr.onerror = () => reject(new Error('Ошибка сети'))
     xhr.ontimeout = () => reject(new Error('Таймаут загрузки'))
     xhr.timeout = 300_000
 
-    xhr.send(file)
+    xhr.send(formData)
   })
-
-  if (!fileResponse.ok) {
-    const errText = await fileResponse.text().catch(() => '')
-    console.error('[uploadScreeningVideo] Drive PUT failed:', fileResponse.status, errText)
-    throw new Error(`Ошибка загрузки в Google Drive: HTTP ${fileResponse.status}`)
-  }
-
-  let fileId: string | null = null
-  try {
-    const driveBody = JSON.parse(await fileResponse.text())
-    fileId = driveBody.id || null
-  } catch {
-    const loc = fileResponse.headers.get('Location') || ''
-    const match = loc.match(/\/files\/([^?/]+)/)
-    if (match) fileId = match[1]
-  }
-
-  if (!fileId) {
-    throw new Error('Не удалось получить ID загруженного файла')
-  }
-
-  const completeRes = await fetch('/api/screening/upload-video/complete', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders },
-    body: JSON.stringify({ fileId, testId, slot, clientName }),
-  })
-
-  if (!completeRes.ok) {
-    const err = await completeRes.json().catch(() => ({ error: `HTTP ${completeRes.status}` }))
-    throw new Error(err.error || `Ошибка финализации: HTTP ${completeRes.status}`)
-  }
-
-  const { url } = await completeRes.json()
-  return { url }
 }
 
 export interface ScreeningPayload {

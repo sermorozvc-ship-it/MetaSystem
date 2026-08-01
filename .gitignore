@@ -35,3 +35,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# editor / tools
+.cursor/
+.grok/
+.opencode/
+opencode.json
+dev-error.log
+dev-output.log
+terminals/
