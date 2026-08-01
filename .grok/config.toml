@@ -1,0 +1,4 @@
+[mcp_servers.supabase]
+url = "https://mcp.supabase.com/mcp?project_ref=bzyypoyvihqhrbllgffh"
+enabled = true
+headers = { "Authorization" = "Bearer sbp_90e77b25d2da9eab5d809bcc78e4eb270603dcbb" }

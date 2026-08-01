@@ -1,0 +1,18 @@
+---
+pid: 9144
+cwd: "C:\Users\User\Desktop\Програмки\Проекты\MetaSystem"
+command: "$token = $env:SUPABASE_ACCESS_TOKEN; npx -y @supabase/mcp-server-supabase@latest --access-token $token --project-ref bzyypoyvihqhrbllgffh 2>&1 | Select-Object -First 5"
+started_at: 2026-07-07T12:29:44.656Z
+running_for_ms: 80002    
+---
+node.exe : TypeError [ERR_PARSE_ARGS_INVALID_OPTION_VALUE]: Option '--access-token' argument is ambiguous.
+��ப�:1 ����:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (TypeError [ERR_...t is ambiguous.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Did you forget to specify the option argument for '--access-token'?
+To specify an option argument starting with a dash use '--access-token=-XYZ'.
+    at checkOptionLikeValue (node:internal/util/parse_args/parse_args:87:11)
+    at node:internal/util/parse_args/parse_args:382:9
