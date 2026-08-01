@@ -217,10 +217,19 @@ export default function DashboardPage() {
 
                 {/* Баннер: скрининг */}
                 {screeningPending && !questionnairePending && !nutritionPending && !screeningBannerDismissed && (
-                    <div className="relative w-full mb-6 rounded-2xl border border-info/40 bg-info/10 p-5 flex items-center gap-4 text-left">
+                    <div className="mb-6">
+                        <button
+                            onClick={() => {
+                                setScreeningBannerDismissed(true)
+                                localStorage.setItem('screeningBannerDismissed', '1')
+                            }}
+                            className="text-xs text-text-muted hover:text-white transition-colors mb-1.5 ml-1"
+                        >
+                            Не сейчас
+                        </button>
                         <button
                             onClick={() => router.push('/screening')}
-                            className="flex items-center gap-4 flex-1 min-w-0 text-left"
+                            className="w-full rounded-2xl border border-info/40 bg-info/10 p-5 flex items-center gap-4 text-left hover:bg-info/15 transition-colors"
                         >
                             <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-info/20 flex items-center justify-center">
                                 <Activity className="w-6 h-6 text-info" />
@@ -231,20 +240,8 @@ export default function DashboardPage() {
                                     7 простых тестов помогут тренеру лучше понять ваше тело. Займёт 15–20 минут.
                                 </p>
                             </div>
+                            <ChevronRight className="w-5 h-5 text-info flex-shrink-0" />
                         </button>
-                        <div className="flex items-center gap-3 flex-shrink-0 ml-2">
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation()
-                                    setScreeningBannerDismissed(true)
-                                    localStorage.setItem('screeningBannerDismissed', '1')
-                                }}
-                                className="px-3 py-1.5 rounded-lg text-xs font-medium text-text-muted hover:text-white hover:bg-white/10 transition-colors"
-                            >
-                                Скрыть
-                            </button>
-                            <ChevronRight className="w-5 h-5 text-info" />
-                        </div>
                     </div>
                 )}
 
