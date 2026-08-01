@@ -773,27 +773,27 @@ function TestSection({ test, isExpanded, onToggle, uploadedUrls, onFileUpload, o
       <button
         type="button"
         onClick={onToggle}
-        className="w-full text-left p-5 md:p-6 flex items-start gap-4 group"
+        className="w-full text-left p-4 md:p-6 flex items-start gap-3 md:gap-4 group"
       >
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-300 ${
+        <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-300 ${
           isCompleted ? 'bg-success/20' : 'bg-accent/15 group-hover:bg-accent/25'
         }`}>
           {isCompleted ? (
             <CheckCircle2 className="w-5 h-5 text-success" />
           ) : (
-            <span className="text-sm font-display font-bold text-accent">{test.id}</span>
+            <span className="text-xs md:text-sm font-display font-bold text-accent">{test.id}</span>
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <h2 className="text-base md:text-lg font-display font-semibold text-white mb-1 pr-8">
+          <h2 className="text-sm md:text-lg font-display font-semibold text-white mb-1 pr-8 leading-snug">
             Тест {test.id}. {test.title}
           </h2>
-          <p className="text-sm text-text-secondary leading-relaxed">{test.subtitle}</p>
-          <div className="mt-2 px-3 py-2 rounded-lg bg-bg-elevated border border-border">
-            <div className="flex items-start gap-2">
+          <p className="text-xs md:text-sm text-text-secondary leading-relaxed mb-2">{test.subtitle}</p>
+          <div className="px-3 py-2 rounded-lg bg-bg-elevated border border-border">
+            <div className="flex items-center gap-2 mb-0.5">
               {test.filmingIcon}
-              <span className="text-xs text-text-muted leading-relaxed">{test.filming}</span>
             </div>
+            <p className="text-xs text-text-muted leading-relaxed">{test.filming}</p>
           </div>
         </div>
         <div className="mt-1 flex-shrink-0">
@@ -809,7 +809,7 @@ function TestSection({ test, isExpanded, onToggle, uploadedUrls, onFileUpload, o
       <div className={`transition-all duration-500 ease-out overflow-hidden ${
         isExpanded ? 'max-h-[2400px] opacity-100' : 'max-h-0 opacity-0'
       }`}>
-        <div className="px-5 md:px-6 pb-6 space-y-5">
+        <div className="px-4 md:px-6 pb-5 md:pb-6 space-y-4 md:space-y-5">
 
           {/* Видео тренера */}
           <div>
@@ -852,33 +852,33 @@ function TestSection({ test, isExpanded, onToggle, uploadedUrls, onFileUpload, o
 
           {/* Инструкция */}
           <div>
-            <p className="text-xs font-semibold text-accent uppercase tracking-wider mb-3">
+            <p className="text-xs font-semibold text-accent uppercase tracking-wider mb-2 md:mb-3">
               Инструкция
             </p>
-            <ol className="space-y-2.5">
+            <ol className="space-y-2">
               {test.instruction.map((step, i) => (
-                <li key={i} className="flex items-start gap-3">
-                  <span className="w-6 h-6 rounded-lg bg-bg-elevated flex items-center justify-center flex-shrink-0 text-xs font-bold text-accent mt-0.5">
+                <li key={i} className="flex items-start gap-2.5">
+                  <span className="w-5 h-5 md:w-6 md:h-6 rounded-lg bg-bg-elevated flex items-center justify-center flex-shrink-0 text-xs font-bold text-accent mt-0.5">
                     {i + 1}
                   </span>
-                  <span className="text-sm text-text-secondary leading-relaxed">{step}</span>
+                  <span className="text-xs md:text-sm text-text-secondary leading-relaxed">{step}</span>
                 </li>
               ))}
             </ol>
           </div>
 
           {/* Как снимать */}
-          <div className="p-4 rounded-xl bg-bg-elevated border border-border">
+          <div className="p-3 md:p-4 rounded-xl bg-bg-elevated border border-border">
             <div className="flex items-center gap-2 mb-1">
               <Video className="w-4 h-4 text-accent" />
-              <p className="text-sm font-semibold text-white">Как снимать</p>
+              <p className="text-xs md:text-sm font-semibold text-white">Как снимать</p>
             </div>
-            <p className="text-sm text-text-secondary">{test.filming}</p>
+            <p className="text-xs md:text-sm text-text-secondary">{test.filming}</p>
           </div>
 
           {/* Загрузка видео */}
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-2">
+            <label className="block text-xs md:text-sm font-medium text-text-secondary mb-2">
               Ваше видео <span className="text-accent">*</span>
               {test.filmingAngles > 1 && (
                 <span className="text-xs text-text-muted ml-1">(два ракурса)</span>
@@ -906,13 +906,13 @@ function TestSection({ test, isExpanded, onToggle, uploadedUrls, onFileUpload, o
 
                     {url ? (
                       /* Видео загружено */
-                      <div className="relative rounded-xl border border-success/30 bg-success/5 p-4">
+                      <div className="relative rounded-xl border border-success/30 bg-success/5 p-3 md:p-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-success/20 flex items-center justify-center flex-shrink-0">
+                          <div className="w-9 h-9 md:w-10 md:h-10 rounded-lg bg-success/20 flex items-center justify-center flex-shrink-0">
                             <FileVideo className="w-5 h-5 text-success" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-white truncate">Видео загружено</p>
+                            <p className="text-xs md:text-sm font-medium text-white truncate">Видео загружено</p>
                             <p className="text-xs text-text-muted">Нажмите чтобы посмотреть</p>
                           </div>
                           <a
@@ -935,10 +935,10 @@ function TestSection({ test, isExpanded, onToggle, uploadedUrls, onFileUpload, o
                       </div>
                     ) : isUploading ? (
                       /* Загрузка в процессе */
-                      <div className="rounded-xl border border-accent/30 bg-accent/5 p-4">
+                      <div className="rounded-xl border border-accent/30 bg-accent/5 p-3 md:p-4">
                         <div className="flex items-center gap-3 mb-3">
                           <Loader2 className="w-5 h-5 text-accent animate-spin" />
-                          <p className="text-sm font-medium text-white">Загрузка видео...</p>
+                          <p className="text-xs md:text-sm font-medium text-white">Загрузка видео...</p>
                         </div>
                         {progress !== undefined && (
                           <div>
@@ -973,11 +973,11 @@ function TestSection({ test, isExpanded, onToggle, uploadedUrls, onFileUpload, o
                           htmlFor={`video-upload-${test.id}-${slot}`}
                           className="flex flex-col items-center justify-center p-4 sm:p-6 rounded-xl border-2 border-dashed border-border hover:border-accent/50 bg-bg-elevated hover:bg-accent/5 cursor-pointer transition-all"
                         >
-                          <Upload className="w-8 h-8 text-text-muted mb-3" />
-                          <p className="text-sm font-medium text-text-secondary mb-1">
+                          <Upload className="w-7 h-7 md:w-8 md:h-8 text-text-muted mb-2 md:mb-3" />
+                          <p className="text-xs md:text-sm font-medium text-text-secondary mb-1">
                             Нажмите чтобы выбрать видео
                           </p>
-                          <p className="text-xs text-text-muted">
+                          <p className="text-[10px] md:text-xs text-text-muted">
                             MP4, MOV, WebM или AVI (до 100MB)
                           </p>
                         </label>
@@ -994,14 +994,14 @@ function TestSection({ test, isExpanded, onToggle, uploadedUrls, onFileUpload, o
 
           {/* Демо-интерпретация (свёрнутая) */}
           <details className="group/details">
-            <summary className="flex items-center gap-2 cursor-pointer text-sm font-medium text-text-secondary hover:text-accent transition-colors select-none">
+            <summary className="flex items-center gap-2 cursor-pointer text-xs md:text-sm font-medium text-text-secondary hover:text-accent transition-colors select-none">
               <Info className="w-4 h-4" />
               <span>Что этот тест может показать</span>
               <ChevronDown className="w-4 h-4 ml-auto transition-transform group-open/details:rotate-180" />
             </summary>
-            <div className="mt-3 p-4 rounded-xl bg-accent/5 border border-accent/15 space-y-2">
+            <div className="mt-2 md:mt-3 p-3 md:p-4 rounded-xl bg-accent/5 border border-accent/15 space-y-2">
               {test.interpretation.map((line, i) => (
-                <p key={i} className="text-sm text-text-secondary leading-relaxed">{line}</p>
+                <p key={i} className="text-xs md:text-sm text-text-secondary leading-relaxed">{line}</p>
               ))}
             </div>
           </details>
