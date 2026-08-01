@@ -21,9 +21,6 @@ export async function uploadScreeningVideo(
   clientName: string,
   onProgress?: (progress: UploadProgress) => void,
 ): Promise<{ url: string }> {
-  const user = await safeGetUser()
-  if (!user) throw new Error('Не удалось определить пользователя. Перезайдите.')
-
   onProgress?.({ loaded: 0, total: file.size, percent: 0 })
 
   // 1. Создаём resumable upload session на Google Drive (через наш API)
