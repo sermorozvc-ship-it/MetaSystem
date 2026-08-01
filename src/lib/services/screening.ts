@@ -21,54 +21,35 @@ export async function uploadScreeningVideo(
   clientName: string,
   onProgress?: (progress: UploadProgress) => void,
 ): Promise<{ url: string }> {
-  const { token, status } = await getAccessTokenWithRecovery()
-  if (!token) {
-    if (status === 'expired' || status === 'refresh_failed') {
-      throw new Error('Сессия истекла. Перезайдите.')
-    }
-    throw new Error('Не удалось определить пользователя. Перезайдите.')
+  const user = await safeGetUser()
+  if (!user) throw new Error('Не удалось определить пользователя. Перезайдите.')
+
+  const supabase = createClient()
+
+  const ext = (file.name.split('.').pop() || 'mp4').toLowerCase()
+  const path = `${user.id}/${clientName}/test-${testId}-slot${slot}_${Date.now()}.${ext}`
+
+  onProgress?.({ loaded: 0, total: file.size, percent: 0 })
+
+  const { data, error } = await supabase.storage
+    .from('screening-videos')
+    .upload(path, file, {
+      contentType: file.type || 'video/mp4',
+      upsert: false,
+    })
+
+  if (error) {
+    console.error('[uploadScreeningVideo] Storage error:', error)
+    throw new Error(error.message || 'Ошибка загрузки видео')
   }
 
-  return new Promise((resolve, reject) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('testId', String(testId))
-    formData.append('slot', String(slot))
-    formData.append('clientName', clientName)
+  const { data: urlData } = supabase.storage
+    .from('screening-videos')
+    .getPublicUrl(data.path)
 
-    const xhr = new XMLHttpRequest()
-    xhr.open('POST', '/api/screening/upload-video')
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+  onProgress?.({ loaded: file.size, total: file.size, percent: 100 })
 
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && onProgress) {
-        onProgress({
-          loaded: event.loaded,
-          total: event.total,
-          percent: Math.round((event.loaded / event.total) * 100),
-        })
-      }
-    }
-
-    xhr.onload = () => {
-      try {
-        const response = JSON.parse(xhr.responseText)
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(response)
-        } else {
-          reject(new Error(response.error || `HTTP ${xhr.status}`))
-        }
-      } catch {
-        reject(new Error(`HTTP ${xhr.status}`))
-      }
-    }
-
-    xhr.onerror = () => reject(new Error('Ошибка сети'))
-    xhr.ontimeout = () => reject(new Error('Таймаут загрузки'))
-    xhr.timeout = 300_000
-
-    xhr.send(formData)
-  })
+  return { url: urlData.publicUrl }
 }
 
 export interface ScreeningPayload {
