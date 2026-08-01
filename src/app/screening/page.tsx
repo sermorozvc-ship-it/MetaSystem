@@ -924,7 +924,7 @@ function TestSection({ test, isExpanded, onToggle, uploadedUrls, onFileUpload, o
                     {url ? (
                       /* Видео загружено */
                       <div className="relative rounded-xl border border-success/30 bg-success/5 p-3 md:p-4">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 pr-8">
                           <div className="w-9 h-9 md:w-10 md:h-10 rounded-lg bg-success/20 flex items-center justify-center flex-shrink-0">
                             <FileVideo className="w-5 h-5 text-success" />
                           </div>
