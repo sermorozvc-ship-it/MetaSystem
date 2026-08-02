@@ -751,6 +751,7 @@ function ProgramCard({ program, onDelete, onUpdate, clientName, clientId, traini
     const [weeklyCheckin, setWeeklyCheckin] = useState<{ answers: Record<string, string>; completed_at: string | null } | null>(null)
     const [deleting, setDeleting] = useState(false)
     const [confirmDelete, setConfirmDelete] = useState(false)
+    const [deletingVideo, setDeletingVideo] = useState<string | null>(null)
 
     // Редактирование
     const [editing, setEditing] = useState(false)
@@ -872,6 +873,41 @@ function ProgramCard({ program, onDelete, onUpdate, clientName, clientId, traini
             console.error('Delete error:', e)
             setDeleting(false)
             setConfirmDelete(false)
+        }
+    }
+
+    const handleDeleteVideo = async (exerciseId: string, videoUrl: string, dayNumber: number) => {
+        const videoKey = `${dayNumber}-${exerciseId}`
+        if (!confirm(`Удалить видео упражнения с Google Drive?`)) return
+        setDeletingVideo(videoKey)
+        try {
+            const { adminFetch } = await import('@/lib/api/admin-fetch')
+            await adminFetch('/api/diary/drive-upload/delete', {
+                method: 'POST',
+                json: {
+                    videoUrl,
+                    targetUserId: clientId,
+                    exerciseId,
+                    programId: program.id,
+                    dayNumber,
+                },
+            })
+            // Обновляем локально — убираем видео из entries
+            setEntries(prev => prev.map(e => {
+                if (e.day_number !== dayNumber) return e
+                const updatedData = { ...e.entry_data }
+                if (updatedData.__exerciseVideos__) {
+                    const vids = { ...updatedData.__exerciseVideos__ }
+                    delete vids[exerciseId]
+                    updatedData.__exerciseVideos__ = vids
+                }
+                return { ...e, entry_data: updatedData }
+            }))
+        } catch (e: any) {
+            console.error('Delete video error:', e)
+            alert('Ошибка удаления: ' + (e?.message || 'Неизвестная ошибка'))
+        } finally {
+            setDeletingVideo(null)
         }
     }
 
@@ -1069,6 +1105,26 @@ function ProgramCard({ program, onDelete, onUpdate, clientName, clientId, traini
                                                                     </span>
                                                                 )}
                                                                 {cd.comment && <div className="text-text-muted text-xs mt-0.5">💬 {cd.comment}</div>}
+                                                                {entry?.entry_data?.__exerciseVideos__?.[ex.id] && (
+                                                                    <div className="flex items-center gap-2 mt-1">
+                                                                        <a href={entry.entry_data.__exerciseVideos__[ex.id]}
+                                                                            target="_blank" rel="noopener noreferrer"
+                                                                            className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
+                                                                            <Play className="w-3 h-3" /> Смотреть видео техники
+                                                                        </a>
+                                                                        <button
+                                                                            onClick={() => handleDeleteVideo(ex.id, entry.entry_data.__exerciseVideos__[ex.id], day.dayNumber)}
+                                                                            disabled={deletingVideo === `${day.dayNumber}-${ex.id}`}
+                                                                            className="text-text-muted hover:text-red-400 transition-colors disabled:opacity-50"
+                                                                            title="Удалить видео"
+                                                                        >
+                                                                            {deletingVideo === `${day.dayNumber}-${ex.id}`
+                                                                                ? <Loader2 className="w-3 h-3 animate-spin" />
+                                                                                : <X className="w-3 h-3" />
+                                                                            }
+                                                                        </button>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         ) : (
                                                             <span className="text-text-muted italic text-xs ml-2">не заполнено</span>

@@ -21,7 +21,8 @@ import { getMySubscriptionInfo } from '@/lib/services/renewal'
 import { parseMdToJson } from '@/lib/utils/md-parser'
 import { parseCheckinQuestions } from '@/lib/utils/checkin-questions'
 import { getWeeklyCheckin, upsertWeeklyCheckin, markWeeklyCheckinCompleted } from '@/lib/services/weekly-checkin'
-import { getAccessTokenWithRecovery, getAccessTokenForCriticalAction } from '@/lib/supabase/client'
+import { getAccessTokenWithRecovery, getAccessTokenForCriticalAction, createClient } from '@/lib/supabase/client'
+import { uploadDiaryVideo } from '@/lib/services/diary-video'
 
 // ─── Типы данных клиента ─────────────────────────────────────────────────────
 
@@ -231,6 +232,12 @@ function ExerciseCard({
     supersetLabel,
     setStatuses,
     onSaveSet,
+    onDiaryVideoUpload,
+    diaryVideoUrl,
+    diaryVideoUploading,
+    diaryVideoProgress,
+    diaryVideoError,
+    onDiaryVideoRemove,
 }: {
     exercise: Exercise
     index: number
@@ -247,6 +254,13 @@ function ExerciseCard({
     setStatuses?: Record<number, 'dirty' | 'saving' | 'saved' | 'error'>
     /** Клик по индикатору подхода — запрашивает ручное сохранение. */
     onSaveSet?: (setIdx: number) => void
+    /** Загрузка видео техники упражнения в дневник */
+    onDiaryVideoUpload?: (file: File) => void
+    diaryVideoUrl?: string | null
+    diaryVideoUploading?: boolean
+    diaryVideoProgress?: number
+    diaryVideoError?: string | null
+    onDiaryVideoRemove?: () => void
 }) {
     const altMenuRef = useRef<HTMLDivElement>(null)
     useEffect(() => {
@@ -517,6 +531,36 @@ function ExerciseCard({
                             className="w-full mt-1 py-2 rounded-xl border border-dashed border-border text-xs text-text-muted hover:border-accent hover:text-accent transition-colors flex items-center justify-center gap-1.5">
                             <span className="text-base leading-none">+</span> Добавить подход
                         </button>
+                    </div>
+
+                    {/* Видео техники */}
+                    <div className="mt-3">
+                        {diaryVideoUrl ? (
+                            <div className="flex items-center gap-2 p-2 rounded-lg bg-bg-elevated border border-border">
+                                <a href={diaryVideoUrl} target="_blank" rel="noopener noreferrer"
+                                    className="text-xs text-accent hover:underline flex items-center gap-1 flex-1 min-w-0 truncate">
+                                    <Play className="w-3 h-3 flex-shrink-0" /> Видео загружено
+                                </a>
+                                <button onClick={onDiaryVideoRemove} className="text-text-muted hover:text-red-400 transition-colors">
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        ) : diaryVideoUploading ? (
+                            <div className="flex items-center gap-2 p-2 rounded-lg bg-bg-elevated border border-border">
+                                <Loader2 className="w-3.5 h-3.5 text-accent animate-spin flex-shrink-0" />
+                                <div className="flex-1 h-1.5 bg-border rounded-full overflow-hidden">
+                                    <div className="h-full bg-accent rounded-full transition-all" style={{ width: `${diaryVideoProgress || 0}%` }} />
+                                </div>
+                                <span className="text-xs text-text-muted">{diaryVideoProgress || 0}%</span>
+                            </div>
+                        ) : (
+                            <label className="w-full py-2 rounded-xl border border-dashed border-border text-xs text-text-muted hover:border-accent hover:text-accent transition-colors flex items-center justify-center gap-1.5 cursor-pointer">
+                                <input type="file" accept="video/*" className="hidden"
+                                    onChange={e => { const f = e.target.files?.[0]; if (f) onDiaryVideoUpload?.(f); e.target.value = '' }} />
+                                <span className="text-base leading-none">+</span> Загрузить видео
+                            </label>
+                        )}
+                        {diaryVideoError && <p className="text-xs text-red-400 mt-1">{diaryVideoError}</p>}
                     </div>
 
                     {/* Комментарий */}
@@ -929,6 +973,14 @@ export default function ProgramDetailPage() {
     const [completedDays, setCompletedDays] = useState<Set<number>>(new Set())
     const [videoModal, setVideoModal] = useState<{ url: string; title: string } | null>(null)
     const [collapsedExercises, setCollapsedExercises] = useState<Set<string>>(new Set())
+
+    // Видео техники упражнений (загружаются на Google Drive)
+    const [exerciseVideos, setExerciseVideos] = useState<Record<string, string>>({})
+    const [videoUploading, setVideoUploading] = useState<Record<string, boolean>>({})
+    const [videoProgress, setVideoProgress] = useState<Record<string, number>>({})
+    const [videoErrors, setVideoErrors] = useState<Record<string, string>>({})
+    const [clientName, setClientName] = useState('')
+
     const [isStatsCollapsed, setIsStatsCollapsed] = useState(true)
     const [isWellnessCollapsed, setIsWellnessCollapsed] = useState(true)
     const [isWeeklyNoteCollapsed, setIsWeeklyNoteCollapsed] = useState(true)
@@ -968,6 +1020,16 @@ export default function ProgramDetailPage() {
     const dataLoadedRef = useRef(false)
     const userChangedRef = useRef(false)
     const latestDataRef = useRef({ exerciseData, energyLevel, mood, sleepQuality, notes })
+    const exerciseVideosRef = useRef<Record<string, string>>({})
+
+    // Загрузка имени клиента для Google Drive папок
+    useEffect(() => {
+        if (!user) return
+        const name = (user as any).user_metadata?.full_name
+        if (name) { setClientName(name); return }
+        createClient().from('profiles').select('full_name').eq('id', user.id).single()
+            .then(({ data }) => { if (data?.full_name) setClientName(data.full_name) })
+    }, [user])
 
     // ─── Автосохранение: lock + очередь + статус ─────────────────────────────
     // Гарантируем, что:
@@ -1338,6 +1400,7 @@ export default function ProgramDetailPage() {
                 sleepQuality?: number
                 notes?: string
                 supersets?: Superset[]
+                exerciseVideos?: Record<string, string>
                 savedAt?: number
             } | null = null
             try {
@@ -1398,7 +1461,7 @@ export default function ProgramDetailPage() {
                         if (!data) return 0
                         let n = 0
                         for (const k of Object.keys(data)) {
-                            if (k === '__meta__') continue
+                            if (k === '__meta__' || k === '__exerciseVideos__') continue
                             const ex = (data as any)[k]
                             if (ex?.sets && Array.isArray(ex.sets)
                                 && ex.sets.some((s: any) => (s?.weight && String(s.weight).trim() !== '') || (s?.reps && String(s.reps).trim() !== ''))) {
@@ -1418,6 +1481,10 @@ export default function ProgramDetailPage() {
                         setSleepQuality(localDraft.sleepQuality ?? entry.sleep_quality ?? 3)
                         setNotes(localDraft.notes ?? entry.notes ?? '')
                         setSupersets(localDraft.supersets ?? (entry.entry_data?.__meta__?.supersets || []))
+                        // Восстанавливаем видео из черновика или с сервера
+                        const vids = localDraft.exerciseVideos ?? entry.entry_data?.__exerciseVideos__ ?? {}
+                        setExerciseVideos(vids)
+                        exerciseVideosRef.current = vids
                         // помечаем как «надо досохранить» — после монтирования сработает автосейв
                         userChangedRef.current = true
                         setSaveStatus('idle')
@@ -1440,6 +1507,11 @@ export default function ProgramDetailPage() {
                         // Загружаем мета-данные (суперсеты)
                         const meta: DayMeta = entry.entry_data?.__meta__ || {}
                         setSupersets(meta.supersets || [])
+
+                        // Восстанавливаем видео техники упражнений
+                        const vids = entry.entry_data?.__exerciseVideos__ || {}
+                        setExerciseVideos(vids)
+                        exerciseVideosRef.current = vids
                     }
 
                     if (entry.completed_at) {
@@ -1646,10 +1718,11 @@ export default function ProgramDetailPage() {
     const buildEntrySnapshot = useCallback(() => {
         const { exerciseData: ed, energyLevel: el, mood: m, sleepQuality: sq, notes: n } = latestDataRef.current
         const { supersets: ss } = metaRef.current
+        const vids = exerciseVideosRef.current
         return {
-            entryData: { ...ed, __meta__: { supersets: ss } as DayMeta },
+            entryData: { ...ed, __meta__: { supersets: ss } as DayMeta, __exerciseVideos__: vids },
             metadata: { energy_level: el, mood: m, sleep_quality: sq, notes: n },
-            raw: { exerciseData: ed, energyLevel: el, mood: m, sleepQuality: sq, notes: n, supersets: ss },
+            raw: { exerciseData: ed, energyLevel: el, mood: m, sleepQuality: sq, notes: n, supersets: ss, exerciseVideos: vids },
         }
     }, [])
 
@@ -1719,7 +1792,7 @@ export default function ProgramDetailPage() {
         const merged = { ...nextEntryData }
         const preserved: string[] = []
         for (const key of Object.keys(serverData)) {
-            if (key === '__meta__') continue
+            if (key === '__meta__' || key === '__exerciseVideos__') continue
             const serverEx = (serverData as any)[key]
             const nextEx = (nextEntryData as any)[key]
             if (hasFilledSets(serverEx) && !hasFilledSets(nextEx)) {
@@ -2287,6 +2360,54 @@ export default function ProgramDetailPage() {
             debounceTimerRef.current = null
         }
         saveEntryRef.current?.(false)
+    }, [])
+
+    // ─── Загрузка видео техники упражнения ─────────────────────────────────────
+    const handleDiaryVideoUpload = useCallback(async (exerciseId: string, file: File) => {
+        if (!clientName.trim()) {
+            setVideoErrors(prev => ({ ...prev, [exerciseId]: 'Имя клиента не загружено. Обновите страницу.' }))
+            return
+        }
+        const day = program?.program_data.days[currentDayIndex]
+        const exercise = day?.exercises.find(e => e.id === exerciseId)
+        if (!day || !exercise || !program) return
+
+        setVideoUploading(prev => ({ ...prev, [exerciseId]: true }))
+        setVideoErrors(prev => { const n = { ...prev }; delete n[exerciseId]; return n })
+        setVideoProgress(prev => ({ ...prev, [exerciseId]: 0 }))
+
+        try {
+            const result = await uploadDiaryVideo(
+                file,
+                exercise.name,
+                program.week_number,
+                day.dayNumber,
+                clientName.trim(),
+                (progress) => setVideoProgress(prev => ({ ...prev, [exerciseId]: progress.percent })),
+            )
+            const updated = { ...exerciseVideosRef.current, [exerciseId]: result.url }
+            setExerciseVideos(updated)
+            exerciseVideosRef.current = updated
+            // Помечаем что данные изменились — автосейв подхватит
+            userChangedRef.current = true
+            if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+            debounceTimerRef.current = setTimeout(() => saveEntryRef.current?.(false), 800)
+        } catch (e: any) {
+            setVideoErrors(prev => ({ ...prev, [exerciseId]: e?.message || 'Ошибка загрузки видео' }))
+        } finally {
+            setVideoUploading(prev => { const n = { ...prev }; delete n[exerciseId]; return n })
+            setVideoProgress(prev => { const n = { ...prev }; delete n[exerciseId]; return n })
+        }
+    }, [clientName, program, currentDayIndex, exerciseVideos])
+
+    const handleDiaryVideoRemove = useCallback((exerciseId: string) => {
+        const updated = { ...exerciseVideosRef.current }
+        delete updated[exerciseId]
+        setExerciseVideos(updated)
+        exerciseVideosRef.current = updated
+        userChangedRef.current = true
+        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+        debounceTimerRef.current = setTimeout(() => saveEntryRef.current?.(false), 800)
     }, [])
 
     const handleAuthFailure = useCallback(async (context: 'complete' | 'save-completed') => {
@@ -3078,6 +3199,12 @@ export default function ProgramDetailPage() {
                                             return next
                                         })}
                                         supersetLabel={ssLabel}
+                                        onDiaryVideoUpload={(file) => handleDiaryVideoUpload(exercise.id, file)}
+                                        diaryVideoUrl={exerciseVideos[exercise.id] || null}
+                                        diaryVideoUploading={videoUploading[exercise.id] || false}
+                                        diaryVideoProgress={videoProgress[exercise.id] || 0}
+                                        diaryVideoError={videoErrors[exercise.id] || null}
+                                        onDiaryVideoRemove={() => handleDiaryVideoRemove(exercise.id)}
                                     />
                                 </div>
 

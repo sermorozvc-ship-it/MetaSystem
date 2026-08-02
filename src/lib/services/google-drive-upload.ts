@@ -133,6 +133,61 @@ export async function createResumableUploadSession(params: {
 }
 
 /**
+ * Универсальная версия createResumableUploadSession.
+ * Принимает folderSuffix вместо testId/slot — подходит для дневника и любых других контекстов.
+ * Структура папок: ROOT / userId / clientName / {folderSuffix}/
+ * Имя файла: transliterate(clientName)_folderSuffix_timestamp.ext
+ */
+export async function createResumableUploadSessionV2(params: {
+  fileName: string
+  fileSize: number
+  mimeType: string
+  clientName: string
+  userId: string
+  folderSuffix: string
+}): Promise<{ uploadUrl: string; clientFolderId: string; fileName: string }> {
+  const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID
+  if (!rootFolderId) throw new Error('GOOGLE_DRIVE_FOLDER_ID не задан')
+
+  const userFolder = await findOrCreateFolder(params.userId, rootFolderId)
+  const clientFolder = await findOrCreateFolder(params.clientName, userFolder)
+  const subFolder = await findOrCreateFolder(params.folderSuffix, clientFolder)
+
+  const ext = params.fileName.split('.').pop() || 'mp4'
+  const safeSuffix = transliterate(params.folderSuffix)
+  const safeName = `${transliterate(params.clientName)}_${safeSuffix}_${Date.now()}.${ext}`
+  const accessToken = await getAccessToken()
+
+  const res = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json; charset=UTF-8',
+        'X-Upload-Content-Type': params.mimeType,
+        'X-Upload-Content-Length': String(params.fileSize),
+      },
+      body: JSON.stringify({
+        name: safeName,
+        parents: [subFolder],
+        mimeType: params.mimeType,
+      }),
+    },
+  )
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Ошибка создания upload session: ${res.status} ${err}`)
+  }
+
+  const uploadUrl = res.headers.get('Location')
+  if (!uploadUrl) throw new Error('Google не вернул upload URL')
+
+  return { uploadUrl, clientFolderId: subFolder, fileName: safeName }
+}
+
+/**
  * Ищет файл по имени в папке (fallback если ID не пришёл в ответе загрузки)
  */
 export async function findFileByName(fileName: string, folderId: string): Promise<string | null> {
@@ -170,4 +225,64 @@ export async function makeFilePublic(fileId: string): Promise<string> {
   })
 
   return data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`
+}
+
+/**
+ * Извлекает file ID из Google Drive URL.
+ * Поддерживает форматы:
+ *   https://drive.google.com/file/d/{id}/view
+ *   https://drive.google.com/open?id={id}
+ */
+export function extractFileIdFromUrl(url: string): string | null {
+  const m1 = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)
+  if (m1) return m1[1]
+  const m2 = url.match(/[?&]id=([a-zA-Z0-9_-]+)/)
+  if (m2) return m2[1]
+  return null
+}
+
+/**
+ * Удаляет файл с Google Drive по его ID.
+ */
+export async function deleteFile(fileId: string): Promise<void> {
+  const drive = getDrive()
+  await drive.files.delete({
+    fileId,
+    supportsAllDrives: true,
+    enforceSingleParent: true,
+  })
+}
+
+/**
+ * Возвращает ID родительской папки файла (первый parent).
+ */
+export async function getFileParentFolderId(fileId: string): Promise<string | null> {
+  const drive = getDrive()
+  const { data } = await drive.files.get({
+    fileId,
+    fields: 'parents',
+    supportsAllDrives: true,
+  })
+  return data.parents?.[0] || null
+}
+
+/**
+ * Проверяет, пуста ли папка на Google Drive, и если да — удаляет её.
+ */
+export async function deleteFolderIfEmpty(folderId: string): Promise<boolean> {
+  const drive = getDrive()
+  const { data } = await drive.files.list({
+    q: `'${folderId}' in parents and trashed=false`,
+    fields: 'files(id)',
+    pageSize: 1,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+  })
+  if (data.files && data.files.length > 0) return false
+  await drive.files.delete({
+    fileId: folderId,
+    supportsAllDrives: true,
+    enforceSingleParent: true,
+  })
+  return true
 }
